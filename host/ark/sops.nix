@@ -1,0 +1,50 @@
+{ config, ... }:
+{
+  sops = {
+
+    defaultSopsFile = ../../secrets/sops/host/ark/default.yaml;
+    validateSopsFiles = false;
+
+    age.keyFile = "/var/lib/sops-nix/key.txt";
+
+    secrets = {
+      "host_age_key" = {
+        path = "/var/lib/sops-nix/key.txt";
+      };
+
+      "restic-password" = {};
+      "tunnel-credentials" = {};
+      "admin-password" = {};
+
+      "waka-password-salt" = {
+        owner = config.users.users.wakapi.name;
+      };
+
+      "photos/clientId" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+      };
+      "photos/clientSecret" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+      };
+
+      "git/clientId" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+        owner = config.services.gitea.user;
+      };
+      "git/clientSecret" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+        owner = config.services.gitea.user;
+      };
+
+      "docs/clientId" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+        owner = config.services.outline.user;
+      };
+      "docs/clientSecret" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+        owner = config.services.outline.user;
+      };
+
+    };
+  };
+}

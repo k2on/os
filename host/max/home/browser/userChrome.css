@@ -1,0 +1,6 @@
+.browserContainer > findbar {
+	top: 0 !important;
+	position: fixed !important;
+	width: 1000px !important;
+	right: 0 !important;
+}
