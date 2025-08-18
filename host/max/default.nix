@@ -101,6 +101,20 @@
 
     # arm support
     pkgs-unstable.sparrow
+
+    (writeShellScriptBin "radio" ''
+      list="
+      WIOP http://s4.yesstreaming.net:7119/;audio.mp3
+      FamilyAlter https://usa17.fastcast4u.com/proxy/roloffev?mp=/1
+      "
+
+      choice=$(echo "$list" | awk '{print $1}' | ${fzf}/bin/fzf)
+
+      if [[ -n "$choice" ]]; then
+        url=$(echo "$list" | awk -v name="$choice" '$1==name {print $2}')
+        ${mpg123}/bin/mpg123 "$url"
+      fi
+    '')
   ];
 
   programs.zsh.enable = true;
