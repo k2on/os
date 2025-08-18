@@ -10,6 +10,7 @@ in
     userEmail = publicGitEmail;
     extraConfig = {
       init.defaultBranch = "main";
+      push.autoSetupRemote = true;
 
       commit.gpgsign = true;
       gpg.format = "ssh";
