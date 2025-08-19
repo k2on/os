@@ -1,4 +1,14 @@
-{ pkgs, config, pkgs-unstable, ... }: {
+{ pkgs, config, pkgs-unstable, ... }:
+let
+  openconnect-sso-src = builtins.fetchTree {
+    type = "github";
+    owner = "k2on";
+    repo = "openconnect-sso";
+    rev = "9d4f61e5c8ccca420ffa87d46c96c17d64fbfb0b";
+    narHash = "sha256-ENt4/+9Bll70+BkH0Scej02edLi9SNkvBfyvjxUv83w=";
+  };
+in
+{
   imports = [
     ./hardware-configuration.nix
     ../common/core/default.nix
@@ -115,6 +125,8 @@
         ${mpg123}/bin/mpg123 "$url"
       fi
     '')
+
+    (pkgs.callPackage "${openconnect-sso-src}/nix" {}).openconnect-sso
   ];
 
   programs.zsh.enable = true;
