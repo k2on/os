@@ -5,7 +5,11 @@
     defaultSopsFile = ../../secrets/sops/host/ark/default.yaml;
     validateSopsFiles = false;
 
-    age.keyFile = "/var/lib/sops-nix/key.txt";
+    age.keyFile = if builtins.pathExists /var/lib/sops-nix/key.txt then
+      "/var/lib/sops-nix/key.txt"
+    else
+      "/home/admin/.config/sops/age/keys.txt" # temp decrypt key
+    ;
 
     secrets = {
       "host_age_key" = {
