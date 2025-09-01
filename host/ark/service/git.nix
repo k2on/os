@@ -108,4 +108,63 @@
 
     '';
   };
+
+  services.restic.backups = {
+    git-local = {
+      repository = "/mnt/hdd/restic/git";
+      passwordFile = config.sops.secrets.restic-password.path;
+      initialize = true;
+      paths = [ "/var/lib/gitea/repositories" "/var/backup/git" ];
+      backupPrepareCommand = ''
+        mkdir -p /var/backup/git
+
+        ${pkgs.sudo}/bin/sudo ${pkgs.systemd}/bin/systemctl stop gitea
+
+        ${pkgs.sudo}/bin/sudo -u postgres ${pkgs.postgresql}/bin/pg_dump \
+          --clean \
+          --if-exists \
+          --dbname=git > /var/backup/git/postgres.sql
+      '';
+      backupCleanupCommand = ''
+        ${pkgs.sudo}/bin/sudo ${pkgs.systemd}/bin/systemctl start gitea
+      '';
+    };
+    git-remote = {
+      repository = "rest:http://m1:8000/git";
+      passwordFile = config.sops.secrets.restic-password.path;
+      initialize = true;
+      paths = [ "/var/lib/gitea/repositories" "/var/backup/git" ];
+      backupPrepareCommand = ''
+        mkdir -p /var/backup/git
+
+        ${pkgs.sudo}/bin/sudo ${pkgs.systemd}/bin/systemctl stop gitea
+
+        ${pkgs.sudo}/bin/sudo -u postgres ${pkgs.postgresql}/bin/pg_dump \
+          --clean \
+          --if-exists \
+          --dbname=git > /var/backup/git/postgres.sql
+      '';
+      backupCleanupCommand = ''
+        ${pkgs.sudo}/bin/sudo ${pkgs.systemd}/bin/systemctl start gitea
+      '';
+    };
+  };
+
+  environment.systemPackages = with pkgs;
+    let
+      scripts = with pkgs; {
+        restore_git_pg = writeShellScriptBin "restore_git_pg" ''
+          ${pkgs.sudo}/bin/sudo -u postgres psql --dbname=git < /var/backup/git/postgres.sql
+        '';
+        restore_git = writeShellScriptBin "restore_git" ''
+          ${pkgs.sudo}/bin/sudo ${pkgs.systemd}/bin/systemctl stop gitea
+
+          ${pkgs.sudo}/bin/sudo ${restic}/bin/restic -r /mnt/hdd/restic/git restore latest --target /
+
+          ${scripts.restore_git_pg}/bin/restore_git_pg
+
+          ${pkgs.sudo}/bin/sudo ${pkgs.systemd}/bin/systemctl start gitea
+        '';
+      };
+    in [ scripts.restore_git_pg scripts.restore_git ];
 }
