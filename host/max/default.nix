@@ -59,21 +59,20 @@ in
     EDITOR = "nvim";
   };
 
-  programs.wireshark.enable = true;
-  programs.adb.enable = true;
+  # programs.adb.enable = true;
 
   programs.kdeconnect.enable = true;
   environment.systemPackages = with pkgs; [
     vim
     git
     wget
+    file
+    just
 
     # mpc
     gurk-rs
     libreoffice-qt
     # ncmpcpp
-
-    brave
 
     signal-desktop
     gnupg
@@ -96,6 +95,8 @@ in
     libqalculate
     librespeed-cli
 
+    gparted
+
     tea
 
     kubectl
@@ -107,10 +108,12 @@ in
     gimp
     inkscape
 
-    wireshark
+    mysql-workbench
 
+    pkgs-unstable.brave
     # arm support
     pkgs-unstable.sparrow
+
 
     (writeShellScriptBin "radio" ''
       list="

@@ -239,6 +239,7 @@
       wakatime.enable = true;
       autoclose.enable = true;
       ts-autotag.enable = true;
+      bullets.enable = true;
       spider = {
         enable = true;
         extraOptions = {
