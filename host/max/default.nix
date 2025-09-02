@@ -83,8 +83,6 @@ in
     pinentry-curses
     pinentry-qt
 
-    zathura
-
     fzf
     ffmpeg
     ripgrep

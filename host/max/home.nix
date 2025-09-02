@@ -10,6 +10,7 @@
     ./home/desktop.nix
     ./home/nvim.nix
     ./home/terminal.nix
+    ./home/zathura.nix
   ];
 
   home.username = "max";
