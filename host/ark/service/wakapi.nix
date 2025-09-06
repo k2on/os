@@ -2,18 +2,40 @@
 {
 
   nixpkgs.overlays = [
-    (final: prev: {
-      wakapi = prev.wakapi.overrideAttrs (oldAttrs: rec {
+    (final: prev: let
+        version = "2.15.0";
+      in {
+
+      wakapi = (prev.buildGoModule.override { go = prev.go_1_25; }) {
+        pname = "wakapi";
+        version = version;
+
         src = final.fetchFromGitHub {
           owner = "k2on";
           repo = "wakapi";
-          rev = "theming";
-          # hash = "";
-          hash = "sha256-mbQ2cA9tbuDA5OXEP+qVfsrBC90budAzWE7x4oN6ypY=";
+          rev = "koon-fork";
+          hash = "sha256-Gg2YXhPBoIVv+8yV5gz2NTCNFo8V9fNJxqjdkwo6Zf0=";
         };
-        # vendorHash = final.lib.fakeHash;
-        vendorHash = "sha256-lb6u9NQbB3bizIRbCRaB7Ngv9T5mAYtSl+g13gL7VEU=";
-      });
+
+        vendorHash = "sha256-912x6LwitYXdjWpP75Xoc56JXadeLQZuESSyLoaJcU0=";
+
+        excludedPackages = [ "scripts" ];
+
+        postPatch = ''echo ${version} > version.txt'';
+
+        ldflags = [ "-s" "-w" ];
+
+        passthru = {
+          nixos = prev.nixosTests.wakapi;
+          updateScript = prev.nix-update-script { };
+        };
+
+        meta = prev.wakapi.meta // {
+          version = version;
+          mainProgram = "wakapi";
+        };
+      };
+
     })
   ];
 
