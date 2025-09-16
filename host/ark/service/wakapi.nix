@@ -14,7 +14,7 @@
           owner = "k2on";
           repo = "wakapi";
           rev = "koon-fork";
-          hash = "sha256-Gg2YXhPBoIVv+8yV5gz2NTCNFo8V9fNJxqjdkwo6Zf0=";
+          hash = "sha256-FYGtoJmbqUD02/JKvON1RqpjkrDkAOkfPwMAUZ2MSE4=";
         };
 
         vendorHash = "sha256-912x6LwitYXdjWpP75Xoc56JXadeLQZuESSyLoaJcU0=";

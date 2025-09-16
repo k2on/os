@@ -37,7 +37,12 @@
   };
 
   outputs = { self, nixpkgs, unstable, nixos-apple-silicon, home-manager
-    , plasma-manager, nixvim, sops-nix, terranix, ... }: {
+    , plasma-manager, nixvim, sops-nix, terranix, ... }:
+    let
+      forAllSystems = function:
+        nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed
+        (system: function nixpkgs.legacyPackages.${system});
+    in {
 
       packages.aarch64-linux = 
       let
@@ -123,5 +128,16 @@
           ];
         };
       };
+
+      devShells = forAllSystems (pkgs: {
+        default = pkgs.mkShell {
+          packages = with pkgs; [
+            age
+            ssh-to-age
+            sops
+            just
+          ];
+        };
+      });
     };
 }

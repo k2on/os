@@ -20,7 +20,13 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  networking.hostName = "ark"; # Define your hostname.
+  networking.hostName = "ark";
+  networking.nameservers = [ "8.8.8.8" "1.1.1.1" ];
+  services.tailscale = {
+    enable = true;
+    useRoutingFeatures = "both";
+    extraUpFlags = [ "--accept-dns=false" ];
+  };
 
   oauth.name = "KoonFamily";
   oauth.secrets = import ./oauth-secrets.nix;

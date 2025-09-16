@@ -38,7 +38,19 @@
     dotDir = ".config/zsh";
     autocd = true;
 
-    # initExtra = builtins.readFile ./zsh-nix-shell.zsh;
+    initContent = ''
+      fzf-project() {
+        selected=$(find ~/dev -mindepth 2 -maxdepth 2 | sed 's|/home/max/dev/||' | fzf --delimiter '/' --nth 2)
+        if [[ -n $selected ]]; then
+          cd ~/dev/$selected
+          zle reset-prompt
+        fi
+        zle redisplay
+      }
+
+      zle -N fzf-project
+      bindkey '^G' fzf-project
+    '';
 
     shellAliases = {
       ll = "ls -la --color";
@@ -46,7 +58,8 @@
       vi = "nvim";
       vim = "nvim";
 
-      k = "kubectl";
+      p = "pnpm";
+      g = "pnpm run build && ~/dev/personal/genesis/packages/genesis/dist/bin.js";
 
       tt = "tt --theme one-light -n 10";
 
@@ -58,11 +71,20 @@
       docx-to-pdf = "libreoffice --headless --convert-to pdf";
     };
 
-    plugins = [{
-      name = "vi-mode";
-      src = pkgs.zsh-vi-mode;
-      file = "share/zsh-vi-mode/zsh-vi-mode.plugin.zsh";
-    }];
+    plugins = [
+      {
+        name = "vi-mode";
+        src = pkgs.zsh-vi-mode;
+        file = "share/zsh-vi-mode/zsh-vi-mode.plugin.zsh";
+      }
+    ];
+  };
+
+  programs.direnv = {
+    enable = true;
+    enableZshIntegration = true;
+    nix-direnv.enable = true;
+    silent = true;
   };
 
   programs.starship = { enable = true; };
