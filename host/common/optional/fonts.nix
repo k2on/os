@@ -1,6 +1,7 @@
 { pkgs, ... }: {
   fonts.packages = with pkgs; [
     monocraft
+    noto-fonts-cjk-sans
 
     (stdenv.mkDerivation {
       name = "apple-color-emoji";
