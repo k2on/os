@@ -72,23 +72,4 @@
           ${cfg.package}/bin/outline-server
         '';
   };
-  # systemd.services.outline = {
-  #   serviceConfig = {
-  #     # Load the client ID from the sops secret file
-  #     ExecStartPre = let
-  #       script = pkgs.writeShellScript "outline-set-oauth" ''
-  #         CLIENT_ID=$(cat ${config.sops.secrets."docs/clientId".path})
-  #         # Export as environment variable that Outline will use
-  #         echo "OIDC_CLIENT_ID=$CLIENT_ID" >> $RUNTIME_DIRECTORY/env
-  #       '';
-  #     in "+${script}";
-  #
-  #     # Load the environment file
-  #     EnvironmentFile = "-/run/outline/env";
-  #   };
-  #
-  #   # Ensure sops secrets are available before starting
-  #   after = [ "sops-nix.service" ];
-  #   wants = [ "sops-nix.service" ];
-  # };
 }

@@ -53,6 +53,8 @@ in
     powerOnBoot = true;
   };
 
+  services.tailscale.enable = true;
+
   environment.variables = {
     XDG_DATA_HOME = "/home/max/.local/share";
     GSK_RENDERER = "ngl";

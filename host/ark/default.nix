@@ -14,6 +14,8 @@
     ./service/photos.nix
     ./service/radicale.nix
     ./service/wakapi.nix
+
+    ./service/elytra.nix
   ];
 
   # Use the systemd-boot EFI boot loader.
@@ -48,6 +50,8 @@
           "audio.koon.us" = "http://localhost:8021";
           "radicale.koon.us" = "http://localhost:5232";
           "waka.koon.us" = "http://localhost:3006";
+          "ride.koon.us" = "http://localhost:3007";
+          "ride-api.koon.us" = "http://localhost:8080";
         };
         default = "http_status:404";
       };

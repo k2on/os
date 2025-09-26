@@ -24,6 +24,13 @@
         owner = config.users.users.wakapi.name;
       };
 
+      "elytra-backend-env" = {
+        owner = config.users.users.backend.name;
+      };
+      "elytra-frontend-env" = {
+        owner = config.users.users.elytra-web.name;
+      };
+
       "photos/clientId" = {
         sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
       };
@@ -48,7 +55,6 @@
         sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
         owner = config.services.outline.user;
       };
-
     };
   };
 }

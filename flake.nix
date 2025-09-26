@@ -34,10 +34,15 @@
       url = "github:terranix/terranix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    elytrarides = {
+      url = "github:k2on/elytrarides";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, unstable, nixos-apple-silicon, home-manager
-    , plasma-manager, nixvim, sops-nix, terranix, ... }:
+    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, ... }:
     let
       forAllSystems = function:
         nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed
@@ -122,6 +127,7 @@
         ark = let system = "x86_64-linux";
         in unstable.lib.nixosSystem {
           inherit system;
+          specialArgs = { inherit elytrarides; };
           modules = [
             ./host/ark/default.nix 
             sops-nix.nixosModules.sops
