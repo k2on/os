@@ -9,11 +9,11 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1758288107,
-        "narHash": "sha256-5RSrpXvOixzXGUKagXHkcJyXe0MzBLSF36SELu9welg=",
+        "lastModified": 1759166975,
+        "narHash": "sha256-QEs164tIjxuprOt4H9A335ymMMXhVZCVJXWFvHutGL8=",
         "owner": "k2on",
         "repo": "elytrarides",
-        "rev": "dc282388bbfa41c61dc0f04f582c09361c9b22c8",
+        "rev": "863d3491b89b52c8193d882c8b1c4a858376b1d7",
         "type": "github"
       },
       "original": {

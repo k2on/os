@@ -3,7 +3,7 @@
     enable = true;
     workspace = { wallpaper = "/home/max/bg.jpg"; };
 
-    kwin = { virtualDesktops = { number = 9; }; };
+    kwin = { virtualDesktops = { number = 4; }; };
 
     input = {
       keyboard = {

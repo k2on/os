@@ -124,10 +124,12 @@
           ];
         };
 
-        ark = let system = "x86_64-linux";
+        ark = let
+          system = "x86_64-linux";
+          secrets = import ./secrets;
         in unstable.lib.nixosSystem {
           inherit system;
-          specialArgs = { inherit elytrarides; };
+          specialArgs = { inherit elytrarides secrets; };
           modules = [
             ./host/ark/default.nix 
             sops-nix.nixosModules.sops
