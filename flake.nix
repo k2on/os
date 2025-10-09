@@ -39,10 +39,17 @@
       url = "github:k2on/elytrarides";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    zen-browser = {
+      url = "github:0xc000022070/zen-browser-flake";
+      # IMPORTANT: we're using "libgbm" and is only available in unstable so ensure
+      # to have it up-to-date or simply don't specify the nixpkgs input
+      inputs.nixpkgs.follows = "unstable";
+    };
   };
 
   outputs = { self, nixpkgs, unstable, nixos-apple-silicon, home-manager
-    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, ... }:
+    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, zen-browser, ... }:
     let
       forAllSystems = function:
         nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed
@@ -102,7 +109,7 @@
           secrets = import ./secrets;
         in nixpkgs.lib.nixosSystem {
           inherit system;
-          specialArgs = { inherit pkgs-unstable secrets; };
+          specialArgs = { inherit pkgs-unstable secrets zen-browser; };
           modules = [
             ./host/max/default.nix
             nixos-apple-silicon.nixosModules.apple-silicon-support
@@ -111,12 +118,13 @@
             {
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
-              home-manager.extraSpecialArgs = { inherit secrets; };
+              home-manager.extraSpecialArgs = { inherit secrets zen-browser; };
               home-manager.users.max = { config, pkgs, lib, ... }: {
                 imports = [
                   sops-nix.homeManagerModules.sops
                   nixvim.homeManagerModules.nixvim
                   plasma-manager.homeManagerModules.plasma-manager
+                  zen-browser.homeModules.beta
                   ./host/max/home.nix # Import your home.nix here
                 ];
               };

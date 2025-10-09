@@ -1,4 +1,53 @@
+{ config, ... }:
 {
+  programs.zen-browser = {
+    enable = true;
+    profiles."default" = {
+      containersForce = true;
+      containers = {
+        Personal = {
+          color = "yellow";
+          icon = "circle";
+          id = 1;
+        };
+        School = {
+          color = "red";
+          icon = "fruit";
+          id = 2;
+        };
+        Work = {
+          color = "blue";
+          icon = "briefcase";
+          id = 3;
+        };
+      };
+      spacesForce = true;
+      spaces = let
+        containers = config.programs.zen-browser.profiles."default".containers;
+      in {
+        "Personal" = {
+          id = "c6de089c-410d-4206-961d-ab11f988d40a";
+          icon = "⭐";
+          container = containers."Personal".id;
+          position = 1000;
+        };
+        "School" = {
+          id = "78aabdad-8aae-4fe0-8ff0-2a0c6c4ccc24";
+          icon = "🍎";
+          container = containers."School".id;
+          position = 2000;
+        };
+        "Work" = {
+          id = "cdd10fab-4fc5-494b-9041-325e5759195b";
+          icon = "💼";
+          container = containers."Work".id;
+          position = 3000;
+        };
+      };
+    };
+
+  };
+
   programs.firefox = {
     enable = true;
     profiles = {
