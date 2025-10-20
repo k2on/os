@@ -31,6 +31,10 @@
         owner = config.users.users.elytra-web.name;
       };
 
+      "money-env" = {
+        owner = config.users.users.money.name;
+      };
+
       "photos/clientId" = {
         sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
       };
@@ -54,6 +58,14 @@
       "docs/clientSecret" = {
         sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
         owner = config.services.outline.user;
+      };
+      "money/clientId" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+        owner = config.users.users.money.name;
+      };
+      "money/clientSecret" = {
+        sopsFile = ../../secrets/sops/host/ark/oauth.yaml;
+        owner = config.users.users.money.name;
       };
     };
   };

@@ -16,6 +16,7 @@
     ./service/wakapi.nix
 
     ./service/elytra.nix
+    ./service/money.nix
   ];
 
   # Use the systemd-boot EFI boot loader.
@@ -52,6 +53,11 @@
           "waka.koon.us" = "http://localhost:3006";
           "ride.koon.us" = "http://localhost:3007";
           "ride-api.koon.us" = "http://localhost:8080";
+
+          "money.koon.us" = "http://localhost:3160";
+          "zero.koon.us" = "http://localhost:4848";
+          "money-api.koon.us" = "http://localhost:3161";
+
         };
         default = "http_status:404";
       };
