@@ -4,7 +4,7 @@
 
   src = pkgs.fetchgit {
     url = "https://git.koon.us/max/money.git";
-    hash = "sha256-HG7R/rv6H7jIBp0qK3azy1x1myjOBJCQqI+K0ydztKs=";
+    hash = "sha256-TPUeYuffR8U0M3Wnc3yGmqDhEjWIhRRFaKDkhTBsNG8=";
   };
 
   expoWeb = pkgs.stdenv.mkDerivation (finalAttrs: {
@@ -151,6 +151,7 @@
       DEBUG = "*";
       NODE_OPTIONS = "--trace-warnings --trace-uncaught";
       OAUTH_DISCOVERY_URL = "https://auth.koon.us/.well-known/openid-configuration";
+      PLAID_ENV = "production";
     };
 
     serviceConfig = {

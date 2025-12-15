@@ -84,12 +84,21 @@
       }
     ];
 
+    autoCmd = [
+      {
+        event = [ "BufWritePre" ];
+        pattern = "*";
+        command = "lua vim.lsp.buf.format()";
+      }
+    ];
+
     diagnostic.settings.virtual_text = true;
 
     userCommands.W.command = "w";
 
     plugins = {
 
+      web-devicons.enable = true;
       sleuth.enable = true;
       lastplace.enable = true;
 
@@ -127,6 +136,7 @@
           pylsp.enable = true;
           pyright.enable = true;
           nixd.enable = true;
+          biome.enable = true;
         };
 
         keymaps = {

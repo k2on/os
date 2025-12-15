@@ -1,4 +1,9 @@
 { lib, ... }: {
+
+  programs.chromium = {
+    enable = true;
+  };
+
   programs.firefox = let
     lock-false = {
       Value = false;

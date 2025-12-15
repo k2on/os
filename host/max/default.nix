@@ -60,6 +60,7 @@ in
     GSK_RENDERER = "ngl";
     EDITOR = "nvim";
   };
+  environment.sessionVariables.NIXOS_OZONE_WL = "1";
 
   # programs.adb.enable = true;
 
@@ -76,7 +77,7 @@ in
     libreoffice-qt
     # ncmpcpp
 
-    signal-desktop
+    pkgs-unstable.signal-desktop
     gnupg
 
     (pass.withExtensions (exts: [ exts.pass-otp ]))
@@ -108,9 +109,8 @@ in
     gimp
     inkscape
 
-    mysql-workbench
+    ungoogled-chromium
 
-    pkgs-unstable.brave
     # arm support
     pkgs-unstable.sparrow
 
@@ -138,6 +138,22 @@ in
     enable = true;
     pinentryPackage = pkgs.pinentry-qt;
     enableSSHSupport = true;
+  };
+
+
+  services.keyd = {
+    enable = true;
+
+    keyboards.default = {
+      ids = [ "*" ];
+
+      settings = {
+        main = {
+          pageup   = "leftmouse";
+          pagedown = "rightmouse";
+        };
+      };
+    };
   };
 
   system.stateVersion = "25.05";
