@@ -7,7 +7,9 @@
     ./home/git.nix
 
     ./home/browser.nix
-    ./home/desktop.nix
+
+    ../../home/common/optional/desktop/hyprland.nix
+
     ./home/nvim.nix
     ./home/terminal.nix
     ./home/zathura.nix

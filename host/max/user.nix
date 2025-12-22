@@ -6,8 +6,17 @@
   users.users.max = {
     isNormalUser = true;
     hashedPasswordFile = config.sops.secrets.max-password.path;
-    extraGroups = [ "wheel" "networkmanager" "video" "wireshark" "kvm" ];
+    extraGroups = [ "wheel" "networkmanager" "video" "kvm" "docker" ];
     packages = with pkgs; [ tree ];
     shell = pkgs.zsh;
+  };
+
+  virtualisation.docker = {
+    enable = true;
+
+    rootless = {
+      enable = true;
+      setSocketVariable = true;
+    };
   };
 }

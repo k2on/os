@@ -1,12 +1,19 @@
-{ pkgs, ... }: {
+{ pkgs, config, ... }: {
   programs.alacritty = {
     enable = true;
-    theme = "one_light";
+    theme = "tokyo_night";
     settings = {
+      window = {
+        padding = { x = 14; y = 14; };
+      };
       font = {
-        normal.family = "Monocraft";
+        normal.family = "JetBrainsMono Nerd Font";
         size = 10;
       };
+      keyboard.bindings = [
+        { key = "Insert"; mods = "Shift"; action = "Paste"; }
+        { key = "Insert"; mods = "Control"; action = "Copy"; }
+      ];
     };
   };
 
@@ -18,12 +25,15 @@
     keyMode = "vi";
     shell = "${pkgs.zsh}/bin/zsh";
     extraConfig = ''
-      set -g status-style bg=white
+      set -g status-style bg=default
 
       bind h select-pane -L
       bind j select-pane -D
       bind k select-pane -U
       bind l select-pane -R
+
+      set -g default-terminal "tmux-256color"
+      set -ga terminal-overrides ",alacritty:Tc"
     '';
   };
 
@@ -35,7 +45,7 @@
       highlight = "fg=#bbbbbb";
     };
     syntaxHighlighting.enable = true;
-    dotDir = ".config/zsh";
+    dotDir = "${config.home.homeDirectory}/.config/zsh";
     autocd = true;
 
     initContent = ''

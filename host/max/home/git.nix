@@ -6,14 +6,15 @@ in
 {
   programs.git = {
     enable = true;
-    userName = "Max Koon";
-    userEmail = publicGitEmail;
-    extraConfig = {
+    settings = {
       init.defaultBranch = "main";
       push.autoSetupRemote = true;
 
       commit.gpgsign = true;
       gpg.format = "ssh";
+
+      user.name = "Max Koon";
+      user.email = publicGitEmail;
       user.signing.key = publicKey;
       gpg.ssh.allowedSignersFile = "/home/max/.ssh/allowed_signers";
     };

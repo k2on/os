@@ -1,4 +1,4 @@
-{ inputs, ... }: {
+{ ... }: {
   time.timeZone = "America/New_York";
 
   # security.sudo.wheelNeedsPassword = false;

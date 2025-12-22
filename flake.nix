@@ -2,26 +2,20 @@
   description = "Koon OS";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-25.11";
 
     unstable.url = "github:nixos/nixpkgs?ref=nixos-unstable";
 
     nixos-apple-silicon.url =
-      "github:nix-community/nixos-apple-silicon?ref=release-2025-05-30";
+      "github:nix-community/nixos-apple-silicon?ref=release-2025-11-18";
 
     home-manager = {
-      url = "github:nix-community/home-manager?ref=release-25.05";
+      url = "github:nix-community/home-manager?ref=release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    plasma-manager = {
-      url = "github:nix-community/plasma-manager";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.home-manager.follows = "home-manager";
     };
 
     nixvim = {
-      url = "github:nix-community/nixvim?ref=nixos-25.05";
+      url = "github:nix-community/nixvim?ref=nixos-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -46,10 +40,18 @@
       # to have it up-to-date or simply don't specify the nixpkgs input
       inputs.nixpkgs.follows = "unstable";
     };
+
+    apple-fonts.url= "github:Lyndeno/apple-fonts.nix";
+
+    plasma-manager = {
+      url = "github:nix-community/plasma-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
   };
 
   outputs = { self, nixpkgs, unstable, nixos-apple-silicon, home-manager
-    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, zen-browser, ... }:
+    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, zen-browser, apple-fonts, ... }:
     let
       forAllSystems = function:
         nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed
@@ -109,7 +111,7 @@
           secrets = import ./secrets;
         in nixpkgs.lib.nixosSystem {
           inherit system;
-          specialArgs = { inherit pkgs-unstable secrets zen-browser; };
+          specialArgs = { inherit pkgs-unstable secrets zen-browser apple-fonts; };
           modules = [
             ./host/max/default.nix
             nixos-apple-silicon.nixosModules.apple-silicon-support
@@ -122,7 +124,7 @@
               home-manager.users.max = { config, pkgs, lib, ... }: {
                 imports = [
                   sops-nix.homeManagerModules.sops
-                  nixvim.homeManagerModules.nixvim
+                  nixvim.homeModules.nixvim
                   plasma-manager.homeManagerModules.plasma-manager
                   zen-browser.homeModules.beta
                   ./host/max/home.nix # Import your home.nix here

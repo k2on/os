@@ -26,3 +26,4 @@
     wl-clipboard # Command-line copy/paste utilities for Wayland
   ];
 }
+

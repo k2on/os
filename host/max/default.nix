@@ -1,4 +1,4 @@
-{ pkgs, config, pkgs-unstable, ... }:
+{ pkgs, config, pkgs-unstable, lib, ... }:
 let
   openconnect-sso-src = builtins.fetchTree {
     type = "github";
@@ -16,11 +16,13 @@ in
     ./work.nix
     ./sops.nix
 
+    ../common/optional/desktop/hyprland.nix
+
     ../common/optional/yubikey.nix
 
     ../common/optional/browser.nix
-    ../common/optional/desktop.nix
-    ../common/optional/fonts.nix
+
+
     ../common/optional/locale.nix
     ../common/optional/email.nix
 
@@ -37,16 +39,14 @@ in
   hardware = {
     asahi = {
       peripheralFirmwareDirectory = ./firmware;
-      useExperimentalGPUDriver = true;
-      experimentalGPUInstallMode = "replace";
+      # useExperimentalGPUDriver = true;
+      # experimentalGPUInstallMode = "replace";
       setupAsahiSound = true;
     };
   };
 
-  # networking.hostName = "nixos"; # Define your hostname.
-  # Pick only one of the below networking options.
-  networking.networkmanager.enable =
-    true; # Easiest to use and most distros use this by default.
+  networking.networkmanager.enable = true;
+  # networking.wireless.iwd.enable = true;
 
   hardware.bluetooth = {
     enable = true;
@@ -66,6 +66,8 @@ in
 
   programs.kdeconnect.enable = true;
   environment.systemPackages = with pkgs; [
+    networkmanager
+
     vim
     git
     wget
@@ -77,12 +79,12 @@ in
     libreoffice-qt
     # ncmpcpp
 
-    pkgs-unstable.signal-desktop
+    pkgs-unstable.signal-desktop-bin
     gnupg
 
     (pass.withExtensions (exts: [ exts.pass-otp ]))
 
-    pinentry
+    # pinentry
     pinentry-curses
     pinentry-qt
 
@@ -129,7 +131,7 @@ in
       fi
     '')
 
-    (pkgs.callPackage "${openconnect-sso-src}/nix" {}).openconnect-sso
+    # (pkgs.callPackage "${openconnect-sso-src}/nix" {}).openconnect-sso
   ];
 
   programs.zsh.enable = true;
@@ -141,20 +143,20 @@ in
   };
 
 
-  services.keyd = {
-    enable = true;
-
-    keyboards.default = {
-      ids = [ "*" ];
-
-      settings = {
-        main = {
-          pageup   = "leftmouse";
-          pagedown = "rightmouse";
-        };
-      };
-    };
-  };
+  # services.keyd = {
+  #   enable = true;
+  #
+  #   keyboards.default = {
+  #     ids = [ "*" ];
+  #
+  #     settings = {
+  #       main = {
+  #         pageup   = "leftmouse";
+  #         pagedown = "rightmouse";
+  #       };
+  #     };
+  #   };
+  # };
 
   system.stateVersion = "25.05";
 

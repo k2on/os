@@ -2,7 +2,7 @@
   programs.nixvim = {
     enable = true;
 
-    colorschemes.one.enable = true;
+    colorschemes.tokyonight.enable = true;
 
     globals = {
       mapleader = " ";
@@ -15,7 +15,7 @@
     };
 
     opts = {
-      background = "light";
+      background = "dark";
       relativenumber = true;
       cursorline = true;
       number = true;
@@ -27,6 +27,25 @@
       list = true;
       listchars.__raw = "{ tab = '» ', trail = '·', nbsp = '␣' }";
 
+    };
+
+    highlight = {
+      Normal = {
+        bg = "NONE";
+        ctermbg = "NONE";
+      };
+      NormalFloat = {
+        bg = "NONE";
+        ctermbg = "NONE";
+      };
+      SignColumn = {
+        bg = "NONE";
+        ctermbg = "NONE";
+      };
+      EndOfBuffer = {
+        bg = "NONE";
+        ctermbg = "NONE";
+      };
     };
 
     extraConfigLua = ''
@@ -238,7 +257,7 @@
       };
       neo-tree = {
         enable = true;
-        extraOptions = {
+        settings = {
           filesystem = {
             filtered_items = {
               visible = true;
@@ -252,7 +271,7 @@
       bullets.enable = true;
       spider = {
         enable = true;
-        extraOptions = {
+        settings = {
           subwordMovement = true;
           skipInsignificantPunctuation = false;
         };

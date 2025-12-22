@@ -1,4 +1,4 @@
-{ lib, ... }: {
+{ ... }: {
   programs.plasma = {
     enable = true;
     workspace = { wallpaper = "/home/max/bg.jpg"; };
@@ -13,3 +13,4 @@
     };
   };
 }
+
