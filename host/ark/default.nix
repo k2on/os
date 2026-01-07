@@ -15,7 +15,7 @@
     ./service/radicale.nix
     ./service/wakapi.nix
 
-    ./service/elytra.nix
+    # ./service/elytra.nix
     ./service/money.nix
   ];
 
@@ -51,8 +51,8 @@
           "audio.koon.us" = "http://localhost:8021";
           "radicale.koon.us" = "http://localhost:5232";
           "waka.koon.us" = "http://localhost:3006";
-          "ride.koon.us" = "http://localhost:3007";
-          "ride-api.koon.us" = "http://localhost:8080";
+          # "ride.koon.us" = "http://localhost:3007";
+          # "ride-api.koon.us" = "http://localhost:8080";
 
           "money.koon.us" = "http://localhost:3160";
           "zero.koon.us" = "http://localhost:4848";

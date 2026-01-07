@@ -11,6 +11,8 @@
     shell = pkgs.zsh;
   };
 
+  programs.adb.enable = true;
+
   virtualisation.docker = {
     enable = true;
 

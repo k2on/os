@@ -1,13 +1,4 @@
-{ pkgs, config, pkgs-unstable, lib, ... }:
-let
-  openconnect-sso-src = builtins.fetchTree {
-    type = "github";
-    owner = "k2on";
-    repo = "openconnect-sso";
-    rev = "9d4f61e5c8ccca420ffa87d46c96c17d64fbfb0b";
-    narHash = "sha256-ENt4/+9Bll70+BkH0Scej02edLi9SNkvBfyvjxUv83w=";
-  };
-in
+{ pkgs, pkgs-unstable, ... }:
 {
   imports = [
     ./hardware-configuration.nix
@@ -26,9 +17,8 @@ in
     ../common/optional/locale.nix
     ../common/optional/email.nix
 
-    ./zero-cache.nix
+    ./proton.nix
   ];
-  services.zero-cache.enable = false;
 
   # Use the systemd-boot EFI boot loader.
   boot.loader.systemd-boot.enable = true;
@@ -39,14 +29,11 @@ in
   hardware = {
     asahi = {
       peripheralFirmwareDirectory = ./firmware;
-      # useExperimentalGPUDriver = true;
-      # experimentalGPUInstallMode = "replace";
       setupAsahiSound = true;
     };
   };
 
   networking.networkmanager.enable = true;
-  # networking.wireless.iwd.enable = true;
 
   hardware.bluetooth = {
     enable = true;
@@ -62,9 +49,8 @@ in
   };
   environment.sessionVariables.NIXOS_OZONE_WL = "1";
 
-  # programs.adb.enable = true;
-
   programs.kdeconnect.enable = true;
+
   environment.systemPackages = with pkgs; [
     networkmanager
 
@@ -84,7 +70,6 @@ in
 
     (pass.withExtensions (exts: [ exts.pass-otp ]))
 
-    # pinentry
     pinentry-curses
     pinentry-qt
 
@@ -102,7 +87,6 @@ in
 
     tea
 
-    kubectl
     cloudflared
     # gcc
 
@@ -110,8 +94,6 @@ in
 
     gimp
     inkscape
-
-    ungoogled-chromium
 
     # arm support
     pkgs-unstable.sparrow
@@ -130,8 +112,6 @@ in
         ${mpg123}/bin/mpg123 "$url"
       fi
     '')
-
-    # (pkgs.callPackage "${openconnect-sso-src}/nix" {}).openconnect-sso
   ];
 
   programs.zsh.enable = true;
@@ -142,22 +122,5 @@ in
     enableSSHSupport = true;
   };
 
-
-  # services.keyd = {
-  #   enable = true;
-  #
-  #   keyboards.default = {
-  #     ids = [ "*" ];
-  #
-  #     settings = {
-  #       main = {
-  #         pageup   = "leftmouse";
-  #         pagedown = "rightmouse";
-  #       };
-  #     };
-  #   };
-  # };
-
   system.stateVersion = "25.05";
-
 }

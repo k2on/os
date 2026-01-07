@@ -15,6 +15,11 @@
     ./home/zathura.nix
   ];
 
+  gtk = {
+    enable = true;
+    colorScheme = "dark";
+  };
+
   home.username = "max";
   home.homeDirectory = "/home/max";
   home.stateVersion = "25.05";

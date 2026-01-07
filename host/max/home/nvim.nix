@@ -29,26 +29,9 @@
 
     };
 
-    highlight = {
-      Normal = {
-        bg = "NONE";
-        ctermbg = "NONE";
-      };
-      NormalFloat = {
-        bg = "NONE";
-        ctermbg = "NONE";
-      };
-      SignColumn = {
-        bg = "NONE";
-        ctermbg = "NONE";
-      };
-      EndOfBuffer = {
-        bg = "NONE";
-        ctermbg = "NONE";
-      };
-    };
-
     extraConfigLua = ''
+      vim.g.transparent_enabled = true
+      require('transparent').setup({ exclude_groups = { "CursorLine" } })
       require('stay-centered').setup({ enable = true })
       require('mini.ai').setup()
     '';
@@ -284,9 +267,22 @@
         };
       };
 
+      transparent.enable = true;
     };
 
-    extraPlugins = with pkgs.vimPlugins; [ stay-centered-nvim mini-ai ];
+    extraPlugins = with pkgs.vimPlugins; [
+      stay-centered-nvim
+      mini-ai
+      (pkgs.vimUtils.buildVimPlugin {
+         name = "neominimap";
+         src = pkgs.fetchFromGitHub {
+             owner = "Isrothy";
+             repo = "neominimap.nvim";
+             rev = "c827a43e5cad146e007c8b1f2a9744798d029e6f";
+             hash = "sha256-MQxeYIm0QLS2HROvGLD6Rc21Hqx3USF9OXcw1shNTWg=";
+         };
+       })
+    ];
 
   };
 }

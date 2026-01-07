@@ -20,6 +20,10 @@
         inherit (config.users.users.max) group;
         path = "/home/max/.config/Yubico/u2f_keys";
       };
+      "proton_key" = {};
     };
+
   };
+
+  environment.sessionVariables.PROTON_PASS_ENCRYPTION_KEY = config.sops.secrets.proton_key.path;
 }

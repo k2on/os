@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, pkgs, firefox-addons, ... }:
 {
   xdg.mimeApps = {
     enable = true;
@@ -32,8 +32,27 @@
 
   programs.zen-browser = {
     enable = true;
-    profiles."default" = {
-      containersForce = true;
+
+    policies = {
+      AutofillAddressEnabled = false;
+      AutofillCreditCardEnabled = false;
+      DisableAppUpdate = true;
+      DisableFeedbackCommands = true;
+      DisableFirefoxStudies = true;
+      DisablePocket = true;
+      DisableTelemetry = true;
+      DontCheckDefaultBrowser = true;
+      NoDefaultBookmarks = true;
+      OfferToSaveLogins = false;
+      EnableTrackingProtection = {
+        Value = true;
+        Locked = true;
+        Cryptomining = true;
+        Fingerprinting = true;
+      };
+    };
+
+    profiles.default = let
       containers = {
         Personal = {
           color = "yellow";
@@ -51,31 +70,74 @@
           id = 3;
         };
       };
-      spacesForce = true;
-      spaces = let
-        containers = config.programs.zen-browser.profiles."default".containers;
-      in {
-        "Personal" = {
+      spaces = {
+        Personal = {
           id = "c6de089c-410d-4206-961d-ab11f988d40a";
           icon = "⭐";
           container = containers."Personal".id;
           position = 1000;
         };
-        "School" = {
+        School = {
           id = "78aabdad-8aae-4fe0-8ff0-2a0c6c4ccc24";
           icon = "🍎";
           container = containers."School".id;
           position = 2000;
         };
-        "Work" = {
+        Work = {
           id = "cdd10fab-4fc5-494b-9041-325e5759195b";
           icon = "💼";
           container = containers."Work".id;
           position = 3000;
         };
       };
-    };
+      pins = {
+        # Personal Pins
+        "Proton Mail" = {
+          id = "d9942e0a-0997-418d-b357-91727300d184";
+          container = containers.Personal.id;
+          url = "https://mail.proton.me";
+          isEssential = true;
+          position = 1;
+        };
+        "Proton Calendar" = {
+          id = "6557e03f-c0ab-4656-ac94-acfb1fe19f3c";
+          container = containers.Personal.id;
+          url = "https://calendar.proton.me";
+          isEssential = true;
+          position = 2;
+        };
+        "YNAB" = {
+          id = "10cb5609-fcd5-4ed6-a48d-24eb22f2d624";
+          container = containers.Personal.id;
+          url = "https://app.ynab.com";
+          isEssential = true;
+          position = 3;
+        };
 
+        # # School Pins
+        # "Canvas" = {
+        #   id = "cfbdc143-6a16-46d7-b33e-e9c964725e59";
+        #   workspace = spaces.School.id;
+        #   container = containers.School.id;
+        #   url = "https://clemson.instructure.com/calendar";
+        #   isEssential = true;
+        #   position = 104;
+        # };
+      };
+    in {
+      containersForce = true;
+      spacesForce = true;
+      pinsForce = true;
+      inherit containers spaces pins;
+
+      # This is awesome :)
+      # https://nur.nix-community.org/repos/rycee/
+      extensions.packages = with firefox-addons.packages.${pkgs.stdenv.hostPlatform.system}; [
+        ublock-origin
+        proton-pass
+        istilldontcareaboutcookies
+      ];
+    };
   };
 
   programs.firefox = {

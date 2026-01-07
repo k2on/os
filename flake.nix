@@ -4,6 +4,8 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-25.11";
 
+    nixpkgs-old.url = "github:nixos/nixpkgs?ref=nixos-25.05";
+
     unstable.url = "github:nixos/nixpkgs?ref=nixos-unstable";
 
     nixos-apple-silicon.url =
@@ -41,7 +43,14 @@
       inputs.nixpkgs.follows = "unstable";
     };
 
+    firefox-addons = {
+      url = "gitlab:rycee/nur-expressions?dir=pkgs/firefox-addons";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     apple-fonts.url= "github:Lyndeno/apple-fonts.nix";
+
+    proton-pass-cli.url = "github:yuxqiu/proton-pass-cli-nix";
 
     plasma-manager = {
       url = "github:nix-community/plasma-manager";
@@ -51,7 +60,7 @@
   };
 
   outputs = { self, nixpkgs, unstable, nixos-apple-silicon, home-manager
-    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, zen-browser, apple-fonts, ... }:
+    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, zen-browser, apple-fonts, nixpkgs-old, proton-pass-cli, firefox-addons, ... }:
     let
       forAllSystems = function:
         nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed
@@ -108,10 +117,11 @@
         max = let
           system = "aarch64-linux";
           pkgs-unstable = import unstable { inherit system; };
+          pkgs-old = import nixpkgs-old { inherit system; };
           secrets = import ./secrets;
         in nixpkgs.lib.nixosSystem {
           inherit system;
-          specialArgs = { inherit pkgs-unstable secrets zen-browser apple-fonts; };
+          specialArgs = { inherit pkgs-unstable secrets zen-browser apple-fonts pkgs-old proton-pass-cli; };
           modules = [
             ./host/max/default.nix
             nixos-apple-silicon.nixosModules.apple-silicon-support
@@ -120,7 +130,7 @@
             {
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
-              home-manager.extraSpecialArgs = { inherit secrets zen-browser; };
+              home-manager.extraSpecialArgs = { inherit secrets zen-browser firefox-addons; };
               home-manager.users.max = { config, pkgs, lib, ... }: {
                 imports = [
                   sops-nix.homeManagerModules.sops

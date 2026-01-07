@@ -29,6 +29,7 @@
     settings = {
       "$terminal" = "${pkgs.uwsm}/bin/uwsm-app -- ${pkgs.alacritty}/bin/alacritty";
       "$fileManager" = "${pkgs.uwsm}/bin/uwsm-app -- ${pkgs.pcmanfm}/bin/pcmanfm";
+      "$browser" = "${pkgs.uwsm}/bin/uwsm-app -- zen-beta";
       "$menu" = "${pkgs.walker}/bin/walker";
 
       monitor = [
@@ -184,6 +185,7 @@
         "$mainMod, W, killactive,"
         # bind = $mainMod, M, exit,
         "$mainMod, E, exec, $fileManager"
+        "$mainMod, B, exec, $browser"
         # "$mainMod, V, togglefloating,"
         "$mainMod, space, exec, $menu"
         "$mainMod, P, pseudo, # dwindle"

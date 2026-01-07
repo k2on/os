@@ -24,13 +24,6 @@
         owner = config.users.users.wakapi.name;
       };
 
-      "elytra-backend-env" = {
-        owner = config.users.users.backend.name;
-      };
-      "elytra-frontend-env" = {
-        owner = config.users.users.elytra-web.name;
-      };
-
       "money-env" = {
         owner = config.users.users.money.name;
       };

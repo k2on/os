@@ -42,7 +42,6 @@
     enableCompletion = true;
     autosuggestion = {
       enable = true;
-      highlight = "fg=#bbbbbb";
     };
     syntaxHighlighting.enable = true;
     dotDir = "${config.home.homeDirectory}/.config/zsh";
@@ -60,6 +59,18 @@
 
       zle -N fzf-project
       bindkey '^G' fzf-project
+
+      fzf-files() {
+        selected=$(rg --files | fzf)
+        if [[ -n $selected ]]; then
+          xargs $EDITOR $selected
+          zle reset-prompt
+        fi
+        zle redisplay
+      }
+
+      zle -N fzf-files
+      bindkey -M viins '^F' fzf-files
     '';
 
     shellAliases = {
@@ -71,7 +82,9 @@
       p = "pnpm";
       g = "pnpm run build && ~/dev/personal/genesis/packages/genesis/dist/bin.js";
 
-      tt = "tt --theme one-light -n 10";
+      ns = "nix-shell --run zsh -p";
+
+      tt = "tt -notheme -n 10";
 
       bible = "nvim ~/bible.txt -R";
       notes = "nvim ~/notes";
