@@ -61,16 +61,22 @@
       bindkey '^G' fzf-project
 
       fzf-files() {
-        selected=$(rg --files | fzf)
+        local selected
+        selected=$(${pkgs.ripgrep}/bin/rg --files | ${pkgs.fzf}/bin/fzf) || return
+
         if [[ -n $selected ]]; then
-          xargs $EDITOR $selected
-          zle reset-prompt
+          BUFFER="v $selected"
+          print -s -- "$BUFFER"
+          zle accept-line
         fi
-        zle redisplay
       }
 
       zle -N fzf-files
-      bindkey -M viins '^F' fzf-files
+      bindkey '^V' fzf-files
+    '';
+
+    envExtra = ''
+      export PER_DIRECTORY_HISTORY_TOGGLE="^H"
     '';
 
     shellAliases = {
@@ -99,6 +105,15 @@
         name = "vi-mode";
         src = pkgs.zsh-vi-mode;
         file = "share/zsh-vi-mode/zsh-vi-mode.plugin.zsh";
+      }
+      {
+        name = "per-directory-history";
+        src = pkgs.fetchFromGitHub {
+          owner = "jimhester";
+          repo = "per-directory-history";
+          rev = "95f06973e9f2ff0ff75f3cebd0a2ee5485e27834";
+          sha256 = "sha256-EV9QPBndwAWzdOcghDXrIIgP0oagVMOTyXzoyt8tXRo=";
+        };
       }
     ];
   };

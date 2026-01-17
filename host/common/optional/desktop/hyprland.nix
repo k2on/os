@@ -1,7 +1,6 @@
 { ... }:
 {
   imports = [
-    ./hyprland/font.nix
     ./hyprland/cursor.nix
     ./hyprland/packages.nix
     ./hyprland/greeter.nix

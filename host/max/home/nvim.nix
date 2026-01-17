@@ -20,6 +20,9 @@
       cursorline = true;
       number = true;
 
+      tabstop = 2;
+      expandtab = true;
+
       signcolumn = "yes";
 
       updatetime = 250;
@@ -107,7 +110,6 @@
       gitsigns.enable = true;
       highlight-colors.enable = true;
       todo-comments.enable = true;
-      # smear-cursor.enable = true;
       goyo.enable = true;
 
       treesitter = {
@@ -241,6 +243,7 @@
       neo-tree = {
         enable = true;
         settings = {
+          window.width = 25;
           filesystem = {
             filtered_items = {
               visible = true;
@@ -273,15 +276,6 @@
     extraPlugins = with pkgs.vimPlugins; [
       stay-centered-nvim
       mini-ai
-      (pkgs.vimUtils.buildVimPlugin {
-         name = "neominimap";
-         src = pkgs.fetchFromGitHub {
-             owner = "Isrothy";
-             repo = "neominimap.nvim";
-             rev = "c827a43e5cad146e007c8b1f2a9744798d029e6f";
-             hash = "sha256-MQxeYIm0QLS2HROvGLD6Rc21Hqx3USF9OXcw1shNTWg=";
-         };
-       })
     ];
 
   };

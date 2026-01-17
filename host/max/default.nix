@@ -8,6 +8,8 @@
     ./sops.nix
 
     ../common/optional/desktop/hyprland.nix
+    # ../common/optional/desktop/cosmic.nix
+    ../common/optional/font.nix
 
     ../common/optional/yubikey.nix
 
@@ -32,6 +34,15 @@
       setupAsahiSound = true;
     };
   };
+
+  hardware.opengl = {
+    enable = true;
+    extraPackages = with pkgs; [
+      mesa.opencl
+    ];
+  };
+
+  services.upower.enable = true;
 
   networking.networkmanager.enable = true;
 
@@ -61,11 +72,12 @@
     just
 
     # mpc
-    gurk-rs
     libreoffice-qt
     # ncmpcpp
 
     pkgs-unstable.signal-desktop-bin
+    pkgs-unstable.gurk-rs
+
     gnupg
 
     (pass.withExtensions (exts: [ exts.pass-otp ]))
@@ -111,6 +123,14 @@
         url=$(echo "$list" | awk -v name="$choice" '$1==name {print $2}')
         ${mpg123}/bin/mpg123 "$url"
       fi
+    '')
+
+    (pkgs.writeShellScriptBin "battery-graph" ''
+      ${pkgs.coreutils}/bin/tail -n 20 /var/lib/upower/history-charge-bq40z651-69-F8Y3262H468Q1LTA1.dat | ${pkgs.coreutils}/bin/cut -f1,2 | RUBYOPT='-W0' ${pkgs.youplot}/bin/uplot line -w 70
+    '')
+
+    (pkgs.writeShellScriptBin "ocr-clip" ''
+      ${pkgs.grimblast}/bin/grimblast -f save area - | ${pkgs.tesseract}/bin/tesseract stdin stdout | ${pkgs.wl-clipboard}/bin/wl-copy
     '')
   ];
 

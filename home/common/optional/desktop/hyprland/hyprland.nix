@@ -59,7 +59,7 @@
         "col.inactive_border" = "rgba(595959aa)";
 
         # Set to true enable resizing windows by clicking and dragging on borders and gaps
-        resize_on_border = false;
+        resize_on_border = true;
 
         # Please see https://wiki.hyprland.org/Configuring/Tearing/ before you turn this on
         allow_tearing = false;
@@ -192,13 +192,19 @@
         "$mainMod, F, fullscreen"
         # bind = $mainMod, J, togglesplit, # dwindle
 
-        "$mainMod SHIFT, L, exec, ${scripts.lock}"
+        "$mainMod SHIFT, Q, exec, ${scripts.lock}"
 
         # Move focus with mainMod + arrow keys
         "$mainMod, H, movefocus, l"
         "$mainMod, L, movefocus, r"
         "$mainMod, K, movefocus, u"
         "$mainMod, J, movefocus, d"
+
+        # Swap window with mainMod + shift + arrow keys
+        "$mainMod SHIFT, H, swapwindow, l"
+        "$mainMod SHIFT, L, swapwindow, r"
+        "$mainMod SHIFT, K, swapwindow, u"
+        "$mainMod SHIFT, J, swapwindow, d"
 
         # Switch workspaces with mainMod + [0-9]
         "$mainMod, 1, workspace, 1"

@@ -13,6 +13,12 @@ rebuild:
   git add .
   sudo nixos-rebuild switch --flake '.?submodules=1#max'
 
+rebuild-boot:
+  just add-secrets
+
+  git add .
+  sudo nixos-rebuild boot --flake '.?submodules=1#max'
+
 rebuild-offline:
   just add-secrets
 
