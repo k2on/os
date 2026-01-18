@@ -1,33 +1,34 @@
-{ config, pkgs, firefox-addons, ... }:
+{ config, zen-browser, system, pkgs, firefox-addons, ... }:
 {
-  xdg.mimeApps = {
+  xdg.mimeApps = let
+    value = let
+      browser = zen-browser.packages.${system}.beta; # or twilight
+    in
+      browser.meta.desktopFileName;
+
+    associations = builtins.listToAttrs (map (name: {
+        inherit name value;
+      }) [
+        "application/x-extension-shtml"
+        "application/x-extension-xhtml"
+        "application/x-extension-html"
+        "application/x-extension-xht"
+        "application/x-extension-htm"
+        "x-scheme-handler/unknown"
+        "x-scheme-handler/mailto"
+        "x-scheme-handler/chrome"
+        "x-scheme-handler/about"
+        "x-scheme-handler/https"
+        "x-scheme-handler/http"
+        "application/xhtml+xml"
+        "application/json"
+        "text/plain"
+        "text/html"
+      ]);
+  in {
     enable = true;
-
-    defaultApplications = {
-      "x-scheme-handler/http" = "zen-beta.desktop";
-      "x-scheme-handler/https" = "zen-beta.desktop";
-      "x-scheme-handler/chrome" = "zen-beta.desktop";
-      "text/html" = "zen-beta.desktop";
-      "application/x-extension-htm" = "zen-beta.desktop";
-      "application/x-extension-html" = "zen-beta.desktop";
-      "application/x-extension-shtml" = "zen-beta.desktop";
-      "application/xhtml+xml" = "zen-beta.desktop";
-      "application/x-extension-xhtml" = "zen-beta.desktop";
-      "application/x-extension-xht" = "zen-beta.desktop";
-    };
-
-    associations.added = {
-      "x-scheme-handler/http" = [ "zen-beta.desktop" ];
-      "x-scheme-handler/https" = [ "zen-beta.desktop" ];
-      "x-scheme-handler/chrome" = [ "zen-beta.desktop" ];
-      "text/html" = [ "zen-beta.desktop" ];
-      "application/x-extension-htm" = [ "zen-beta.desktop" ];
-      "application/x-extension-html" = [ "zen-beta.desktop" ];
-      "application/x-extension-shtml" = [ "zen-beta.desktop" ];
-      "application/xhtml+xml" = [ "zen-beta.desktop" ];
-      "application/x-extension-xhtml" = [ "zen-beta.desktop" ];
-      "application/x-extension-xht" = [ "zen-beta.desktop" ];
-    };
+    associations.added = associations;
+    defaultApplications = associations;
   };
 
   programs.zen-browser = {
@@ -137,62 +138,6 @@
         proton-pass
         istilldontcareaboutcookies
       ];
-    };
-  };
-
-  programs.firefox = {
-    enable = true;
-    profiles = {
-      personal = {
-        id = 0;
-        name = "1. Personal";
-        isDefault = true;
-        settings = {
-          "browser.search.defaultenginename" = "ddg";
-          "browser.search.order.1" = "ddg";
-
-          "toolkit.legacyUserProfileCustomizations.stylesheets" = true;
-        };
-        search = {
-          force = true;
-          default = "ddg";
-          order = [ "ddg" "google" ];
-        };
-        userChrome = builtins.readFile ./browser/userChrome.css;
-      };
-      work = {
-        id = 1;
-        name = "2. Work";
-        settings = {
-          "browser.search.defaultenginename" = "ddg";
-          "browser.search.order.1" = "ddg";
-
-          "toolkit.legacyUserProfileCustomizations.stylesheets" = true;
-        };
-        search = {
-          force = true;
-          default = "ddg";
-          order = [ "ddg" "google" ];
-        };
-        userChrome = builtins.readFile ./browser/userChrome.css;
-      };
-      school = {
-        id = 2;
-        name = "3. School";
-        settings = {
-          "browser.search.defaultenginename" = "ddg";
-          "browser.search.order.1" = "ddg";
-
-          "toolkit.legacyUserProfileCustomizations.stylesheets" = true;
-        };
-        search = {
-          force = true;
-          default = "ddg";
-          order = [ "ddg" "google" ];
-        };
-        userChrome = builtins.readFile ./browser/userChrome.css;
-      };
-
     };
   };
 }

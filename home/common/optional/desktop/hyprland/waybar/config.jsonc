@@ -8,6 +8,7 @@
   "modules-center": ["clock", "custom/update", "custom/screenrecording-indicator"],
   "modules-right": [
     "group/tray-expander",
+    "custom/countdown",
     "bluetooth",
     "network",
     "pulseaudio",
@@ -42,6 +43,11 @@
     "on-click": "omarchy-menu",
     "on-click-right": "xdg-terminal-exec",
     "tooltip-format": ""
+  },
+  "custom/countdown": {
+    "exec": "echo $(( ($(date +%s) - $(date -d 'June 6, 2026' +%s)) / 86400 ))",
+    "format": "{}  ",
+    "interval": 3600
   },
   "clock": {
     "format": "{:L%A %I:%M}",

@@ -73,6 +73,10 @@
 
       zle -N fzf-files
       bindkey '^V' fzf-files
+
+      open() {
+        xdg-open "$@" >/dev/null 2>&1 &
+      }
     '';
 
     envExtra = ''
@@ -80,7 +84,7 @@
     '';
 
     shellAliases = {
-      ll = "ls -la --color";
+      ll = "ls -alh";
       v = "nvim";
       vi = "nvim";
       vim = "nvim";

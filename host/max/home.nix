@@ -7,6 +7,7 @@
     ./home/git.nix
 
     ./home/browser.nix
+    ./home/image-viewer.nix
 
     ../../home/common/optional/desktop/hyprland.nix
 

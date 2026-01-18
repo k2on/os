@@ -1,5 +1,9 @@
 { pkgs, scripts, ... }:
 {
+  imports = [
+    ./hyprland/performance.nix
+  ];
+
   wayland.windowManager.hyprland = {
     enable = true;
     systemd.enable = false;
@@ -27,6 +31,10 @@
     ];
 
     settings = {
+      source = [
+        "~/.config/koonos/current/performance/hyprland.conf"
+      ];
+
       "$terminal" = "${pkgs.uwsm}/bin/uwsm-app -- ${pkgs.alacritty}/bin/alacritty";
       "$fileManager" = "${pkgs.uwsm}/bin/uwsm-app -- ${pkgs.pcmanfm}/bin/pcmanfm";
       "$browser" = "${pkgs.uwsm}/bin/uwsm-app -- zen-beta";
@@ -76,7 +84,7 @@
         inactive_opacity = 1.0;
 
         shadow = {
-          enabled = true;
+          # enabled = false;
           range = 4;
           render_power = 3;
           color = "rgba(1a1a1aee)";
@@ -84,7 +92,7 @@
 
         # https://wiki.hyprland.org/Configuring/Variables/#blur
         blur = {
-          enabled = true;
+          # enabled = false;
           size = 3;
           passes = 1;
 
@@ -235,8 +243,8 @@
         "$mainMod SHIFT, S, movetoworkspace, special:magic"
 
         # Scroll through existing workspaces with mainMod + scroll
-        "$mainMod, mouse_down, workspace, e+1"
-        "$mainMod, mouse_up, workspace, e-1"
+        # "$mainMod, mouse_down, workspace, e+1"
+        # "$mainMod, mouse_up, workspace, e-1"
       ];
 
 

@@ -4,9 +4,9 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-25.11";
 
-    nixpkgs-old.url = "github:nixos/nixpkgs?ref=nixos-25.05";
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
-    unstable.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixos-unstable.url = "github:nixos/nixpkgs?ref=nixos-unstable";
 
     nixos-apple-silicon.url =
       "github:nix-community/nixos-apple-silicon?ref=release-2025-11-18";
@@ -31,16 +31,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    elytrarides = {
-      url = "github:k2on/elytrarides";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     zen-browser = {
       url = "github:0xc000022070/zen-browser-flake";
       # IMPORTANT: we're using "libgbm" and is only available in unstable so ensure
       # to have it up-to-date or simply don't specify the nixpkgs input
-      inputs.nixpkgs.follows = "unstable";
+      inputs.nixpkgs.follows = "nixos-unstable";
     };
 
     firefox-addons = {
@@ -52,15 +47,10 @@
 
     proton-pass-cli.url = "github:yuxqiu/proton-pass-cli-nix";
 
-    plasma-manager = {
-      url = "github:nix-community/plasma-manager";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.home-manager.follows = "home-manager";
-    };
   };
 
-  outputs = { self, nixpkgs, unstable, nixos-apple-silicon, home-manager
-    , plasma-manager, nixvim, sops-nix, terranix, elytrarides, zen-browser, apple-fonts, nixpkgs-old, proton-pass-cli, firefox-addons, ... }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, nixos-unstable, nixos-apple-silicon, home-manager
+    , nixvim, sops-nix, terranix, zen-browser, apple-fonts, proton-pass-cli, firefox-addons, ... }:
     let
       forAllSystems = function:
         nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed
@@ -71,7 +61,7 @@
       let
         system = "aarch64-linux";
 
-        pkgs = import unstable {
+        pkgs = import nixpkgs-unstable {
           inherit system;
           config = {
             allowUnfree = true;
@@ -116,12 +106,11 @@
       nixosConfigurations = {
         max = let
           system = "aarch64-linux";
-          pkgs-unstable = import unstable { inherit system; };
-          pkgs-old = import nixpkgs-old { inherit system; };
+          pkgs-unstable = import nixpkgs-unstable { inherit system; };
           secrets = import ./secrets;
         in nixpkgs.lib.nixosSystem {
           inherit system;
-          specialArgs = { inherit pkgs-unstable secrets zen-browser apple-fonts pkgs-old proton-pass-cli; };
+          specialArgs = { inherit pkgs-unstable secrets zen-browser apple-fonts proton-pass-cli; };
           modules = [
             ./host/max/default.nix
             nixos-apple-silicon.nixosModules.apple-silicon-support
@@ -130,12 +119,11 @@
             {
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
-              home-manager.extraSpecialArgs = { inherit secrets zen-browser firefox-addons; };
+              home-manager.extraSpecialArgs = { inherit secrets zen-browser firefox-addons system; };
               home-manager.users.max = { config, pkgs, lib, ... }: {
                 imports = [
                   sops-nix.homeManagerModules.sops
                   nixvim.homeModules.nixvim
-                  plasma-manager.homeManagerModules.plasma-manager
                   zen-browser.homeModules.beta
                   ./host/max/home.nix # Import your home.nix here
                 ];
@@ -147,9 +135,9 @@
         ark = let
           system = "x86_64-linux";
           secrets = import ./secrets;
-        in unstable.lib.nixosSystem {
+        in nixos-unstable.lib.nixosSystem {
           inherit system;
-          specialArgs = { inherit elytrarides secrets; };
+          specialArgs = { inherit secrets; };
           modules = [
             ./host/ark/default.nix 
             sops-nix.nixosModules.sops
