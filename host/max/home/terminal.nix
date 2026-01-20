@@ -48,6 +48,8 @@
     autocd = true;
 
     initContent = ''
+      zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+
       fzf-project() {
         selected=$(find ~/dev -mindepth 2 -maxdepth 2 | sed 's|/home/max/dev/||' | fzf --delimiter '/' --nth 2)
         if [[ -n $selected ]]; then

@@ -47,7 +47,7 @@
   "custom/countdown": {
     "exec": "echo $(( ($(date +%s) - $(date -d 'June 6, 2026' +%s)) / 86400 ))",
     "format": "{}  ",
-    "interval": 3600
+    "interval": 60
   },
   "clock": {
     "format": "{:L%A %I:%M}",

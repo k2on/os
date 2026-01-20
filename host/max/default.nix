@@ -8,18 +8,13 @@
     ./sops.nix
 
     ../common/optional/desktop/hyprland.nix
-    # ../common/optional/desktop/cosmic.nix
     ../common/optional/font.nix
-
     ../common/optional/yubikey.nix
-
     ../common/optional/browser.nix
-
-
     ../common/optional/locale.nix
     ../common/optional/email.nix
-
-    ./proton.nix
+    ../common/optional/proton.nix
+    ../common/optional/music.nix
   ];
 
   # Use the systemd-boot EFI boot loader.
@@ -71,9 +66,7 @@
     file
     just
 
-    # mpc
     libreoffice-qt
-    # ncmpcpp
 
     pkgs-unstable.signal-desktop-bin
     pkgs-unstable.gurk-rs
