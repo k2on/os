@@ -14,7 +14,6 @@
     ../common/optional/locale.nix
     ../common/optional/email.nix
     ../common/optional/proton.nix
-    ../common/optional/music.nix
   ];
 
   # Use the systemd-boot EFI boot loader.

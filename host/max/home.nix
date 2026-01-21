@@ -14,6 +14,7 @@
     ./home/nvim.nix
     ./home/terminal.nix
     ./home/zathura.nix
+    ./home/music.nix
   ];
 
   gtk = {

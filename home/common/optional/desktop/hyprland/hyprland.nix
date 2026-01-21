@@ -1,4 +1,4 @@
-{ pkgs, scripts, ... }:
+{ pkgs, pkgs-unstable, scripts, ... }:
 {
   imports = [
     ./hyprland/performance.nix
@@ -194,9 +194,13 @@
         # bind = $mainMod, M, exit,
         "$mainMod, E, exec, $fileManager"
         "$mainMod, B, exec, $browser"
+
+        "$mainMod, M, exec, $terminal -e ${pkgs-unstable.gurk-rs}/bin/gurk"
+        "$mainMod, P, exec, $terminal -e ${pkgs.ncmpcpp}/bin/ncmpcpp"
+
         # "$mainMod, V, togglefloating,"
         "$mainMod, space, exec, $menu"
-        "$mainMod, P, pseudo, # dwindle"
+        # "$mainMod, P, pseudo, # dwindle"
         "$mainMod, F, fullscreen"
         # bind = $mainMod, J, togglesplit, # dwindle
 
@@ -213,6 +217,9 @@
         "$mainMod SHIFT, L, swapwindow, r"
         "$mainMod SHIFT, K, swapwindow, u"
         "$mainMod SHIFT, J, swapwindow, d"
+
+        "$mainMod ALT, H, resizeactive, -40 0"
+        "$mainMod ALT, L, resizeactive, 40 0"
 
         # Switch workspaces with mainMod + [0-9]
         "$mainMod, 1, workspace, 1"

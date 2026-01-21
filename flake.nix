@@ -119,7 +119,7 @@
             {
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
-              home-manager.extraSpecialArgs = { inherit secrets zen-browser firefox-addons system; };
+              home-manager.extraSpecialArgs = { inherit secrets zen-browser firefox-addons system pkgs-unstable; };
               home-manager.users.max = { config, pkgs, lib, ... }: {
                 imports = [
                   sops-nix.homeManagerModules.sops
