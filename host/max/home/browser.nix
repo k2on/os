@@ -51,6 +51,15 @@
         Cryptomining = true;
         Fingerprinting = true;
       };
+
+      ExtensionSettings = {
+        # The default behaviour of ctrl+click, shift+click, cmd+click (on macOS) and middle-click when clicking on links is to open the link in a new tab (or new window in the case of shift).
+        # This behaviour is sometimes broken by silly developers.
+        "{18b670e2-67df-4b26-b9b0-34835d1f062a}" = {
+          install_url = "https://addons.mozilla.org/firefox/downloads/latest/link-fixer/latest.xpi";
+          installation_mode = "force_installed";
+        };
+      };
     };
 
     profiles.default = let

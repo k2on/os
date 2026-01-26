@@ -4,6 +4,7 @@
       sansSerif = [ "SF Pro" ];
       serif = [ "SF Pro" ];
       monospace = [ "JetBrainsMono Nerd Font" ];
+      emoji = [ "Apple Color Emoji" ];
     };
 
     packages = with pkgs; [

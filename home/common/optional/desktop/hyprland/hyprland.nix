@@ -39,6 +39,7 @@
       "$fileManager" = "${pkgs.uwsm}/bin/uwsm-app -- ${pkgs.pcmanfm}/bin/pcmanfm";
       "$browser" = "${pkgs.uwsm}/bin/uwsm-app -- zen-beta";
       "$menu" = "${pkgs.walker}/bin/walker";
+      "$player" = "${pkgs.playerctl}/bin/playerctl --player=mpd,%any";
 
       monitor = [
         "eDP-1,preferred,1721x1080,auto"
@@ -197,6 +198,7 @@
 
         "$mainMod, M, exec, $terminal -e ${pkgs-unstable.gurk-rs}/bin/gurk"
         "$mainMod, P, exec, $terminal -e ${pkgs.ncmpcpp}/bin/ncmpcpp"
+        "$mainMod SHIFT, B, exec, $terminal -e \"$EDITOR\" /home/max/bible.txt -R"
 
         # "$mainMod, V, togglefloating,"
         "$mainMod, space, exec, $menu"
@@ -279,10 +281,10 @@
 
       bindl = [
         # Requires playerctl
-        ", XF86AudioNext, exec, playerctl next"
-        ", XF86AudioPause, exec, playerctl play-pause"
-        ", XF86AudioPlay, exec, playerctl play-pause"
-        ", XF86AudioPrev, exec, playerctl previous"
+        ", XF86AudioNext, exec, $player next"
+        ", XF86AudioPause, exec, $player play-pause"
+        ", XF86AudioPlay, exec, $player play-pause"
+        ", XF86AudioPrev, exec, $player previous"
       ];
 
       bindd = [
