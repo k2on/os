@@ -8,12 +8,24 @@
     enable = true;
     musicDirectory = "/home/max/media/music";
 
+    # extraConfig = ''
+    #   audio_output {
+    #     type "pipewire"
+    #     name "pipewire"
+    #   }
+    # '';
+
+
     extraConfig = ''
       audio_output {
-        type "pipewire"
-        name "pipewire"
+        type "alsa"
+        name "My ALSA"
+        mixer_type		"hardware"
+        mixer_device	"default"
+        mixer_control	"PCM"
       }
     '';
+
   };
 
   services.mpd-mpris.enable = true;

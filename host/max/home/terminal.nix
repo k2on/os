@@ -84,6 +84,7 @@
 
     envExtra = ''
       export PER_DIRECTORY_HISTORY_TOGGLE="^H"
+      export HISTORY_BASE="$HOME/.local/share/directory_history"
     '';
 
     shellAliases = {

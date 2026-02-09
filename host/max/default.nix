@@ -6,6 +6,7 @@
     ./user.nix
     ./work.nix
     ./sops.nix
+    ./tailscale.nix
 
     ../common/optional/desktop/hyprland.nix
     ../common/optional/font.nix
@@ -45,8 +46,6 @@
     enable = true;
     powerOnBoot = true;
   };
-
-  services.tailscale.enable = true;
 
   environment.variables = {
     XDG_DATA_HOME = "/home/max/.local/share";

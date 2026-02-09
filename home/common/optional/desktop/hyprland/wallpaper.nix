@@ -1,15 +1,18 @@
 { ... }:
+let
+  wallpaper = builtins.toString ../../../../../assets/wallpaper.jpg;
+in
 {
   services.hyprpaper = {
     enable = true;
     settings = {
       spash = false;
 
-      preload = ["~/Downloads/wallpaper.png"];
+      preload = [ wallpaper ];
 
       wallpaper = [
-        "eDP-1,~/Downloads/wallpaper.png"
-        "HDMI-A-1,~/Downloads/wallpaper.png"
+        "eDP-1,${wallpaper}"
+        "HDMI-A-1,${wallpaper}"
       ];
     };
   };

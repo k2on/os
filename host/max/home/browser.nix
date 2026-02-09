@@ -52,6 +52,9 @@
         Fingerprinting = true;
       };
 
+
+      # ID's can be collected from this command:
+      # nix run github:tupakkatapa/mozid -- "https://addons.mozilla.org/en-US/firefox/addon/<example>/"
       ExtensionSettings = {
         # The default behaviour of ctrl+click, shift+click, cmd+click (on macOS) and middle-click when clicking on links is to open the link in a new tab (or new window in the case of shift).
         # This behaviour is sometimes broken by silly developers.
@@ -146,6 +149,8 @@
         ublock-origin
         proton-pass
         istilldontcareaboutcookies
+        better-canvas
+        darkreader
       ];
     };
   };

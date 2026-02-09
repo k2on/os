@@ -28,6 +28,7 @@
           platforms = platforms.linux;
         };
       })
+      hyprlandPlugins.hyprscrolling
     ];
 
     settings = {
@@ -39,7 +40,7 @@
       "$fileManager" = "${pkgs.uwsm}/bin/uwsm-app -- ${pkgs.pcmanfm}/bin/pcmanfm";
       "$browser" = "${pkgs.uwsm}/bin/uwsm-app -- zen-beta";
       "$menu" = "${pkgs.walker}/bin/walker";
-      "$player" = "${pkgs.playerctl}/bin/playerctl --player=mpd,%any";
+      "$player" = "${pkgs.playerctl}/bin/playerctl";
 
       monitor = [
         "eDP-1,preferred,1721x1080,auto"
@@ -73,7 +74,7 @@
         # Please see https://wiki.hyprland.org/Configuring/Tearing/ before you turn this on
         allow_tearing = false;
 
-        layout = "dwindle";
+        layout = "scrolling";
       };
 
       decoration = {
@@ -130,9 +131,9 @@
           "layersOut, 1, 1.5, linear, fade"
           "fadeLayersIn, 1, 1.79, almostLinear"
           "fadeLayersOut, 1, 1.39, almostLinear"
-          "workspaces, 1, 1.94, almostLinear, fade"
-          "workspacesIn, 1, 1.21, almostLinear, fade"
-          "workspacesOut, 1, 1.94, almostLinear, fade"
+          "workspaces, 0, 1.94, almostLinear, fade"
+          "workspacesIn, 0, 1.21, almostLinear, fade"
+          "workspacesOut, 0, 1.94, almostLinear, fade"
         ];
       };
 
@@ -199,6 +200,7 @@
         "$mainMod, M, exec, $terminal -e ${pkgs-unstable.gurk-rs}/bin/gurk"
         "$mainMod, P, exec, $terminal -e ${pkgs.ncmpcpp}/bin/ncmpcpp"
         "$mainMod SHIFT, B, exec, $terminal -e \"$EDITOR\" /home/max/bible.txt -R"
+        "$mainMod SHIFT, R, exec, ${pkgs.hyprshot}/bin/hyprshot -m region --clipboard-only"
 
         # "$mainMod, V, togglefloating,"
         "$mainMod, space, exec, $menu"
@@ -314,6 +316,9 @@
           fade_time_ms = 165.0;
 
           border_size = 1.0;
+        };
+        hyprscrolling = {
+          fullscreen_on_one_column = true;
         };
       };
     };
