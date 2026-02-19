@@ -17,12 +17,12 @@
       background = {
           monitor = "";
           color = "$color";
-          path = "~/Downloads/wallpaper.png";
+          # path = "~/Downloads/wallpaper.png";
           blur_passes = 3;
       };
 
       animations = {
-          enabled = false;
+          enabled = true;
       };
 
       input-field = {

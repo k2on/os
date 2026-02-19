@@ -55,13 +55,18 @@
       ];
 
       env = [
-        "XCURSOR_SIZE,20"
-        "XCURSOR_THEME,macOS"
+        "HYPRCURSOR_THEME,macOS"
+        "HYPRCURSOR_SIZE,20"
       ];
 
+      # env = [
+      #   "XCURSOR_SIZE,20"
+      #   "XCURSOR_THEME,macOS"
+      # ];
+
       general = {
-        gaps_in = 5;
-        gaps_out = 20;
+        gaps_in = 0;
+        gaps_out = 0;
 
         border_size = 2;
 
@@ -222,8 +227,8 @@
         "$mainMod SHIFT, K, swapwindow, u"
         "$mainMod SHIFT, J, swapwindow, d"
 
-        "$mainMod ALT, H, resizeactive, -40 0"
-        "$mainMod ALT, L, resizeactive, 40 0"
+        # "$mainMod ALT, H, resizeactive, -40 0"
+        # "$mainMod ALT, L, resizeactive, 40 0"
 
         # Switch workspaces with mainMod + [0-9]
         "$mainMod, 1, workspace, 1"
@@ -256,8 +261,15 @@
         # Scroll through existing workspaces with mainMod + scroll
         # "$mainMod, mouse_down, workspace, e+1"
         # "$mainMod, mouse_up, workspace, e-1"
+
+        ", Prior, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x40"
+        ", Next, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x41"
       ];
 
+      bindr = [
+        ", Prior, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x80"
+        ", Next, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x81"
+      ];
 
       # Move/resize windows with mainMod + LMB/RMB and dragging
       bindm = [
@@ -295,6 +307,16 @@
         "$mainMod, X, Universal cut, sendshortcut, CTRL, X,"
         "$mainMod, A, Universal select all, sendshortcut, CTRL, A,"
         "$mainMod, T, Universal new tab, sendshortcut, CTRL, T,"
+
+        "$mainMod ALT, H, Universal left, sendshortcut, , Left,"
+        "$mainMod ALT, J, Universal down, sendshortcut, , Down,"
+        "$mainMod ALT, K, Universal up, sendshortcut, , Up,"
+        "$mainMod ALT, L, Universal right, sendshortcut, , Right,"
+
+        "$mainMod SHIFT ALT, H, Universal left, sendshortcut, SHIFT, Left,"
+        "$mainMod SHIFT ALT, J, Universal down, sendshortcut, SHIFT, Down,"
+        "$mainMod SHIFT ALT, K, Universal up, sendshortcut, SHIFT, Up,"
+        "$mainMod SHIFT ALT, L, Universal right, sendshortcut, SHIFT, Right,"
       ];
 
       windowrule = [

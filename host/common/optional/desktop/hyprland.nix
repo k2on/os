@@ -12,4 +12,6 @@
     withUWSM = true;
     xwayland.enable = true;
   };
+
+  programs.ydotool.enable = true;
 }

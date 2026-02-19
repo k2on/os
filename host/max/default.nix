@@ -39,8 +39,14 @@
   };
 
   services.upower.enable = true;
+  services.logind.settings.Login.HandlePowerKey = "ignore";
 
-  networking.networkmanager.enable = true;
+  networking.networkmanager = {
+    enable = true;
+    plugins = with pkgs; [
+      networkmanager-openconnect
+    ];
+  };
 
   hardware.bluetooth = {
     enable = true;

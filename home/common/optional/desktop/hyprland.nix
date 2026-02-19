@@ -8,6 +8,7 @@ in
     (import ./hyprland/wallpaper.nix { inherit pkgs scripts; })
     (import ./hyprland/hyprlock.nix { inherit pkgs scripts; })
     (import ./hyprland/hypridle.nix { inherit pkgs scripts; })
+    ./hyprland/notifications.nix
   ];
 
   home.file.".config/waybar/config.jsonc".source = ./hyprland/waybar/config.jsonc;

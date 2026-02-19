@@ -6,7 +6,7 @@
   users.users.max = {
     isNormalUser = true;
     hashedPasswordFile = config.sops.secrets.max-password.path;
-    extraGroups = [ "wheel" "networkmanager" "video" "kvm" "docker" ];
+    extraGroups = [ "wheel" "networkmanager" "video" "kvm" "docker" "ydotool" ];
     packages = with pkgs; [ tree ];
     shell = pkgs.zsh;
   };
