@@ -20,6 +20,10 @@
       "tunnel-credentials" = {};
       "admin-password" = {};
 
+      "pocket-id-encryption-key" = {
+        owner = config.services.pocket-id.user;
+      };
+
       "waka-password-salt" = {
         owner = config.users.users.wakapi.name;
       };

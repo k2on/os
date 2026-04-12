@@ -73,7 +73,7 @@
 
     libreoffice-qt
 
-    pkgs-unstable.signal-desktop-bin
+    pkgs-unstable.signal-desktop
     pkgs-unstable.gurk-rs
 
     gnupg
@@ -84,6 +84,8 @@
     pinentry-qt
 
     fzf
+    zip
+    jq
     ffmpeg
     ripgrep
     unzip

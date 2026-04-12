@@ -9,6 +9,11 @@
       UI_CONFIG_DISABLED = true;
 
       APP_NAME = config.oauth.name;
+
+    };
+
+    credentials = {
+      ENCRYPTION_KEY = config.sops.secrets."pocket-id-encryption-key".path;
     };
   };
 }

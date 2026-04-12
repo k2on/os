@@ -128,19 +128,19 @@
         enable = true;
 
         servers = {
-          ts_ls.enable = true;
+          tsgo.enable = true;
+          tailwindcss.enable = false;
+          biome.enable = false;
           rust_analyzer = {
             enable = true;
             installCargo = true;
             installRustc = true;
           };
           clangd.enable = true;
-          tailwindcss.enable = true;
           phpactor.enable = true;
           pylsp.enable = true;
           pyright.enable = true;
           nixd.enable = true;
-          biome.enable = true;
         };
 
         keymaps = {

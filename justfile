@@ -29,7 +29,7 @@ rebuild-ark:
   just add-secrets
 
   git add .
-  nixos-rebuild --flake '.?submodules=1#ark' --build-host admin@100.98.252.15 --target-host admin@100.98.252.15 --use-remote-sudo --fast switch
+  nixos-rebuild --flake '.?submodules=1#ark' --build-host admin@192.168.1.192 --target-host admin@192.168.1.192 --use-remote-sudo --fast switch
 
 push-secrets:
   just add-secrets
