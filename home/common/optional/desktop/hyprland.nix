@@ -11,15 +11,8 @@ in
     ./hyprland/notifications.nix
   ];
 
-  home.file.".config/waybar/config.jsonc".source = ./hyprland/waybar/config.jsonc;
-  home.file.".config/waybar/style.css".source = ./hyprland/waybar/style.css;
 
-  services.swayosd = {
-    enable = true;
-  };
 
-  home.file.".config/swayosd/style.css".source = ./hyprland/swayosd/style.css;
 
-  home.file.".config/walker/config.toml".source = ./hyprland/walker/config.toml;
 }
 

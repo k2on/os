@@ -11,19 +11,19 @@ rebuild:
   just add-secrets
 
   git add .
-  sudo nixos-rebuild switch --flake '.?submodules=1#max'
+  sudo nixos-rebuild switch --flake '.?submodules=1#koonMax'
 
 rebuild-boot:
   just add-secrets
 
   git add .
-  sudo nixos-rebuild boot --flake '.?submodules=1#max'
+  sudo nixos-rebuild boot --flake '.?submodules=1#koonMax'
 
 rebuild-offline:
   just add-secrets
 
   git add .
-  sudo nixos-rebuild switch --flake '.?submodules=1#max' --offline
+  sudo nixos-rebuild switch --flake '.?submodules=1#koonMax' --offline
 
 rebuild-ark:
   just add-secrets

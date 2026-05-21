@@ -15,7 +15,6 @@
     ../common/optional/locale.nix
     ../common/optional/email.nix
     ../common/optional/proton.nix
-    ../common/optional/syncthing.nix
   ];
 
   # Use the systemd-boot EFI boot loader.
