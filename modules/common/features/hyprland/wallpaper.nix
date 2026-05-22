@@ -1,7 +1,7 @@
 { self, ... }: {
   flake.homeModules.commonFeatureWallpaper = { ... }:
     let
-      wallpaper = builtins.toString "${self}/assets/wallpaper2.jpg";
+      wallpaper = builtins.toString "${self}/assets/wallpaper.jpg";
     in {
     services.hyprpaper = {
       enable = true;
