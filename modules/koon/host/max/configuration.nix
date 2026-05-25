@@ -5,6 +5,8 @@
 
       self.nixosModules.commonUnstablePkgsOverlay
 
+      self.nixosModules.commonFeatureLaptop
+
       self.nixosModules.commonFeatureEmail
       self.nixosModules.commonFeatureFont
       self.nixosModules.commonFeatureLocale
@@ -38,9 +40,6 @@
         ];
       };
     };
-
-    services.upower.enable = true;
-    services.logind.settings.Login.HandlePowerKey = "ignore";
 
     networking.networkmanager = {
       enable = true;
@@ -143,8 +142,6 @@
       enableSSHSupport = true;
     };
 
-
-    time.timeZone = "America/New_York";
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
     system.stateVersion = "25.05";
