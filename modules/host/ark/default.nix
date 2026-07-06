@@ -9,6 +9,7 @@
       service-auth
       service-git
       service-home
+      # service-id
       service-jellyfin
       service-photos
       service-radicale
@@ -22,6 +23,8 @@
         inputs.sops-nix.nixosModules.sops
         config.flake.nixosModules.koonArkUser
         config.flake.nixosModules.koonArkSops
+        config.flake.nixosModules.acme
+        config.flake.nixosModules.kanidm
       ];
 
       # Use the systemd-boot EFI boot loader.
@@ -46,7 +49,7 @@
 
       services.openssh.enable = true;
 
-      networking.firewall.allowedTCPPorts = [ 8123 22 ];
+      networking.firewall.allowedTCPPorts = [ 8123 22 443 ];
 
       time.timeZone = "America/Chicago";
       nix.settings.experimental-features = [ "nix-command" "flakes" ];

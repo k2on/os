@@ -1,5 +1,5 @@
 { ... }: {
-  ark.services.home = { pkgs, ... }: {
+  ark.services.home = { pkgs, service, ... }: {
     virtualisation.oci-containers = let
       hass_config = pkgs.writeText "configuration.yaml" ''
         # Discovery
@@ -10,6 +10,7 @@
         # Web Server configuration
         http:
           server_host: 127.0.0.1
+          server_port: ${toString service.port}
           use_x_forwarded_for: true
           trusted_proxies: 127.0.0.1
         sonos:

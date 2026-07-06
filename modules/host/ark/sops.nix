@@ -12,6 +12,8 @@
         "tunnel-credentials" = {};
         "admin-password" = {};
 
+        "cloudflare-api-key" = {};
+
         "pocket-id-encryption-key" = {
           owner = config.services.pocket-id.user;
         };

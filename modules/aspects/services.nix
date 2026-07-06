@@ -27,7 +27,7 @@
 # so each host's ports come from only the services it includes.
 { lib, config, ... }:
 let
-  portBase = 3000;
+  portBase = 31600;
 
   # Accept both definition forms; always work with { port?, domain?, make }.
   normalize = spec:
@@ -51,9 +51,9 @@ let
       autoNames = lib.sort lib.lessThan
         (lib.attrNames (lib.filterAttrs (_: s: (s.port or null) == null) services));
       autoFor = name:
-        portBase + lib.lists.findFirstIndex (n: n == name)
+        portBase + (10 * lib.lists.findFirstIndex (n: n == name)
           (throw "ark: unregistered service '${name}'")
-          autoNames;
+          autoNames);
     in
     lib.mapAttrs
       (name: s: if (s.port or null) != null then s.port else autoFor name)
