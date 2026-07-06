@@ -29,14 +29,14 @@ rebuild-ark:
   just add-secrets
 
   git add .
-  nixos-rebuild --flake '.?submodules=1#koonArk' --build-host ark --target-host ark --use-remote-sudo --fast switch
+  nixos-rebuild --flake '.?submodules=1#ark' --build-host ark --target-host ark --use-remote-sudo --fast switch
 
 
 rebuild-ark-boot:
   just add-secrets
 
   git add .
-  nixos-rebuild --flake '.?submodules=1#koonArk' --build-host ark --target-host ark --use-remote-sudo --fast boot
+  nixos-rebuild --flake '.?submodules=1#ark' --build-host ark --target-host ark --use-remote-sudo --fast boot
 
 push-secrets:
   just add-secrets
