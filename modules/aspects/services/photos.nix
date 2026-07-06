@@ -1,8 +1,8 @@
 { ... }: {
-  flake.nixosModules.koonArkServicePhotos = { config, lib, pkgs, ... }:
-    let 
-      oauthName = "KoonFamily";
-    in {
+  ark.services.photos = { config, lib, pkgs, service, ... }: 
+  let 
+    oauthName = "KoonFamily";
+  in {
     sops = {
       templates = {
         "immich-config.json" = {
@@ -32,7 +32,7 @@
 
     services.immich = {
       enable = true;
-      port = 2283;
+      port = service.port;
       environment.IMMICH_CONFIG_FILE = config.sops.templates."immich-config.json".path;
       accelerationDevices = null;
 
@@ -118,6 +118,5 @@
           '';
         };
       in [ scripts.restore_immich_pg scripts.restore_immich ];
-
   };
 }

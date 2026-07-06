@@ -18,6 +18,8 @@
 
     security.pam.services.hyprlock = {};
 
+    programs.ydotool.enable = true;
+
     environment.systemPackages = with pkgs; [
       hyprpaper
       hypridle

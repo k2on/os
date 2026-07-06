@@ -1,8 +1,9 @@
 { ... }: {
-  flake.nixosModules.koonArkServiceGit = { config, lib, pkgs, ... }:
+  ark.services.git = { pkgs, lib, config, service, ... }:
     let
       oauthName = "KoonFamily";
-    in {
+    in 
+  {
     services.openssh = {
       enable = true;
 
@@ -34,7 +35,7 @@
         server = {
           DOMAIN = "git.koon.us";
           ROOT_URL = "https://git.koon.us";
-          HTTP_PORT = 3000;
+          HTTP_PORT = service.port;
           LANDING_PAGE = "/max";
           SSH_DOMAIN = "ssh.koon.us";
           SSH_PORT = 2222;
@@ -58,6 +59,7 @@
           DISABLE_ORGANIZATIONS_PAGE = true;
           DISABLE_CODE_PAGE = true;
         };
+        log.LEVEL = "Trace";
       };
     };
 

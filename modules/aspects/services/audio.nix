@@ -1,8 +1,8 @@
 { ... }: {
-  flake.nixosModules.koonArkServiceAudio = { ... }: {
+  ark.services.audio = { service, ... }: {
     services.audiobookshelf = {
       enable = true;
-      port = 8021;
+      port = service.port;
     };
   };
 }

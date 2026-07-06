@@ -1,10 +1,11 @@
 { ... }: {
-  flake.nixosModules.koonArkServiceHome = { pkgs, ... }: {
-
+  ark.services.home = { pkgs, ... }: {
     virtualisation.oci-containers = let
       hass_config = pkgs.writeText "configuration.yaml" ''
         # Discovery
         default_config:
+
+        automation: !include automations.yaml
 
         # Web Server configuration
         http:
@@ -26,13 +27,19 @@
           "${hass_config}:/config/configuration.yaml"
           # "/run/secrets/home-assistant:/config/secrets.yaml"
         ];
-        environment.TZ = "America/New_York";
+        environment.TZ = "America/Chicago";
         image =
           "ghcr.io/home-assistant/home-assistant:stable"; # Warning: if the tag does not change, the image will not be updated
-        extraOptions = [ "--network=host" ];
+        extraOptions = [
+          "--network=host"
+          # Zigbee dongle
+          "--device=/dev/ttyUSB0:/dev/ttyUSB0"
+        ];
       };
     };
 
-    networking.firewall.allowedTCPPorts = [ 1400 ];
+    networking.firewall.allowedTCPPorts = [
+      1400 # Sonos uses this port for real time communication
+    ];
   };
 }

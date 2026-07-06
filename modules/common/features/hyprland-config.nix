@@ -259,14 +259,14 @@
           # "$mainMod, mouse_down, workspace, e+1"
           # "$mainMod, mouse_up, workspace, e-1"
 
-          # ", Prior, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x40"
-          # ", Next, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x41"
+          ", Prior, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x40"
+          ", Next, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x41"
         ];
 
-        # bindr = [
-        #   ", Prior, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x80"
-        #   ", Next, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x81"
-        # ];
+        bindr = [
+          ", Prior, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x80"
+          ", Next, exec, ${pkgs.ydotool}/bin/ydotool click --next-delay 0 0x81"
+        ];
 
         # Move/resize windows with mainMod + LMB/RMB and dragging
         bindm = [

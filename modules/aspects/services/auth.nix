@@ -1,8 +1,9 @@
 { ... }: {
-  flake.nixosModules.koonArkServiceAuth = { config, ... }: {
+  ark.services.auth = { config, service, ... }: {
     services.pocket-id = {
       enable = true;
       settings = {
+        PORT = service.port;
         APP_URL = "https://auth.koon.us";
         TRUST_PROXY = true;
         ANALYTICS_DISABLED = true;

@@ -25,7 +25,7 @@
     boot.loader.systemd-boot.enable = true;
     boot.loader.efi.canTouchEfiVariables = false;
 
-    boot.m1n1CustomLogo = ../../../../assets/logo.png;
+    boot.m1n1CustomLogo = ../../../assets/logo.png;
 
     hardware = {
       asahi = {

@@ -3,13 +3,11 @@
 
     sops.secrets.max-password.neededForUsers = true;
 
-    users.mutableUsers = true;
+    users.mutableUsers = false;
 
     users.users.max = {
       isNormalUser = true;
-      # hashedPasswordFile = config.sops.secrets.max-password.path;
-
-      password = "password";
+      hashedPasswordFile = config.sops.secrets.max-password.path;
 
       extraGroups = [ "wheel" "networkmanager" "video" "kvm" "docker" "ydotool" ];
       packages = with pkgs; [ tree ];

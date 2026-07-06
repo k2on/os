@@ -20,6 +20,9 @@
           host = "ssh.koon.us";
           user = "git";
           proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
+          serverAliveInterval = 30;
+          serverAliveCountMax = 10;
+          # TCPKeepAlive="yes";
         };
         "git" = {
           host = "github.com";
