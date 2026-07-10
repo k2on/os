@@ -10,8 +10,6 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
 
-    wrapper-modules.url = "github:BirdeeHub/nix-wrapper-modules";
-
     nixos-apple-silicon.url =
       "github:nix-community/nixos-apple-silicon?ref=release-2025-11-18";
 
@@ -19,9 +17,6 @@
       url = "github:nix-community/home-manager?ref=release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    hm-wrapper-modules.url = "github:sini/hm-wrapper-modules";
-    hm-wrapper-modules.inputs.nixpkgs.follows = "nixpkgs";
-    hm-wrapper-modules.inputs.home-manager.follows = "home-manager";
 
     nixvim = {
       url = "github:nix-community/nixvim?ref=nixos-25.11";
@@ -35,6 +30,11 @@
 
     terranix = {
       url = "github:terranix/terranix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    disko = {
+      url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

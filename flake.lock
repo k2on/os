@@ -41,6 +41,26 @@
         "type": "github"
       }
     },
+    "disko": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1781152676,
+        "narHash": "sha256-RxWs5ND31KzTG7wvMM+PMfUjyNpmIEr999lqNARaM5o=",
+        "owner": "nix-community",
+        "repo": "disko",
+        "rev": "ff8702b4de27f72b4c78573dfb89ec74e36abdf1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "disko",
+        "type": "github"
+      }
+    },
     "firefox-addons": {
       "inputs": {
         "nixpkgs": [
@@ -156,30 +176,6 @@
         "type": "github"
       }
     },
-    "hm-wrapper-modules": {
-      "inputs": {
-        "home-manager": [
-          "home-manager"
-        ],
-        "nix-wrapper-modules": "nix-wrapper-modules",
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1774554164,
-        "narHash": "sha256-HzYleaTR4n4wejE7nyTcq7F1Kp4Q5ow//k/y0fiHNs0=",
-        "owner": "sini",
-        "repo": "hm-wrapper-modules",
-        "rev": "b28ff211a8cce758a98e0db349c0f3dd77a13373",
-        "type": "github"
-      },
-      "original": {
-        "owner": "sini",
-        "repo": "hm-wrapper-modules",
-        "type": "github"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -262,27 +258,6 @@
         "owner": "NuschtOS",
         "ref": "v0.0.8",
         "repo": "ixx",
-        "type": "github"
-      }
-    },
-    "nix-wrapper-modules": {
-      "inputs": {
-        "nixpkgs": [
-          "hm-wrapper-modules",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1774538285,
-        "narHash": "sha256-KRDNQDEWjB2O5SRH/oUTzi34cNxlIT8sab0FK2uqZ2g=",
-        "owner": "BirdeeHub",
-        "repo": "nix-wrapper-modules",
-        "rev": "15d740b2bfc545189a569147da7718457c12758e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "BirdeeHub",
-        "repo": "nix-wrapper-modules",
         "type": "github"
       }
     },
@@ -385,22 +360,6 @@
         "type": "github"
       }
     },
-    "nixpkgs_4": {
-      "locked": {
-        "lastModified": 1778274207,
-        "narHash": "sha256-I4puXmX1iovcCHZlRmztO3vW0mAbbRvq4F8wgIMQ1MM=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "b3da656039dc7a6240f27b2ef8cc6a3ef3bccae7",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixpkgs-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "nixvim": {
       "inputs": {
         "flake-parts": "flake-parts_2",
@@ -464,9 +423,9 @@
       "inputs": {
         "apple-fonts": "apple-fonts",
         "den": "den",
+        "disko": "disko",
         "firefox-addons": "firefox-addons",
         "flake-parts": "flake-parts",
-        "hm-wrapper-modules": "hm-wrapper-modules",
         "home-manager": "home-manager",
         "import-tree": "import-tree",
         "nixos-apple-silicon": "nixos-apple-silicon",
@@ -475,7 +434,6 @@
         "nixvim": "nixvim",
         "sops-nix": "sops-nix",
         "terranix": "terranix",
-        "wrapper-modules": "wrapper-modules",
         "zen-browser": "zen-browser"
       }
     },
@@ -647,24 +605,6 @@
       "original": {
         "owner": "terranix",
         "repo": "terranix",
-        "type": "github"
-      }
-    },
-    "wrapper-modules": {
-      "inputs": {
-        "nixpkgs": "nixpkgs_4"
-      },
-      "locked": {
-        "lastModified": 1778520701,
-        "narHash": "sha256-qEA/vR6fKwnW3lqwy7f+Ds1iPgdotKpksQIk6UZotlM=",
-        "owner": "BirdeeHub",
-        "repo": "nix-wrapper-modules",
-        "rev": "5660d8cada6c2c5eb6c034577f3893f579526804",
-        "type": "github"
-      },
-      "original": {
-        "owner": "BirdeeHub",
-        "repo": "nix-wrapper-modules",
         "type": "github"
       }
     },
