@@ -1,7 +1,5 @@
 { self, lib, den, ... }:
 {
-  den.classes.terranix = { };
-
   den.hosts.x86_64-linux = {
     vps = {
       server-type = "cpx11";

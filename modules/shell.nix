@@ -23,7 +23,7 @@
 
           # @cmd Plan out internet infra
           infra::plan() {
-            HCLOUD_TOKEN=$(${pkgs.sops}/bin/sops -d --extract '["hetzner-api-token"]' secrets/infra-providers.yaml) nix run .#vps.plan
+            ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.plan' 
           }
 
           # @cmd Generate internet infra
