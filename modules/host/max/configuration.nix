@@ -26,6 +26,7 @@
     boot.loader.efi.canTouchEfiVariables = false;
 
     boot.m1n1CustomLogo = ../../../assets/logo.png;
+    boot.binfmt.emulatedSystems = [ "x86_64-linux" ];
 
     hardware = {
       asahi = {

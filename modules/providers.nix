@@ -7,35 +7,17 @@
         version = "~> 1.45";
       };
 
-      variable.hcloud_token = {
-        type = "string";
-        sensitive = true;
-      };
-
-      provider.hcloud.token = "\${var.hcloud_token}";
+      provider.hcloud = {};
     };
   };
 
   den.aspects.porkbun-provider = {
     terranix = {
       terraform.required_providers.porkbun = {
-        source = "jianyuan/porkbun";
-        version = "~> 0.2.3";
+        source = "cullenmcdermott/porkbun";
+        version = "~> 0.3.0";
       };
-
-      variable.porkbun_api_key = {
-        type = "string";
-        sensitive = true;
-      };
-      variable.porkbun_secret_key = {
-        type = "string";
-        sensitive = true;
-      };
-
-      provider.porkbun = {
-        api_key    = "\${var.porkbun_api_key}";
-        secret_key = "\${var.porkbun_secret_key}";
-      };
+      provider.porkbun = {};
     };
   };
 }

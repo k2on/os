@@ -28,23 +28,12 @@
 
           # @cmd Generate internet infra
           infra::push () {
-            HCLOUD_TOKEN=$(${pkgs.sops}/bin/sops -d --extract '["hetzner-api-token"]' secrets/infra-providers.yaml) nix run .#vps.apply
+            ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.apply' 
           }
 
           # @cmd Destroy internet infra
           infra::destroy () {
-            HCLOUD_TOKEN=$(${pkgs.sops}/bin/sops -d --extract '["hetzner-api-token"]' secrets/infra-providers.yaml) nix run .#vps.destroy
-          }
-
-          # @cmd Install NixOS on vps
-          infra::deploy () {
-            IP=$(${pkgs.opentofu}/bin/tofu -chdir=modules/host/vps/infra output -raw vps_ip)
-            nix run github:nix-community/nixos-anywhere -- \
-              --flake .#vps \
-              --build-on-remote \
-              --generate-hardware-config nixos-generate-config \
-                ./modules/host/vps/_hardware-configuration.nix \
-              root@$IP
+            ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.destroy' 
           }
 
           eval "$(${pkgs.argc}/bin/argc --argc-eval "$0" "$@")"
