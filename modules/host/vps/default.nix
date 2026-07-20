@@ -19,7 +19,10 @@
       imports = [
         ./_hardware-configuration.nix
         self.inputs.disko.nixosModules.default
+        self.inputs.sops-nix.nixosModules.sops
         self.nixosModules.vps-filesystem
+        self.nixosModules.vps-sops
+        self.nixosModules.vps-headscale
       ];
 
       boot.loader.grub.enable = true;

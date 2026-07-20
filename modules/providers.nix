@@ -20,4 +20,14 @@
       provider.porkbun = {};
     };
   };
+
+  den.aspects.cloudflare-provider = {
+    terranix = {
+      terraform.required_providers.cloudflare = {
+        source = "cloudflare/cloudflare";
+        version = "~> 5.22.0";
+      };
+      provider.cloudflare = {};
+    };
+  };
 }

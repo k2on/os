@@ -22,13 +22,16 @@
           owner = config.users.users.wakapi.name;
         };
 
-        "oauth/photos/clientId" = {};
-        "oauth/photos/clientSecret" = {};
         "oauth/git/clientId" = {
           owner = config.services.gitea.user;
         };
         "oauth/git/clientSecret" = {
           owner = config.services.gitea.user;
+        };
+
+        "headscale_oidc_client_secret" = {
+          owner = "kanidm";
+          sopsFile = "${self}/secrets/sops/oidc/headscale.yaml";
         };
       };
     };

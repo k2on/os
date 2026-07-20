@@ -1,9 +1,19 @@
-{ ... }: {
+{ self, ... }: {
   ark.services.git = { pkgs, lib, config, service, ... }:
     let
       oauthName = "KoonFamily";
     in 
   {
+    sops.secrets.git_oidc_client_secret_kanidm = {
+      sopsFile = "${self}/secrets/sops/oidc/git.yaml";
+      key = "git_oidc_client_secret";
+      owner = "kanidm";
+    };
+    sops.secrets.git_oidc_client_secret = {
+      sopsFile = "${self}/secrets/sops/oidc/git.yaml";
+      owner = "git";
+    };
+
     services.openssh = {
       enable = true;
 
@@ -79,8 +89,7 @@
       preStart = let
         exe = lib.getExe config.services.gitea.package;
 
-        clientIdPath = config.sops.secrets."oauth/git/clientId".path;
-        clientSecretPath = config.sops.secrets."oauth/git/clientSecret".path;
+        clientSecretPath = config.sops.secrets."git_oidc_client_secret".path;
 
         args = lib.escapeShellArgs (lib.concatLists [
           [ "--name" oauthName ]
@@ -88,7 +97,7 @@
           # [ "--key" config.oauth.secrets.git.clientId ]
           [
             "--auto-discover-url"
-            "https://auth.koon.us/.well-known/openid-configuration"
+            "https://id.koon.us/oauth2/openid/git/.well-known/openid-configuration"
           ]
           [ "--scopes" "email" ]
           [ "--scopes" "profile" ]
@@ -97,7 +106,7 @@
           [ "--skip-local-2fa" ]
         ]);
       in lib.mkAfter ''
-        CLIENT_ID=$(cat ${clientIdPath})
+        CLIENT_ID=git
         CLIENT_SECRET=$(cat ${clientSecretPath})
 
         provider_id=$(${exe} admin auth list | ${pkgs.gnugrep}/bin/grep -w '${oauthName}' | cut -f1)

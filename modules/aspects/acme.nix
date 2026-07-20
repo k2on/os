@@ -15,7 +15,6 @@
 
         dnsProvider = "cloudflare";
         environmentFile = config.sops.templates."cloudflare-acme.env".path;
-        # environmentFile = config.sops.secrets.cloudflare-api-key.path;
 
         dnsResolver = "1.1.1.1:53";
 

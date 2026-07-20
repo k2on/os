@@ -18,21 +18,18 @@
         (writeShellScriptBin "ark" ''
           # @describe CLI for the Koon Family Opperating System
 
-          # @cmd Manage internet infra
-          infra() { :; }
-
           # @cmd Plan out internet infra
-          infra::plan() {
+          plan() {
             ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.plan' 
           }
 
           # @cmd Generate internet infra
-          infra::push () {
-            ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.apply' 
+          push () {
+            ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.apply -- -auto-approve' 
           }
 
           # @cmd Destroy internet infra
-          infra::destroy () {
+          destroy () {
             ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.destroy' 
           }
 

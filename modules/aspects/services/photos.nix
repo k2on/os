@@ -1,9 +1,14 @@
-{ ... }: {
+{ self, ... }: {
   ark.services.photos = { config, lib, pkgs, service, ... }: 
   let 
     oauthName = "KoonFamily";
   in {
     sops = {
+      secrets.photos_oidc_client_secret = {
+        sopsFile = "${self}/secrets/sops/oidc/photos.yaml";
+        owner = "kanidm";
+      };
+
       templates = {
         "immich-config.json" = {
           content = builtins.toJSON {
@@ -18,9 +23,10 @@
               autoRegister = true;
               buttonText =
                 lib.strings.concatStrings [ "Login To " oauthName ];
-              clientId = config.sops.placeholder."oauth/photos/clientId";
-              clientSecret = config.sops.placeholder."oauth/photos/clientSecret";
-              issuerUrl = "https://auth.koon.us/.well-known/openid-configuration";
+              clientId = "photos";
+              clientSecret = config.sops.placeholder.photos_oidc_client_secret;
+              issuerUrl = "https://id.koon.us/oauth2/openid/photos/.well-known/openid-configuration";
+              signingAlgorithm = "ES256";
             };
           };
           owner = config.users.users.immich.name;

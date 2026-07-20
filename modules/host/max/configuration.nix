@@ -143,6 +143,8 @@
       enableSSHSupport = true;
     };
 
+    networking.extraHosts = "127.0.0.1 s3";
+
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
     system.stateVersion = "25.05";

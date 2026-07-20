@@ -15,6 +15,7 @@
       den.aspects.hcloud-provider
       den.aspects.hcloud-ssh-key
       den.aspects.porkbun-provider
+      den.aspects.cloudflare-provider
       den.aspects.dns
     ];
   };

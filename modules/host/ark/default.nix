@@ -7,6 +7,7 @@
     includes = with den.aspects; [
       service-audio
       service-auth
+      service-cloud
       service-git
       service-home
       # service-id
@@ -14,7 +15,8 @@
       service-photos
       service-radicale
       service-waka
-      ark-tunnel
+      # ark-tunnel
+      ark-nginx
     ];
 
     nixos = {
@@ -36,8 +38,8 @@
 
       services.tailscale = {
         enable = true;
-        useRoutingFeatures = "both";
-        extraUpFlags = [ "--accept-dns=false" ];
+        useRoutingFeatures = "server";
+        extraSetFlags = [ "--ssh=false" ];
       };
 
       security.sudo.wheelNeedsPassword = false;

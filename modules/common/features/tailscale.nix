@@ -1,6 +1,9 @@
 { ... }: {
   flake.nixosModules.koonFeatureTailscale = { pkgs, ... }: {
-    services.tailscale.enable = true;
+    services.tailscale = {
+      enable = true;
+      extraUpFlags = [ "--login-server=https://headscale.redactedaddress.com" ];
+    };
 
     systemd.services.tailscale-restart = {
       description = "Restart Tailscale after waking up";
