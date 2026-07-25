@@ -13,6 +13,7 @@
       den.batteries.hostname
       den.aspects.hetzner-server
       den.aspects.nixos-deploy
+      den.aspects.headscale
     ];
 
     nixos = {
@@ -22,7 +23,6 @@
         self.inputs.sops-nix.nixosModules.sops
         self.nixosModules.vps-filesystem
         self.nixosModules.vps-sops
-        self.nixosModules.vps-headscale
       ];
 
       boot.loader.grub.enable = true;

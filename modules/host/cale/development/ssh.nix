@@ -16,14 +16,14 @@
           host = "ark";
           user = "admin";
         };
-        "ssh.koon.us" = {
-          host = "ssh.koon.us";
-          user = "git";
-          proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
-          serverAliveInterval = 30;
-          serverAliveCountMax = 10;
+        # "ssh.koon.us" = {
+        #   host = "ssh.koon.us";
+        #   user = "git";
+          # proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
+          # serverAliveInterval = 30;
+          # serverAliveCountMax = 10;
           # TCPKeepAlive="yes";
-        };
+        # };
         "git" = {
           host = "github.com";
           user = "git";

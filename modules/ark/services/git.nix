@@ -32,6 +32,8 @@
       };
     };
 
+    networking.firewall.allowedTCPPorts = [ 2222 ];
+
     services.gitea = {
       enable = true;
       user = "git";

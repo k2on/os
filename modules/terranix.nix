@@ -12,11 +12,12 @@
 
   den.aspects.infra-base = {
     includes = [
-      den.aspects.hcloud-provider
+      den.aspects.provider-hetzner
+      den.aspects.provider-porkbun
+      den.aspects.provider-cloudflare
       den.aspects.hcloud-ssh-key
-      den.aspects.porkbun-provider
-      den.aspects.cloudflare-provider
-      den.aspects.dns
+      den.aspects.services
+      den.aspects.ark
     ];
   };
 
@@ -36,7 +37,16 @@
     {
       terranix.terranixConfigurations.infra = {
         modules =
-          lib.concatLists (lib.attrValues (config.flake.terranixModules or { }))
+          [
+            {
+              options.warnings = lib.mkOption {
+                type = lib.types.listOf lib.types.raw;
+                default = [ ];
+                internal = true;
+              };
+            }
+          ]
+          ++ lib.concatLists (lib.attrValues (config.flake.terranixModules or { }))
           ++ [ (den.lib.aspects.resolve "terranix" den.aspects.infra-base) ];
         workdir = "infra";
         terraformWrapper.package = pkgs.opentofu;

@@ -1,9 +1,9 @@
 { inputs, config, den, ... }: {
-  den.hosts.x86_64-linux.ark = {
+  den.hosts.x86_64-linux.adam = {
     instantiate = inputs.nixpkgs-unstable.lib.nixosSystem;
   };
 
-  den.aspects.ark = {
+  den.aspects.adam = {
     includes = with den.aspects; [
       service-audio
       service-auth
@@ -15,7 +15,6 @@
       service-photos
       service-radicale
       service-waka
-      # ark-tunnel
       ark-nginx
     ];
 
