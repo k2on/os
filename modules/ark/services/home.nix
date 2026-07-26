@@ -1,4 +1,8 @@
-{ self, ... }: {
+{ self, config, ... }:
+let
+  ark = config.ark;
+in
+  {
   ark.services.home = { pkgs, service, config, ... }: {
     virtualisation.oci-containers = let
       hass_config = pkgs.writeText "configuration.yaml" ''
@@ -16,14 +20,14 @@
         auth_oidc:
           client_id: home
           client_secret: !secret oidc_client_secret
-          discovery_url: "https://id.koon.us/oauth2/openid/home/.well-known/openid-configuration"
+          discovery_url: "https://id.${ark.mainDomain}/oauth2/openid/home/.well-known/openid-configuration"
           features:
             automatic_person_creation: true
             default_redirect: true
           id_token_signing_alg: ES256
           roles:
-            admin: "home_admins@id.koon.us"
-            user: "home_users@id.koon.us"
+            admin: "home_admins@id.${ark.mainDomain}"
+            user: "home_users@id.${ark.mainDomain}"
         sonos:
           media_player:
             hosts:

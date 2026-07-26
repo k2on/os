@@ -13,10 +13,8 @@
   den.aspects.infra-base = {
     includes = [
       den.aspects.provider-hetzner
-      den.aspects.provider-porkbun
-      den.aspects.provider-cloudflare
       den.aspects.hcloud-ssh-key
-      den.aspects.services
+      den.aspects.dns-infra
       den.aspects.ark
     ];
   };
@@ -30,7 +28,10 @@
     })
   ];
 
-  den.schema.host.includes = [ den.policies.host-to-terranix ];
+  den.schema.host.includes = [
+    den.policies.host-to-terranix
+    den.aspects.dns-host
+  ];
 
   perSystem =
     { pkgs, ... }:

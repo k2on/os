@@ -1,16 +1,16 @@
 # Service registry with automatic port assignment, built on Den quirks.
 #
-# Define a service ONCE under koon.services, in one of two forms:
+# Define a service ONCE under ark.services, in one of two forms:
 #
 #   # bare function — auto-assigned port, default domain
-#   koon.services.git = { service, config, pkgs, ... }: {
+#   ark.services.git = { service, config, pkgs, ... }: {
 #     services.gitea.settings.server.HTTP_PORT = service.port;
 #   };
 #
 #   # attrset — when pinning a port or domain
-#   koon.services.home = {
+#   ark.services.home = {
 #     port = 8123;                 # optional: omit to auto-assign
-#     domain = "home.koon.us";     # optional: defaults to "<name>.koon.us"
+#     domain = "home.ark.us";     # optional: defaults to "<name>.example.com"
 #     make = { service, pkgs, ... }: { ... };   # or a plain module attrset
 #   };
 #
@@ -59,7 +59,7 @@ let
       (name: s: if (s.port or null) != null then s.port else autoFor name)
       services;
 
-  domainFor = name: spec: spec.domain or "${name}.koon.us";
+  domainFor = name: spec: spec.domain or "${name}.${config.ark.mainDomain}";
 
   # Turn a spec into a NixOS module, injecting `service` alongside the
   # normal module args. setFunctionArgs advertises the user function's
@@ -85,7 +85,7 @@ in
       description = ''
         Service definitions. Either a module function taking
         { service, config, pkgs, lib, ... }, or an attrset
-        { port ? auto, domain ? "<name>.koon.us", make ? <module> }.
+        { port ? auto, domain ? "<name>.example.com", make ? <module> }.
         Each entry generates den.aspects.service-<name>.
       '';
     };

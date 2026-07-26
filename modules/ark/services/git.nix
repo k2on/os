@@ -1,4 +1,8 @@
-{ self, ... }: {
+{ self, config, ... }:
+let
+  ark = config.ark;
+in
+  {
   ark.services.git = { pkgs, lib, config, service, ... }:
     let
       oauthName = "KoonFamily";
@@ -45,11 +49,11 @@
       };
       settings = {
         server = {
-          DOMAIN = "git.koon.us";
-          ROOT_URL = "https://git.koon.us";
+          DOMAIN = "git.${ark.mainDomain}";
+          ROOT_URL = "https://git.${ark.mainDomain}";
           HTTP_PORT = service.port;
           LANDING_PAGE = "/max";
-          SSH_DOMAIN = "ssh.koon.us";
+          SSH_DOMAIN = "ssh.${ark.mainDomain}";
           SSH_PORT = 2222;
           START_SSH_SERVER = true;
         };
@@ -99,7 +103,7 @@
           # [ "--key" config.oauth.secrets.git.clientId ]
           [
             "--auto-discover-url"
-            "https://id.koon.us/oauth2/openid/git/.well-known/openid-configuration"
+            "https://id.${ark.mainDomain}/oauth2/openid/git/.well-known/openid-configuration"
           ]
           [ "--scopes" "email" ]
           [ "--scopes" "profile" ]

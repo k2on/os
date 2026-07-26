@@ -14,12 +14,6 @@
         type = "A";
         content = "\${hcloud_server.vps.ipv4_address}";
       }
-      # {
-      #   domain = "koon.us";
-      #   name = "id";
-      #   type = "A";
-      #   content = "\${hcloud_server.vps.ipv4_address}";
-      # }
     ];
   };
 }

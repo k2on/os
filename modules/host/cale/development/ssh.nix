@@ -1,5 +1,5 @@
 { ... }: {
-  flake.homeModules.koonMaxSsh = { pkgs, ... }: {
+  flake.homeModules.koonMaxSsh = { ... }: {
     programs.ssh = {
       enable = true;
       enableDefaultConfig = false;
@@ -16,14 +16,6 @@
           host = "ark";
           user = "admin";
         };
-        # "ssh.koon.us" = {
-        #   host = "ssh.koon.us";
-        #   user = "git";
-          # proxyCommand = "${pkgs.cloudflared}/bin/cloudflared access ssh --hostname %h";
-          # serverAliveInterval = 30;
-          # serverAliveCountMax = 10;
-          # TCPKeepAlive="yes";
-        # };
         "git" = {
           host = "github.com";
           user = "git";

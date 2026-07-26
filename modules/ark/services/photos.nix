@@ -1,4 +1,8 @@
-{ self, ... }: {
+{ self, config, ... }:
+let
+  ark = config.ark;
+in
+  {
   ark.services.photos = { config, lib, pkgs, service, ... }: 
   let 
     oauthName = "KoonFamily";
@@ -25,7 +29,7 @@
                 lib.strings.concatStrings [ "Login To " oauthName ];
               clientId = "photos";
               clientSecret = config.sops.placeholder.photos_oidc_client_secret;
-              issuerUrl = "https://id.koon.us/oauth2/openid/photos/.well-known/openid-configuration";
+              issuerUrl = "https://id.${ark.mainDomain}/oauth2/openid/photos/.well-known/openid-configuration";
               signingAlgorithm = "ES256";
             };
           };

@@ -1,10 +1,23 @@
-{ config, ... }: {
+{ config, ... }:
+let
+  ark = config.ark;
+  url = "vpn.${ark.mainDomain}";
+  idSubDomain = "id";
+  idUrl = "${idSubDomain}.${ark.mainDomain}";
+in
+{
   den.aspects.headscale = { host, ... }: {
-
+    # name = "headscale/${host.name}";
     dns_records = [
       {
-        domain = "koon.us";
-        name = "vps";
+        domain = ark.mainDomain;
+        name = "vpn";
+        type = "A";
+        content = "\${hcloud_server.${host.name}.ipv4_address}";
+      }
+      {
+        domain = ark.mainDomain;
+        name = idSubDomain;
         type = "A";
         content = "\${hcloud_server.${host.name}.ipv4_address}";
       }
@@ -16,12 +29,12 @@
         address = "127.0.0.1";   # only nginx talks to it directly
         port = 8080;
         settings = {
-          server_url = "https://headscale.redactedaddress.com";
+          server_url = "https://${url}";
           dns = {
             magic_dns = true;
-            base_domain = "ts.redactedaddress.com";  # must NOT equal server_url's domain
+            base_domain = "net.${ark.mainDomain}";  # must NOT equal server_url's domain
             override_local_dns = false;
-            extra_records = map (service: { name = "${service}.koon.us"; type = "A"; value = "100.64.0.1"; }) [
+            extra_records = map (service: { name = "${service}.${ark.mainDomain}"; type = "A"; value = "100.64.0.1"; }) [
               "audio"
               "cloud"
               "git"
@@ -47,11 +60,11 @@
           };
 
           oidc = {
-            issuer = "https://id.koon.us/oauth2/openid/headscale";
+            issuer = "https://${idUrl}/oauth2/openid/headscale";
             client_id = "headscale";
             client_secret_path = config.sops.secrets.headscale_oidc_client_secret.path;
             scope = [ "openid" "profile" "email" "groups" ];
-            allowed_groups = [ "headscale_users@id.koon.us" ];
+            allowed_groups = [ "headscale_users@${idUrl}" ];
             pkce.enabled = true;   # matches kanidm's default PKCE enforcement
           };
         };
@@ -61,10 +74,14 @@
         enable = true;
         # recommendedProxySettings = true;
 
-        virtualHosts."headscale.redactedaddress.com" = {
+        virtualHosts."${url}" = {
           enableACME = true;
           forceSSL = true;
-          listen = [ { addr = "127.0.0.1"; port = 8444; ssl = true; } ];
+          listen = [
+            { addr = "0.0.0.0";  port = 80; }
+            { addr = "[::]";     port = 80; }
+            { addr = "127.0.0.1"; port = 8444; ssl = true; }
+          ];
           locations."/" = {
             proxyPass = "http://127.0.0.1:8080";
             proxyWebsockets = true;   # required — clients use long-lived connections
@@ -74,7 +91,7 @@
 
         streamConfig = ''
           map $ssl_preread_server_name $backend {
-            id.koon.us  kanidm_ark;
+            ${idUrl}  kanidm_ark;
             default     https_local;
           }
 
@@ -100,7 +117,7 @@
 
       security.acme = {
         acceptTerms = true;
-        defaults.email = "housemaster@redactedaddress.com";
+        defaults.email = "housemaster@${ark.mainDomain}";
       };
 
       services.tailscale = {

@@ -44,7 +44,7 @@
       # passwordSaltFile = config.sops.secrets."waka-password-salt".path;
       settings = {
         server.port = service.port;
-        app.avatar_url_template = "https://auth.koon.us/api/users/fbffa48a-faf7-4230-a89f-0da184f5948c/profile-picture.png";
+        # app.avatar_url_template = "";
       };
     };
   };

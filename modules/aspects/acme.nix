@@ -1,4 +1,7 @@
-{ ... }:
+{ config, ... }:
+let
+  ark = config.ark;
+in
 {
   flake.nixosModules.acme = { config, ... }: {
     sops.templates."cloudflare-acme.env".content = ''
@@ -7,11 +10,11 @@
 
     security.acme = {
       acceptTerms = true;
-      defaults.email = "contact@koon.us";
+      defaults.email = "contact@${ark.mainDomain}";
 
-      certs."koon.us" = {
-        domain = "*.koon.us";
-        extraDomainNames = [ "koon.us" ];
+      certs."${ark.mainDomain}" = {
+        domain = "*.${ark.mainDomain}";
+        extraDomainNames = [ ark.mainDomain ];
 
         dnsProvider = "cloudflare";
         environmentFile = config.sops.templates."cloudflare-acme.env".path;

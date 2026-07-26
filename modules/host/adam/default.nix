@@ -6,11 +6,9 @@
   den.aspects.adam = {
     includes = with den.aspects; [
       service-audio
-      service-auth
       service-cloud
       service-git
       service-home
-      # service-id
       service-jellyfin
       service-photos
       service-radicale

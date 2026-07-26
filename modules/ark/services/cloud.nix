@@ -1,10 +1,14 @@
-{ ... }: {
+{ config, ... }:
+let
+  ark = config.ark;
+in
+  {
   ark.services.cloud = { service, pkgs, config, ... }: {
     environment.etc."nextcloud-admin-pass".text = "password123456789";
     services.nextcloud = {
       enable = true;
       package = pkgs.nextcloud33;
-      hostName = "cloud.koon.us";
+      hostName = "cloud.${ark.mainDomain}";
       https = true;
       config.adminpassFile = "/etc/nextcloud-admin-pass";
       config.dbtype = "sqlite";
@@ -18,7 +22,7 @@
         trusted_proxies = [ "127.0.0.1" ];
       };
     };
-    services.nginx.virtualHosts."cloud.koon.us".listen = [
+    services.nginx.virtualHosts."cloud.${ark.mainDomain}".listen = [
       { addr = "127.0.0.1"; port = service.port; }
     ];
   };
