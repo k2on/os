@@ -9,14 +9,9 @@
 
       secrets = {
         "restic-password" = {};
-        "tunnel-credentials" = {};
         "admin-password" = {};
 
         "cloudflare-api-key" = {};
-
-        "pocket-id-encryption-key" = {
-          owner = config.services.pocket-id.user;
-        };
 
         "waka-password-salt" = {
           owner = config.users.users.wakapi.name;

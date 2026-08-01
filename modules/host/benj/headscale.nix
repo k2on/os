@@ -45,6 +45,7 @@ in
               "radicale"
               "ssh"
               "waka"
+              "office"
             ];
           };
           prefixes = {

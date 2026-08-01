@@ -6,6 +6,39 @@ in
   ark.services.git = { pkgs, lib, config, service, ... }:
     let
       oauthName = "KoonFamily";
+      cfg = config.services.gitea;
+      themeVersion = "1.26.2";
+      giteaGithubTheme = pkgs.stdenvNoCC.mkDerivation {
+        pname = "gitea-github-theme";
+        version = themeVersion;
+
+        srcs = [
+          (pkgs.fetchurl {
+            url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-base.tar.gz";
+            hash = "sha256-h4Q1z7AXAckiHyOYR1YX8rsY5+zgVeUv+Wrc0raLH1Q=";
+          })
+          # optional: GitHub-like layout templates (version-sensitive!)
+          (pkgs.fetchurl {
+            url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-templates.tar.gz";
+            hash = "sha256-GiZkF8UtIajWTXGvHeXogHJM/M8BrICZQ2AzD+EGyvM=";
+          })
+          # optional: translations for the templates
+          (pkgs.fetchurl {
+            url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-translations.tar.gz";
+            hash = "sha256-rFB1cuvbanyGYXM5QncvOglI4LOk1vduJ8osoY131O0=";
+          })
+        ];
+
+        sourceRoot = ".";
+        dontBuild = true;
+
+        installPhase = ''
+          mkdir -p $out/public/assets/css
+          cp dist/*.css $out/public/assets/css/
+          cp -r templates $out/templates
+          cp -r dist/options $out/options
+        '';
+      };
     in 
   {
     sops.secrets.git_oidc_client_secret_kanidm = {
@@ -48,6 +81,10 @@ in
         type = "postgres";
       };
       settings = {
+        ui = {
+          THEMES = "gitea-auto,gitea-light,gitea-dark,github-auto,github-light,github-dark,github-soft-dark";
+          DEFAULT_THEME = "github-auto";
+        };
         server = {
           DOMAIN = "git.${ark.mainDomain}";
           ROOT_URL = "https://git.${ark.mainDomain}";
@@ -88,6 +125,15 @@ in
     };
     users.groups.git = { };
 
+    # Link the theme into Gitea's customDir (default: ${stateDir}/custom)
+    systemd.tmpfiles.rules = [
+      "d ${cfg.customDir}/public 0750 ${cfg.user} ${cfg.group} - -"
+      "d ${cfg.customDir}/public/assets 0750 ${cfg.user} ${cfg.group} - -"
+      "L+ ${cfg.customDir}/public/assets/css - - - - ${giteaGithubTheme}/public/assets/css"
+      "L+ ${cfg.customDir}/templates - - - - ${giteaGithubTheme}/templates"
+      "L+ ${cfg.customDir}/options - - - - ${giteaGithubTheme}/options"
+    ];
+
     systemd.services.gitea = {
       serviceConfig = {
         RestartSec = "60"; # Retry every minute
@@ -122,31 +168,31 @@ in
         else
           ${exe} admin auth update-oauth --id "$provider_id" ${args} --key "$CLIENT_ID" --secret "$CLIENT_SECRET"
         fi
-
-        mkdir -p /var/lib/gitea/custom/public/assets/img/
-
-        ln -sf ${
-          ./git/assets/img/logo.svg
-        } /var/lib/gitea/custom/public/assets/img/logo.svg
-        ln -sf ${
-          ./git/assets/img/favicon.svg
-        } /var/lib/gitea/custom/public/assets/img/favicon.svg
-
-        mkdir -p /var/lib/gitea/custom/templates/base/
-        ln -sf ${
-          ./git/templates/base/head_navbar.tmpl
-        } /var/lib/gitea/custom/templates/base/head_navbar.tmpl
-        ln -sf ${
-          ./git/templates/base/footer_content.tmpl
-        } /var/lib/gitea/custom/templates/base/footer_content.tmpl
-
-        mkdir -p /var/lib/gitea/custom/templates/custom/
-        ln -sf ${
-          ./git/templates/custom/header.tmpl
-        } /var/lib/gitea/custom/templates/custom/header.tmpl
-
       '';
     };
+
+
+        # mkdir -p /var/lib/gitea/custom/public/assets/img/
+        #
+        # ln -sf ${
+        #   ./git/assets/img/logo.svg
+        # } /var/lib/gitea/custom/public/assets/img/logo.svg
+        # ln -sf ${
+        #   ./git/assets/img/favicon.svg
+        # } /var/lib/gitea/custom/public/assets/img/favicon.svg
+        #
+        # mkdir -p /var/lib/gitea/custom/templates/base/
+        # ln -sf ${
+        #   ./git/templates/base/head_navbar.tmpl
+        # } /var/lib/gitea/custom/templates/base/head_navbar.tmpl
+        # ln -sf ${
+        #   ./git/templates/base/footer_content.tmpl
+        # } /var/lib/gitea/custom/templates/base/footer_content.tmpl
+        #
+        # mkdir -p /var/lib/gitea/custom/templates/custom/
+        # ln -sf ${
+        #   ./git/templates/custom/header.tmpl
+        # } /var/lib/gitea/custom/templates/custom/header.tmpl
 
     services.restic.backups = {
       git-local = {

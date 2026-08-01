@@ -3,7 +3,7 @@ let
   inherit (config.ark) mergeServices assignServicePorts serviceDomain;
 in
 {
-  den.aspects.ark-nginx.nixos = { ark-service, lib, ... }:
+  den.aspects.ark-nginx.nixos = { ark-service, lib, host, ... }:
     let
       services = mergeServices ark-service;
       ports = assignServicePorts services;
