@@ -11,19 +11,23 @@ in
       };
       provider.cloudflare = { };
 
-      data.cloudflare_zone = builtins.listToAttrs (map (d: {
-        name = zoneKey d.domain;
-        value.filter.name = d.domain;
-      }) (builtins.filter (d: d.provider == "cloudflare") config.ark.domains));
+      data.cloudflare_zone = builtins.listToAttrs (
+        map (d: {
+          name = zoneKey d.domain;
+          value.filter.name = d.domain;
+        }) (builtins.filter (d: d.provider == "cloudflare") config.ark.domains)
+      );
     };
 
-    records = { recordAttrs, lib, ... }: {
-      resource.cloudflare_dns_record = recordAttrs (r: {
-        zone_id = "\${data.cloudflare_zone.${zoneKey r.domain}.id}";
-        name = if r.name == "" then "@" else r.name;
-        inherit (r) type content;
-        ttl = r.ttl or 600;
-      });
-    };
+    records =
+      { recordAttrs, lib, ... }:
+      {
+        resource.cloudflare_dns_record = recordAttrs (r: {
+          zone_id = "\${data.cloudflare_zone.${zoneKey r.domain}.id}";
+          name = if r.name == "" then "@" else r.name;
+          inherit (r) type content;
+          ttl = r.ttl or 600;
+        });
+      };
   };
 }

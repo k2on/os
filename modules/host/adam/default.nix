@@ -1,4 +1,10 @@
-{ inputs, config, den, ... }: {
+{
+  inputs,
+  config,
+  den,
+  ...
+}:
+{
   den.hosts.x86_64-linux.adam = {
     instantiate = inputs.nixpkgs-unstable.lib.nixosSystem;
   };
@@ -10,6 +16,7 @@
       service-git
       service-home
       service-jellyfin
+      # service-money
       service-photos
       service-radicale
       service-waka
@@ -31,7 +38,10 @@
       boot.loader.efi.canTouchEfiVariables = true;
 
       networking.hostName = "ark";
-      networking.nameservers = [ "8.8.8.8" "1.1.1.1" ];
+      networking.nameservers = [
+        "8.8.8.8"
+        "1.1.1.1"
+      ];
 
       services.tailscale = {
         enable = true;
@@ -48,10 +58,17 @@
 
       services.openssh.enable = true;
 
-      networking.firewall.allowedTCPPorts = [ 8123 22 443 ];
+      networking.firewall.allowedTCPPorts = [
+        8123
+        22
+        443
+      ];
 
       time.timeZone = "America/Chicago";
-      nix.settings.experimental-features = [ "nix-command" "flakes" ];
+      nix.settings.experimental-features = [
+        "nix-command"
+        "flakes"
+      ];
 
       system.stateVersion = "25.05"; # Did you read the comment?
     };

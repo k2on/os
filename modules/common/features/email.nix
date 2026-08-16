@@ -1,6 +1,8 @@
-{ ... }: {
-  flake.nixosModules.commonFeatureEmail = { ... }: {
-    programs.thunderbird.enable = true;
-  };
+{ ... }:
+{
+  flake.nixosModules.commonFeatureEmail =
+    { ... }:
+    {
+      programs.thunderbird.enable = true;
+    };
 }
-

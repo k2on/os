@@ -7,7 +7,7 @@
         version = "~> 1.45";
       };
 
-      provider.hcloud = {};
+      provider.hcloud = { };
     };
   };
 }

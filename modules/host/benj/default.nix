@@ -1,4 +1,9 @@
-{ self, lib, den, ... }:
+{
+  self,
+  lib,
+  den,
+  ...
+}:
 {
   den.hosts.x86_64-linux = {
     vps = {
@@ -7,55 +12,57 @@
     };
   };
 
-  den.aspects.vps = { ...  }: {
-    includes = [
-      den.batteries.define-user
-      den.batteries.hostname
-      den.aspects.hetzner-server
-      den.aspects.nixos-deploy
-      den.aspects.headscale
-    ];
-
-    nixos = {
-      imports = [
-        ./_hardware-configuration.nix
-        self.inputs.disko.nixosModules.default
-        self.inputs.sops-nix.nixosModules.sops
-        self.nixosModules.vps-filesystem
-        self.nixosModules.vps-sops
+  den.aspects.vps =
+    { ... }:
+    {
+      includes = [
+        den.batteries.define-user
+        den.batteries.hostname
+        den.aspects.hetzner-server
+        den.aspects.nixos-deploy
+        den.aspects.headscale
       ];
 
-      boot.loader.grub.enable = true;
-      services.openssh = {
-        enable = true;
-        settings = {
-          PasswordAuthentication = false;
-          PermitRootLogin = "prohibit-password";
+      nixos = {
+        imports = [
+          ./_hardware-configuration.nix
+          self.inputs.disko.nixosModules.default
+          self.inputs.sops-nix.nixosModules.sops
+          self.nixosModules.vps-filesystem
+          self.nixosModules.vps-sops
+        ];
+
+        boot.loader.grub.enable = true;
+        services.openssh = {
+          enable = true;
+          settings = {
+            PasswordAuthentication = false;
+            PermitRootLogin = "prohibit-password";
+          };
         };
+
+        users.users.vps = {
+          isNormalUser = true;
+          extraGroups = [ "wheel" ];
+          initialHashedPassword = "$y$j9T$2DyEjQxPoIjTkt8zCoWl.0$3mHxH.fqkCgu53xa0vannyu4Cue3Q7xL4CrUhMxREKC"; # Password.123
+
+          openssh.authorizedKeys.keys = [
+            (builtins.readFile ../../aspects/key.pub)
+          ];
+        };
+
+        users.users.root = {
+          openssh.authorizedKeys.keys = [
+            (builtins.readFile ../../aspects/key.pub)
+          ];
+        };
+
+        programs.neovim = {
+          enable = true;
+          defaultEditor = true;
+        };
+
+        system.stateVersion = "25.05";
       };
-
-      users.users.vps = {
-        isNormalUser = true;
-        extraGroups = [ "wheel" ];
-        initialHashedPassword = "$y$j9T$2DyEjQxPoIjTkt8zCoWl.0$3mHxH.fqkCgu53xa0vannyu4Cue3Q7xL4CrUhMxREKC"; # Password.123
-
-        openssh.authorizedKeys.keys = [
-          (builtins.readFile ../../aspects/key.pub)
-        ];
-      };
-
-      users.users.root = {
-        openssh.authorizedKeys.keys = [
-          (builtins.readFile ../../aspects/key.pub)
-        ];
-      };
-
-      programs.neovim = {
-        enable = true;
-        defaultEditor = true;
-      };
-
-      system.stateVersion = "25.05";
     };
-  };
 }

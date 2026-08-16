@@ -1,4 +1,5 @@
-{ self, inputs, ... }: {
+{ self, inputs, ... }:
+{
   flake.nixosConfigurations.koonMax = inputs.nixpkgs.lib.nixosSystem {
     modules = [
       self.inputs.nixos-apple-silicon.nixosModules.apple-silicon-support

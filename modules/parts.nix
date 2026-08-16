@@ -1,6 +1,8 @@
-{ inputs, ... }: {
+{ inputs, ... }:
+{
   imports = [
     inputs.den.flakeModule
+    inputs.treefmt-nix.flakeModule
     inputs.home-manager.flakeModules.home-manager
     inputs.disko.flakeModules.default
   ];
@@ -14,4 +16,3 @@
     ];
   };
 }
-

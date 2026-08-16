@@ -1,9 +1,12 @@
-{ ... }: {
-  flake.homeModules.commonFeatureOsd = { ... }: {
-    services.swayosd = {
-      enable = true;
-    };
+{ ... }:
+{
+  flake.homeModules.commonFeatureOsd =
+    { ... }:
+    {
+      services.swayosd = {
+        enable = true;
+      };
 
-    home.file.".config/swayosd/style.css".source = ./swayosd/style.css;
-  };
+      home.file.".config/swayosd/style.css".source = ./swayosd/style.css;
+    };
 }

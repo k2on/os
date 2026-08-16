@@ -1,6 +1,8 @@
-{ ... }: {
-  flake.homeModules.commonFeatureStarship = { ... }: {
-    programs.starship.enable = true;
-  };
+{ ... }:
+{
+  flake.homeModules.commonFeatureStarship =
+    { ... }:
+    {
+      programs.starship.enable = true;
+    };
 }
-

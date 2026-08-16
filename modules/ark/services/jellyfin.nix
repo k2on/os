@@ -1,8 +1,11 @@
-{ ... }: {
-  ark.services.jellyfin = { ... }: {
-    services.jellyfin = {
-      enable = true;
-      openFirewall = true;
+{ ... }:
+{
+  ark.services.jellyfin =
+    { ... }:
+    {
+      services.jellyfin = {
+        enable = true;
+        openFirewall = true;
+      };
     };
-  };
 }

@@ -1,32 +1,35 @@
-{ ... }: {
-  flake.nixosModules.commonFeatureYubikey = { pkgs, ... }: {
-    environment.systemPackages = with pkgs; [
+{ ... }:
+{
+  flake.nixosModules.commonFeatureYubikey =
+    { pkgs, ... }:
+    {
+      environment.systemPackages = with pkgs; [
         yubioath-flutter # gui
-        yubikey-manager  # `ykman`
-        pam_u2f          # yubikey with sudo
-    ];
+        yubikey-manager # `ykman`
+        pam_u2f # yubikey with sudo
+      ];
 
-    services.pcscd.enable = true;
-    services.udev.packages = [ pkgs.yubikey-personalization ];
+      services.pcscd.enable = true;
+      services.udev.packages = [ pkgs.yubikey-personalization ];
 
-    services.yubikey-agent.enable = true;
+      services.yubikey-agent.enable = true;
 
-    security.pam = {
-      sshAgentAuth.enable = true;
-      u2f = {
-        enable = true;
-        settings = {
-          cue = true;
-          authFile = "/home/max/.config/Yubico/u2f_keys";
+      security.pam = {
+        sshAgentAuth.enable = true;
+        u2f = {
+          enable = true;
+          settings = {
+            cue = true;
+            authFile = "/home/max/.config/Yubico/u2f_keys";
+          };
         };
-      };
-      services = {
-        login.u2fAuth = true;
-        sudo = {
-          u2fAuth = true;
-          sshAgentAuth = true;
+        services = {
+          login.u2fAuth = true;
+          sudo = {
+            u2fAuth = true;
+            sshAgentAuth = true;
+          };
         };
       };
     };
-  };
 }

@@ -1,31 +1,34 @@
-{ ... }: {
-  flake.homeModules.commonFeatureHyprlock = { ... }: {
-    programs.hyprlock = {
-      enable = true;
+{ ... }:
+{
+  flake.homeModules.commonFeatureHyprlock =
+    { ... }:
+    {
+      programs.hyprlock = {
+        enable = true;
 
-      settings = {
-        "$color" = "rgba(26,27,38,1.0)";
-        "$inner_color" = "rgba(26,27,38,0.8)";
-        "$outer_color" = "rgba(205,214,244,1.0)";
-        "$font_color" = "rgba(205,214,244,1.0)";
-        "$check_color" = "rgba(68, 157, 171, 1.0)";
+        settings = {
+          "$color" = "rgba(26,27,38,1.0)";
+          "$inner_color" = "rgba(26,27,38,0.8)";
+          "$outer_color" = "rgba(205,214,244,1.0)";
+          "$font_color" = "rgba(205,214,244,1.0)";
+          "$check_color" = "rgba(68, 157, 171, 1.0)";
 
-        general = {
+          general = {
             ignore_empty_input = true;
-        };
+          };
 
-        background = {
+          background = {
             monitor = "";
             color = "$color";
             # path = "~/Downloads/wallpaper.png";
             blur_passes = 3;
-        };
+          };
 
-        animations = {
+          animations = {
             enabled = true;
-        };
+          };
 
-        input-field = {
+          input-field = {
             monitor = "";
             size = "650, 100";
             position = "0, 0";
@@ -46,14 +49,14 @@
             rounding = 0;
             shadow_passes = 0;
             fade_on_empty = false;
-        };
+          };
 
-        auth = {
+          auth = {
             "fingerprint:enabled" = true;
+          };
+
         };
 
       };
-
     };
-  };
 }

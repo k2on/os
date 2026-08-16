@@ -9,9 +9,10 @@
 
     flake-parts.url = "github:hercules-ci/flake-parts";
     import-tree.url = "github:vic/import-tree";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    nixos-apple-silicon.url =
-      "github:nix-community/nixos-apple-silicon?ref=release-2025-11-18";
+    nixos-apple-silicon.url = "github:nix-community/nixos-apple-silicon?ref=release-2025-11-18";
 
     home-manager = {
       url = "github:nix-community/home-manager?ref=release-25.11";
@@ -50,8 +51,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    apple-fonts.url= "github:Lyndeno/apple-fonts.nix";
+    apple-fonts.url = "github:Lyndeno/apple-fonts.nix";
   };
 
-  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs;} (inputs.import-tree ./modules);
+  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
 }

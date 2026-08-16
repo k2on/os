@@ -3,22 +3,27 @@ let
   inherit (config.ark) mergeServices assignServicePorts serviceDomain;
 in
 {
-  den.aspects.ark-nginx.nixos = { ark-service, lib, host, ... }:
+  den.aspects.ark-nginx.nixos =
+    {
+      ark-service,
+      lib,
+      host,
+      ...
+    }:
     let
       services = mergeServices ark-service;
       ports = assignServicePorts services;
-      serviceVhosts = lib.mapAttrs'
-        (name: spec: lib.nameValuePair
-          (serviceDomain name spec)
-          {
-            useACMEHost = config.ark.mainDomain;
-            forceSSL = true;
-            locations."/" = {
-              proxyPass = "http://localhost:${toString ports.${name}}";
-              proxyWebsockets = true;
-            };
-          })
-        services;
+      serviceVhosts = lib.mapAttrs' (
+        name: spec:
+        lib.nameValuePair (serviceDomain name spec) {
+          useACMEHost = config.ark.mainDomain;
+          forceSSL = true;
+          locations."/" = {
+            proxyPass = "http://localhost:${toString ports.${name}}";
+            proxyWebsockets = true;
+          };
+        }
+      ) services;
     in
     {
       services.nginx = {

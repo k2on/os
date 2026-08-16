@@ -1,51 +1,61 @@
-{ ... }: {
-  ark.services.waka = { service, ... }: {
+{ ... }:
+{
+  ark.services.waka =
+    { service, ... }:
+    {
 
-    nixpkgs.overlays = [
-      (final: prev: let
-          version = "2.15.0";
-        in {
+      nixpkgs.overlays = [
+        (
+          final: prev:
+          let
+            version = "2.15.0";
+          in
+          {
 
-        wakapi = (prev.buildGoModule.override { go = prev.go_1_25; }) {
-          pname = "wakapi";
-          version = version;
+            wakapi = (prev.buildGoModule.override { go = prev.go_1_25; }) {
+              pname = "wakapi";
+              version = version;
 
-          src = final.fetchFromGitHub {
-            owner = "k2on";
-            repo = "wakapi";
-            rev = "koon-fork";
-            hash = "sha256-FYGtoJmbqUD02/JKvON1RqpjkrDkAOkfPwMAUZ2MSE4=";
-          };
+              src = final.fetchFromGitHub {
+                owner = "k2on";
+                repo = "wakapi";
+                rev = "koon-fork";
+                hash = "sha256-FYGtoJmbqUD02/JKvON1RqpjkrDkAOkfPwMAUZ2MSE4=";
+              };
 
-          vendorHash = "sha256-912x6LwitYXdjWpP75Xoc56JXadeLQZuESSyLoaJcU0=";
+              vendorHash = "sha256-912x6LwitYXdjWpP75Xoc56JXadeLQZuESSyLoaJcU0=";
 
-          excludedPackages = [ "scripts" ];
+              excludedPackages = [ "scripts" ];
 
-          postPatch = ''echo ${version} > version.txt'';
+              postPatch = ''echo ${version} > version.txt'';
 
-          ldflags = [ "-s" "-w" ];
+              ldflags = [
+                "-s"
+                "-w"
+              ];
 
-          passthru = {
-            nixos = prev.nixosTests.wakapi;
-            updateScript = prev.nix-update-script { };
-          };
+              passthru = {
+                nixos = prev.nixosTests.wakapi;
+                updateScript = prev.nix-update-script { };
+              };
 
-          meta = prev.wakapi.meta // {
-            version = version;
-            mainProgram = "wakapi";
-          };
+              meta = prev.wakapi.meta // {
+                version = version;
+                mainProgram = "wakapi";
+              };
+            };
+
+          }
+        )
+      ];
+
+      services.wakapi = {
+        enable = true;
+        # passwordSaltFile = config.sops.secrets."waka-password-salt".path;
+        settings = {
+          server.port = service.port;
+          # app.avatar_url_template = "";
         };
-
-      })
-    ];
-
-    services.wakapi = {
-      enable = true;
-      # passwordSaltFile = config.sops.secrets."waka-password-salt".path;
-      settings = {
-        server.port = service.port;
-        # app.avatar_url_template = "";
       };
     };
-  };
 }

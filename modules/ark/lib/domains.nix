@@ -13,9 +13,9 @@
 
   config = {
     ark.mainDomain =
-      (lib.findFirst (d: d.role == "main")
-        (throw "ark.domains: no domain with role = \"main\"")
-        config.ark.domains).domain;
+      (lib.findFirst (
+        d: d.role == "main"
+      ) (throw "ark.domains: no domain with role = \"main\"") config.ark.domains).domain;
 
     den.aspects.ark.domains = config.ark.domains;
   };

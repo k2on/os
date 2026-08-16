@@ -1,10 +1,13 @@
-{ ... }: {
-  flake.homeModules.commonFeatureZathura = { ... }: {
-    programs.zathura = {
-      enable = true;
-      options = {
-        selection-clipboard = "clipboard";
+{ ... }:
+{
+  flake.homeModules.commonFeatureZathura =
+    { ... }:
+    {
+      programs.zathura = {
+        enable = true;
+        options = {
+          selection-clipboard = "clipboard";
+        };
       };
     };
-  };
 }

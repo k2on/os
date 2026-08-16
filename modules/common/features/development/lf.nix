@@ -1,5 +1,10 @@
-{ ... }: {
-  flake.homeModules.commonFeatureLf = { ... }: {
-    programs.lf = { enable = true; };
-  };
+{ ... }:
+{
+  flake.homeModules.commonFeatureLf =
+    { ... }:
+    {
+      programs.lf = {
+        enable = true;
+      };
+    };
 }

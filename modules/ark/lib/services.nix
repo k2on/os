@@ -30,34 +30,38 @@ let
   portBase = 31600;
 
   # Accept both definition forms; always work with { port?, domain?, make }.
-  normalize = spec:
-    if lib.isFunction spec then { make = spec; } else spec;
+  normalize = spec: if lib.isFunction spec then { make = spec; } else spec;
 
   # list of { <name> = spec; } (one per producing aspect) -> { name -> spec }
   # Fails loudly if two producers register the same service name.
-  mergeServices = regs:
-    lib.foldl'
-      (acc: reg:
-        let dup = lib.intersectLists (lib.attrNames acc) (lib.attrNames reg);
-        in if dup != [ ]
-           then throw "ark: duplicate service registration(s): ${toString dup}"
-           else acc // lib.mapAttrs (_: normalize) reg)
-      { }
-      regs;
+  mergeServices =
+    regs:
+    lib.foldl' (
+      acc: reg:
+      let
+        dup = lib.intersectLists (lib.attrNames acc) (lib.attrNames reg);
+      in
+      if dup != [ ] then
+        throw "ark: duplicate service registration(s): ${toString dup}"
+      else
+        acc // lib.mapAttrs (_: normalize) reg
+    ) { } regs;
 
   # { name -> spec } -> { name -> port }
-  assignPorts = services:
+  assignPorts =
+    services:
     let
-      autoNames = lib.sort lib.lessThan
-        (lib.attrNames (lib.filterAttrs (_: s: (s.port or null) == null) services));
-      autoFor = name:
-        portBase + (10 * lib.lists.findFirstIndex (n: n == name)
-          (throw "ark: unregistered service '${name}'")
-          autoNames);
+      autoNames = lib.sort lib.lessThan (
+        lib.attrNames (lib.filterAttrs (_: s: (s.port or null) == null) services)
+      );
+      autoFor =
+        name:
+        portBase
+        + (
+          10 * lib.lists.findFirstIndex (n: n == name) (throw "ark: unregistered service '${name}'") autoNames
+        );
     in
-    lib.mapAttrs
-      (name: s: if (s.port or null) != null then s.port else autoFor name)
-      services;
+    lib.mapAttrs (name: s: if (s.port or null) != null then s.port else autoFor name) services;
 
   domainFor = name: spec: spec.domain or "${name}.${config.ark.mainDomain}";
 
@@ -65,15 +69,19 @@ let
   # normal module args. setFunctionArgs advertises the user function's
   # own argument names (minus service) so the module system supplies
   # config/pkgs/lib/etc. as usual.
-  mkModule = name: port: spec:
+  mkModule =
+    name: port: spec:
     let
-      service = { inherit name port; domain = domainFor name spec; };
+      service = {
+        inherit name port;
+        domain = domainFor name spec;
+      };
       m = spec.make or { };
     in
     if lib.isFunction m then
-      lib.setFunctionArgs
-        (args: m (args // { inherit service; }))
-        (builtins.removeAttrs (lib.functionArgs m) [ "service" ])
+      lib.setFunctionArgs (args: m (args // { inherit service; })) (
+        builtins.removeAttrs (lib.functionArgs m) [ "service" ]
+      )
     else
       m;
 in
@@ -108,30 +116,28 @@ in
   };
 
   config.den = {
-    quirks.ark-service.description =
-      "Service registrations keyed by name: { <name> = <module fn> | { port ?, domain ?, make ? }; }";
+    quirks.ark-service.description = "Service registrations keyed by name: { <name> = <module fn> | { port ?, domain ?, make ? }; }";
 
     aspects =
       # One generated aspect per defined service; including it on a host
       # is what registers (and therefore runs) the service there.
-      lib.mapAttrs'
-        (name: spec:
-          lib.nameValuePair "service-${name}" {
-            ark-service.${name} = spec;
-          })
-        config.ark.services
+      lib.mapAttrs' (
+        name: spec:
+        lib.nameValuePair "service-${name}" {
+          ark-service.${name} = spec;
+        }
+      ) config.ark.services
       // {
         # Consumer: instantiates every registered service on this host
         # with its resolved port.
-        ark-services.nixos = { ark-service, ... }:
+        ark-services.nixos =
+          { ark-service, ... }:
           let
             services = mergeServices ark-service;
             ports = assignPorts services;
           in
           {
-            imports = lib.mapAttrsToList
-              (name: spec: mkModule name ports.${name} spec)
-              services;
+            imports = lib.mapAttrsToList (name: spec: mkModule name ports.${name} spec) services;
           };
       };
 
