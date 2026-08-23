@@ -128,7 +128,7 @@ in
               displayName = "Cloud";
               originUrl = "https://cloud.${ark.mainDomain}/apps/user_oidc/code";
               originLanding = "https://cloud.${ark.mainDomain}";
-              imageFile = "${self}/assets/photos.svg";
+              imageFile = "${self}/assets/cloud.svg";
               basicSecretFile = config.sops.secrets.cloud_oidc_client_secret_kanidm.path;
               preferShortUsername = true;
               scopeMaps.cloud_users = [

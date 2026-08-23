@@ -1,0 +1,8 @@
+name: check
+on: [push]
+jobs:
+  flake-check:
+    runs-on: nix
+    steps:
+      - uses: actions/checkout@v4
+      - run: nix flake check -L

@@ -57,6 +57,16 @@ in
         sopsFile = "${self}/secrets/sops/oidc/git.yaml";
         owner = "git";
       };
+      sops.secrets.git_runner_token = {
+        sopsFile = "${self}/secrets/sops/oidc/git.yaml";
+        restartUnits = [ "gitea.service" ];
+      };
+      sops.templates."gitea-runner.env" = {
+        content = ''
+          TOKEN=${config.sops.placeholder.git_runner_token}
+        '';
+        restartUnits = [ "gitea-runner-default.service" ];
+      };
 
       services.openssh = {
         enable = true;
@@ -119,7 +129,26 @@ in
             DISABLE_ORGANIZATIONS_PAGE = true;
             DISABLE_CODE_PAGE = true;
           };
+          actions.ENABLED = true;
         };
+      };
+
+
+      services.gitea-actions-runner.instances.default = {
+        enable = true;
+        name = "nixos-host";
+        url = config.services.gitea.settings.server.ROOT_URL;
+        tokenFile = config.sops.templates."gitea-runner.env".path;
+        labels = [ "nix:host" ];
+        hostPackages = with pkgs; [
+          bash coreutils curl gawk gitMinimal gnused wget nodejs  # module defaults
+          nix                                                     # the thing you actually want
+        ];
+      };
+
+      systemd.services.gitea-runner-default = {
+        after = [ "gitea.service" ];
+        wants = [ "gitea.service" ];
       };
 
       users.users.git = {
@@ -140,9 +169,13 @@ in
         "L+ ${cfg.customDir}/options - - - - ${giteaGithubTheme}/options"
       ];
 
+      # Gitea side: seed the token at startup
+      systemd.services.gitea.environment.GITEA_RUNNER_REGISTRATION_TOKEN_FILE =
+        "%d/runner-token";
       systemd.services.gitea = {
         serviceConfig = {
           RestartSec = "60"; # Retry every minute
+          LoadCredential = [ "runner-token:${config.sops.secrets.git_runner_token.path}" ];
         };
         preStart =
           let
