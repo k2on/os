@@ -133,7 +133,6 @@ in
         };
       };
 
-
       services.gitea-actions-runner.instances.default = {
         enable = true;
         name = "nixos-host";
@@ -141,8 +140,15 @@ in
         tokenFile = config.sops.templates."gitea-runner.env".path;
         labels = [ "nix:host" ];
         hostPackages = with pkgs; [
-          bash coreutils curl gawk gitMinimal gnused wget nodejs  # module defaults
-          nix                                                     # the thing you actually want
+          bash
+          coreutils
+          curl
+          gawk
+          gitMinimal
+          gnused
+          wget
+          nodejs # module defaults
+          nix # the thing you actually want
         ];
       };
 
@@ -170,8 +176,7 @@ in
       ];
 
       # Gitea side: seed the token at startup
-      systemd.services.gitea.environment.GITEA_RUNNER_REGISTRATION_TOKEN_FILE =
-        "%d/runner-token";
+      systemd.services.gitea.environment.GITEA_RUNNER_REGISTRATION_TOKEN_FILE = "%d/runner-token";
       systemd.services.gitea = {
         serviceConfig = {
           RestartSec = "60"; # Retry every minute
