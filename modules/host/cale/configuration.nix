@@ -20,7 +20,7 @@
         self.nixosModules.commonFeatureLocale
         self.nixosModules.commonFeatureYubikey
 
-        self.nixosModules.commonFeatureHyprland
+        self.nixosModules.commonFeatureCosmic
 
         self.nixosModules.koonFeatureTailscale
 
@@ -31,6 +31,7 @@
 
       # Use the systemd-boot EFI boot loader.
       boot.loader.systemd-boot.enable = true;
+      boot.loader.systemd-boot.configurationLimit = 5;
       boot.loader.efi.canTouchEfiVariables = false;
 
       boot.m1n1CustomLogo = ../../../assets/logo.png;
@@ -38,6 +39,7 @@
 
       hardware = {
         asahi = {
+          enable = true;
           peripheralFirmwareDirectory = ./firmware;
           setupAsahiSound = true;
         };
@@ -61,6 +63,15 @@
         enable = true;
         powerOnBoot = true;
       };
+
+      # PipeWire < 1.4.10 has a bug where the Asahi DSP speaker sink comes up
+      # with its volume locked at 100% after boot and can't be changed until
+      # some audio has played once (upstream
+      # https://gitlab.freedesktop.org/pipewire/pipewire/-/issues/4900,
+      # AsahiLinux/asahi-audio#73). nixos-25.11 ships 1.4.9, so pull PipeWire
+      # and its matching WirePlumber from unstable where the fix is present.
+      services.pipewire.package = pkgs.pkgs-unstable.pipewire;
+      services.pipewire.wireplumber.package = pkgs.pkgs-unstable.wireplumber;
 
       environment.variables = {
         XDG_DATA_HOME = "/home/max/.local/share";
@@ -111,7 +122,7 @@
         cloudflared
         # gcc
 
-        prismlauncher
+        pkgs-unstable.claude-code
 
         gimp
         inkscape
@@ -152,10 +163,24 @@
 
       networking.extraHosts = "127.0.0.1 s3";
 
+      # transparent.nvim (used by neovim) ships no license file, so nixpkgs
+      # marks it unfree as of 26.05. Allow just this package.
+      nixpkgs.config.allowUnfreePredicate =
+        pkg: builtins.elem (lib.getName pkg) [ "transparent.nvim" ];
+
       nix.settings.experimental-features = [
         "nix-command"
         "flakes"
       ];
+
+      # Deduplicate the store and collect garbage weekly, keeping only the
+      # generations still referenced within the last 5 boot entries above.
+      nix.settings.auto-optimise-store = true;
+      nix.gc = {
+        automatic = true;
+        dates = "weekly";
+        options = "--delete-older-than 30d";
+      };
 
       system.stateVersion = "25.05";
     };

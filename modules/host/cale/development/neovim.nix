@@ -10,6 +10,10 @@
       programs.nixvim = {
         enable = true;
 
+        # Reuse the system pkgs (which already permits transparent.nvim) rather
+        # than letting nixvim import its own nixpkgs off the flake `follows`.
+        nixpkgs.pkgs = pkgs;
+
         colorschemes.tokyonight.enable = true;
 
         globals = {

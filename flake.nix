@@ -3,7 +3,7 @@
 
   inputs = {
     den.url = "github:denful/den";
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-25.11";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-26.05";
 
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
@@ -12,15 +12,15 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    nixos-apple-silicon.url = "github:nix-community/nixos-apple-silicon?ref=release-2025-11-18";
+    nixos-apple-silicon.url = "github:nix-community/nixos-apple-silicon?ref=release-2026-07-30";
 
     home-manager = {
-      url = "github:nix-community/home-manager?ref=release-25.11";
+      url = "github:nix-community/home-manager?ref=release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nixvim = {
-      url = "github:nix-community/nixvim?ref=nixos-25.11";
+      url = "github:nix-community/nixvim?ref=nixos-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

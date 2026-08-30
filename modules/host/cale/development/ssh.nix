@@ -7,24 +7,20 @@
         enable = true;
         enableDefaultConfig = false;
 
-        matchBlocks = {
+        # Attribute names are `Host` patterns; values use OpenSSH directive names.
+        settings = {
           "*" = {
-            addKeysToAgent = "yes";
+            AddKeysToAgent = "yes";
           };
           "m1" = {
-            host = "m1";
-            user = "admin";
+            User = "admin";
           };
           "ark" = {
-            host = "ark";
-            user = "admin";
+            User = "admin";
           };
-          "git" = {
-            host = "github.com";
-            user = "git";
-            identityFile = [
-              "~/.ssh/id_maxkey"
-            ];
+          "github.com" = {
+            User = "git";
+            IdentityFile = "~/.ssh/id_maxkey";
           };
         };
       };
