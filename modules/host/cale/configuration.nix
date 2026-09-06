@@ -32,7 +32,7 @@
       boot.loader.systemd-boot.enable = true;
       boot.loader.systemd-boot.configurationLimit = 5;
       boot.loader.efi.canTouchEfiVariables = false;
-      boot.loader.systemd-boot.graceful = true;   # passes --graceful, ignores EFI-variable errors
+      boot.loader.systemd-boot.graceful = true; # passes --graceful, ignores EFI-variable errors
 
       boot.m1n1CustomLogo = ../../../assets/logo.png;
       boot.binfmt.emulatedSystems = [ "x86_64-linux" ];
@@ -171,8 +171,7 @@
 
       # transparent.nvim (used by neovim) ships no license file, so nixpkgs
       # marks it unfree as of 26.05. Allow just this package.
-      nixpkgs.config.allowUnfreePredicate =
-        pkg: builtins.elem (lib.getName pkg) [ "transparent.nvim" ];
+      nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "transparent.nvim" ];
 
       nix.settings.experimental-features = [
         "nix-command"

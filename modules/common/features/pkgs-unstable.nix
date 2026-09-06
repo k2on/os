@@ -8,9 +8,11 @@
           pkgs-unstable = import inputs.nixpkgs-unstable {
             inherit (prev.stdenv.hostPlatform) system;
 
-            config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
-              "claude-code"
-            ];
+            config.allowUnfreePredicate =
+              pkg:
+              builtins.elem (lib.getName pkg) [
+                "claude-code"
+              ];
           };
         })
       ];

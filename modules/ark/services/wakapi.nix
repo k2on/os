@@ -27,7 +27,7 @@
 
               excludedPackages = [ "scripts" ];
 
-              postPatch = ''echo ${version} > version.txt'';
+              postPatch = "echo ${version} > version.txt";
 
               ldflags = [
                 "-s"
