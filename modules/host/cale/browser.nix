@@ -109,16 +109,6 @@
                 icon = "circle";
                 id = 1;
               };
-              School = {
-                color = "red";
-                icon = "fruit";
-                id = 2;
-              };
-              Work = {
-                color = "blue";
-                icon = "briefcase";
-                id = 3;
-              };
             };
             spaces = {
               Personal = {
@@ -126,18 +116,6 @@
                 icon = "⭐";
                 container = containers."Personal".id;
                 position = 1000;
-              };
-              School = {
-                id = "78aabdad-8aae-4fe0-8ff0-2a0c6c4ccc24";
-                icon = "🍎";
-                container = containers."School".id;
-                position = 2000;
-              };
-              Work = {
-                id = "cdd10fab-4fc5-494b-9041-325e5759195b";
-                icon = "💼";
-                container = containers."Work".id;
-                position = 3000;
               };
             };
             pins = {
@@ -149,13 +127,6 @@
                 isEssential = true;
                 position = 1;
               };
-              "Proton Calendar" = {
-                id = "6557e03f-c0ab-4656-ac94-acfb1fe19f3c";
-                container = containers.Personal.id;
-                url = "https://calendar.proton.me";
-                isEssential = true;
-                position = 2;
-              };
               "YNAB" = {
                 id = "10cb5609-fcd5-4ed6-a48d-24eb22f2d624";
                 container = containers.Personal.id;
@@ -163,16 +134,6 @@
                 isEssential = true;
                 position = 3;
               };
-
-              # # School Pins
-              # "Canvas" = {
-              #   id = "cfbdc143-6a16-46d7-b33e-e9c964725e59";
-              #   workspace = spaces.School.id;
-              #   container = containers.School.id;
-              #   url = "https://clemson.instructure.com/calendar";
-              #   isEssential = true;
-              #   position = 104;
-              # };
             };
           in
           {

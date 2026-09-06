@@ -17,7 +17,6 @@
 
         self.nixosModules.commonFeatureEmail
         self.nixosModules.commonFeatureFont
-        self.nixosModules.commonFeatureLocale
         self.nixosModules.commonFeatureYubikey
 
         self.nixosModules.commonFeatureCosmic
@@ -33,6 +32,7 @@
       boot.loader.systemd-boot.enable = true;
       boot.loader.systemd-boot.configurationLimit = 5;
       boot.loader.efi.canTouchEfiVariables = false;
+      boot.loader.systemd-boot.graceful = true;   # passes --graceful, ignores EFI-variable errors
 
       boot.m1n1CustomLogo = ../../../assets/logo.png;
       boot.binfmt.emulatedSystems = [ "x86_64-linux" ];
@@ -115,9 +115,15 @@
         libqalculate
         librespeed-cli
 
+        wl-clipboard
+
         gparted
 
         tea
+        gh
+
+        glow
+        delta
 
         cloudflared
         # gcc
