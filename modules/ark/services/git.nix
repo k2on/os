@@ -14,7 +14,7 @@ in
     let
       oauthName = "KoonFamily";
       cfg = config.services.gitea;
-      themeVersion = "1.26.2";
+      themeVersion = "1.27.2";
       giteaGithubTheme = pkgs.stdenvNoCC.mkDerivation {
         pname = "gitea-github-theme";
         version = themeVersion;
@@ -22,17 +22,17 @@ in
         srcs = [
           (pkgs.fetchurl {
             url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-base.tar.gz";
-            hash = "sha256-h4Q1z7AXAckiHyOYR1YX8rsY5+zgVeUv+Wrc0raLH1Q=";
+            hash = "sha256-L0nzSXWz1fYV5Ia7Qc2H0D2pBBNu5dXrDp42mWi0Aqc=";
           })
           # optional: GitHub-like layout templates (version-sensitive!)
           (pkgs.fetchurl {
             url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-templates.tar.gz";
-            hash = "sha256-GiZkF8UtIajWTXGvHeXogHJM/M8BrICZQ2AzD+EGyvM=";
+            hash = "sha256-5Okapwq6t2dZydb1hOHIf7zlOBVRi15rgE/F2NIzuis=";
           })
           # optional: translations for the templates
           (pkgs.fetchurl {
             url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-translations.tar.gz";
-            hash = "sha256-rFB1cuvbanyGYXM5QncvOglI4LOk1vduJ8osoY131O0=";
+            hash = "sha256-2dWoSeVljfddBBbbR5Yyz6lzYjkZQJpTVDgyjH4vqfk=";
           })
         ];
 
@@ -166,7 +166,7 @@ in
       };
       users.groups.git = { };
 
-      # Link the theme into Gitea's customDir (default: ${stateDir}/custom)
+      # # Link the theme into Gitea's customDir (default: ${stateDir}/custom)
       systemd.tmpfiles.rules = [
         "d ${cfg.customDir}/public 0750 ${cfg.user} ${cfg.group} - -"
         "d ${cfg.customDir}/public/assets 0750 ${cfg.user} ${cfg.group} - -"
