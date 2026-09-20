@@ -61,6 +61,22 @@
         "type": "github"
       }
     },
+    "files": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1785514153,
+        "narHash": "sha256-udzZZPcWFI1ul8uLNfofC2fzuq0LI7Pv1cY5qs+JlbQ=",
+        "owner": "mightyiam",
+        "repo": "files",
+        "rev": "ffaceaf36ccfd7868272ee3ccfe3f17ff2424060",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mightyiam",
+        "repo": "files",
+        "type": "github"
+      }
+    },
     "firefox-addons": {
       "inputs": {
         "nixpkgs": [
@@ -119,6 +135,28 @@
     "flake-parts_2": {
       "inputs": {
         "nixpkgs-lib": [
+          "harken",
+          "petros",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788450739,
+        "narHash": "sha256-glZLQlzIn1fXH6PazR2iUmTo7kzzyYSshrWhLS9TqCU=",
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "rev": "31729ca8cbdb4fa927b34e5f4353e6a83f39e993",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "type": "github"
+      }
+    },
+    "flake-parts_3": {
+      "inputs": {
+        "nixpkgs-lib": [
           "nixvim",
           "nixpkgs"
         ]
@@ -137,7 +175,7 @@
         "type": "github"
       }
     },
-    "flake-parts_3": {
+    "flake-parts_4": {
       "inputs": {
         "nixpkgs-lib": [
           "terranix",
@@ -155,6 +193,25 @@
       "original": {
         "owner": "hercules-ci",
         "repo": "flake-parts",
+        "type": "github"
+      }
+    },
+    "harken": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_2",
+        "petros": "petros"
+      },
+      "locked": {
+        "lastModified": 1789853966,
+        "narHash": "sha256-WWsCR5vKhIcrfUjJzUQe41oQn17yyyHeVxsKTPyhq7k=",
+        "owner": "k2on",
+        "repo": "harken",
+        "rev": "e7f060d62b56f8b0e64a6c0530c4ab59079d0060",
+        "type": "github"
+      },
+      "original": {
+        "owner": "k2on",
+        "repo": "harken",
         "type": "github"
       }
     },
@@ -202,6 +259,21 @@
     },
     "import-tree": {
       "locked": {
+        "lastModified": 1788467110,
+        "narHash": "sha256-ljEMTXP/rH0tOvDzc9gzwww6KcHRPRnEHzd9lK48V7s=",
+        "owner": "vic",
+        "repo": "import-tree",
+        "rev": "eb1b52eaecc57f7c136d07ae8a93e724dfecac46",
+        "type": "github"
+      },
+      "original": {
+        "owner": "vic",
+        "repo": "import-tree",
+        "type": "github"
+      }
+    },
+    "import-tree_2": {
+      "locked": {
         "lastModified": 1784254960,
         "narHash": "sha256-iI88R3wHz8wTKQb5orvpc51L/Xr64AJyxid/0MKa/b8=",
         "owner": "vic",
@@ -218,7 +290,7 @@
     "nixos-apple-silicon": {
       "inputs": {
         "flake-compat": "flake-compat",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_3"
       },
       "locked": {
         "lastModified": 1785426242,
@@ -284,6 +356,22 @@
     },
     "nixpkgs_2": {
       "locked": {
+        "lastModified": 1789009968,
+        "narHash": "sha256-GB16oaxpsrnGNnGIE+0uYBqMRzB9X6FYDUvjvnJAYew=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "d58a46e3bc02d91ebe04667f8397752a749c0024",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-26.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
+      "locked": {
         "lastModified": 1784796856,
         "narHash": "sha256-wWFrV5/Qbm+lyt5x20E/bSbfJiGKMo4RCxZV8cl/WZI=",
         "owner": "NixOS",
@@ -298,7 +386,7 @@
         "type": "github"
       }
     },
-    "nixpkgs_3": {
+    "nixpkgs_4": {
       "locked": {
         "lastModified": 1787848966,
         "narHash": "sha256-7gDpu5hpq0rOYnYMcOWqSzquK4HA/xU8Xf3CjUBOOJA=",
@@ -316,7 +404,7 @@
     },
     "nixvim": {
       "inputs": {
-        "flake-parts": "flake-parts_2",
+        "flake-parts": "flake-parts_3",
         "nixpkgs": [
           "nixpkgs"
         ],
@@ -349,6 +437,31 @@
         "url": "https://devimages-cdn.apple.com/design/resources/download/NY.dmg"
       }
     },
+    "petros": {
+      "inputs": {
+        "files": "files",
+        "flake-parts": "flake-parts_2",
+        "import-tree": "import-tree",
+        "nixpkgs": [
+          "harken",
+          "nixpkgs"
+        ],
+        "rust-overlay": "rust-overlay"
+      },
+      "locked": {
+        "lastModified": 1789475701,
+        "narHash": "sha256-XEw9MFiwbdW+r9GgJNQHodRFXRTK6tu1/2i3UI6Hilg=",
+        "owner": "k2on",
+        "repo": "petros",
+        "rev": "bf52c41b937f150d04a15aa9676f0b9ac10e61a7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "k2on",
+        "repo": "petros",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "apple-fonts": "apple-fonts",
@@ -356,16 +469,39 @@
         "disko": "disko",
         "firefox-addons": "firefox-addons",
         "flake-parts": "flake-parts",
+        "harken": "harken",
         "home-manager": "home-manager",
-        "import-tree": "import-tree",
+        "import-tree": "import-tree_2",
         "nixos-apple-silicon": "nixos-apple-silicon",
-        "nixpkgs": "nixpkgs_3",
+        "nixpkgs": "nixpkgs_4",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "nixvim": "nixvim",
         "sops-nix": "sops-nix",
         "terranix": "terranix",
         "treefmt-nix": "treefmt-nix",
         "zen-browser": "zen-browser"
+      }
+    },
+    "rust-overlay": {
+      "inputs": {
+        "nixpkgs": [
+          "harken",
+          "petros",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788765185,
+        "narHash": "sha256-pp8lb5CrKjmscZbTK34HuCaq18zDU4Q6zlaD5dS+Hi4=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "ca7f624be3935a5bc46d2c240515491ab8675503",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
       }
     },
     "sf-arabic": {
@@ -504,7 +640,7 @@
     },
     "terranix": {
       "inputs": {
-        "flake-parts": "flake-parts_3",
+        "flake-parts": "flake-parts_4",
         "nixpkgs": [
           "nixpkgs"
         ],

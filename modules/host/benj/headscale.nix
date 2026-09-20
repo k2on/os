@@ -63,6 +63,7 @@ in
                       "waka"
                       "office"
                       "money"
+                      "harken"
                     ];
               };
               prefixes = {
@@ -78,6 +79,11 @@ in
               };
 
               oidc = {
+                # kanidm is only reachable through the tailnet (nginx streams id.* to
+                # 100.64.0.1), and the tailnet needs headscale up to admit this host.
+                # Don't let an unreachable IdP be fatal, or the two deadlock on a
+                # cold bootstrap. systemd restarts pick OIDC up once tailscale is up.
+                only_start_if_oidc_is_available = false;
                 issuer = "https://${idUrl}/oauth2/openid/headscale";
                 client_id = "headscale";
                 client_secret_path = config.sops.secrets.headscale_oidc_client_secret.path;

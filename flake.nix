@@ -52,6 +52,8 @@
     };
 
     apple-fonts.url = "github:Lyndeno/apple-fonts.nix";
+
+    harken.url = "github:k2on/harken";
   };
 
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);

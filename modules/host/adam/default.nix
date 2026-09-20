@@ -14,6 +14,7 @@
       service-audio
       service-cloud
       service-git
+      service-harken
       service-home
       service-jellyfin
       # service-money

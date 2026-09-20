@@ -43,6 +43,8 @@ in
             "heather"
           ];
 
+          groups.harken_users.members = [ "max" "heather" ];
+
           groups.home_users.members = [ "max" ];
           groups.home_admins.members = [
             "max"
@@ -70,6 +72,20 @@ in
               basicSecretFile = config.sops.secrets.headscale_oidc_client_secret.path;
               preferShortUsername = true;
               scopeMaps.headscale_users = [
+                "openid"
+                "profile"
+                "email"
+                "groups"
+              ];
+            };
+            harken = {
+              displayName = "Harken";
+              originUrl = "https://harken.${ark.mainDomain}/auth/callback";
+              originLanding = "https://harken.${ark.mainDomain}";
+              imageFile = "${self}/assets/home.svg";
+              basicSecretFile = config.sops.secrets.harken_oidc_client_secret_kanidm.path;
+              preferShortUsername = true;
+              scopeMaps.home_users = [
                 "openid"
                 "profile"
                 "email"

@@ -19,7 +19,13 @@ in
           useACMEHost = config.ark.mainDomain;
           forceSSL = true;
           locations."/" = {
-            proxyPass = "http://localhost:${toString ports.${name}}";
+            # `127.0.0.1`, not `localhost`: nginx resolves the latter to `[::1]`
+            # as well, and every service here binds v4 — so one request in a
+            # few landed on an address nothing answers on and was a 502. GETs
+            # were retried on the other address and hid it; POSTs are not
+            # retried, which is how harken's calls to Home Assistant went
+            # missing.
+            proxyPass = "http://127.0.0.1:${toString ports.${name}}";
             proxyWebsockets = true;
           };
         }

@@ -28,7 +28,10 @@
 
             # @cmd Generate internet infra
             push () {
-              ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.apply -- -auto-approve' 
+              # terranix's generated apply script ends in a bare `tofu apply` and
+              # never forwards "$@", so `-- -auto-approve` was silently dropped.
+              # Answer the approval prompt on stdin instead.
+              ${pkgs.sops}/bin/sops exec-env secrets/infra-providers.yaml 'nix run .#infra.apply'
             }
 
             # @cmd Destroy internet infra

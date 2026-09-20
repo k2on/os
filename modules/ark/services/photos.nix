@@ -55,6 +55,7 @@ in
 
       services.immich = {
         enable = true;
+        host = "127.0.0.1";
         port = service.port;
         environment.IMMICH_CONFIG_FILE = config.sops.templates."immich-config.json".path;
         accelerationDevices = null;

@@ -73,6 +73,24 @@
       services.pipewire.package = pkgs.pkgs-unstable.pipewire;
       services.pipewire.wireplumber.package = pkgs.pkgs-unstable.wireplumber;
 
+      # The internal microphone hangs off a second ALSA card (the AOP
+      # "High-Power Audio Interface", alsa_card.platform-audio.*). asahi-audio
+      # only spawns the j414-mic DSP chain -- and with it the only usable
+      # internal mic source -- while that card sits in its HiFi profile.
+      # WirePlumber restores whichever profile it last saved in
+      # ~/.local/state/wireplumber/default-profile, so a single stray "off"
+      # there silently kills the mic on every subsequent boot. Refuse to
+      # restore an "off" profile for this one card; WirePlumber then falls back
+      # to picking HiFi itself. Bluetooth profile restore is unaffected.
+      services.pipewire.wireplumber.extraConfig."51-asahi-internal-mic" = {
+        "monitor.alsa.rules" = [
+          {
+            matches = [ { "device.name" = "~alsa_card.platform-audio.*"; } ];
+            actions.update-props."session.dont-restore-off-profile" = true;
+          }
+        ];
+      };
+
       environment.variables = {
         XDG_DATA_HOME = "/home/max/.local/share";
         GSK_RENDERER = "ngl";
