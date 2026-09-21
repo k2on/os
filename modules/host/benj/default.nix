@@ -7,6 +7,7 @@
 {
   den.hosts.x86_64-linux = {
     vps = {
+      provider = "hetzner";
       server-type = "cpx11";
       region = "ash";
     };
@@ -18,7 +19,6 @@
       includes = [
         den.batteries.define-user
         den.batteries.hostname
-        den.aspects.hetzner-server
         den.aspects.nixos-deploy
         den.aspects.headscale
       ];

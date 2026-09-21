@@ -14,6 +14,29 @@ When cloning the repo, you have to initalize the secrets submodule.
 git submodule update --init secrets
 ```
 
+## Secrets
+
+The `secrets/` submodule is also a module root: `secrets/ark.nix` holds
+the people side (persons, per-service `members`/`admin` groups, the
+identity provider name, the admin age key).
+
+Services declare what they need under the `secrets` quirk (see
+`modules/ark/lib/secrets.nix`). Whatever is declared but not yet in
+`secrets/vars/` is created by:
+
+```sh
+ark secrets
+```
+
+Generated secrets (OIDC client secrets, tokens) are filled in for you,
+the rest are prompted for. `ark secrets --dry-run` only lists what is
+missing or needs rekeying. A host whose secret file is missing refuses to
+build until this has been run and committed in the secrets repo.
+
+Provider API tokens (Hetzner, Cloudflare, Porkbun) use the same `secrets`
+key on their provider aspect, are encrypted to the admin key only, and are
+exported into the environment by `ark plan`, `ark push` and `ark destroy`.
+
 ## Deploy
 
 ### Ark

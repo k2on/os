@@ -34,6 +34,11 @@ in
           default = { };
         };
         options.records = lib.mkOption { type = lib.types.raw; };
+        options.secrets = lib.mkOption {
+          type = lib.types.raw;
+          default = { };
+          description = "API tokens the provider reads from its environment; see lib/secrets.nix.";
+        };
       }
     );
     default = { };
@@ -44,7 +49,10 @@ in
 
     den.aspects = lib.mkMerge (
       (lib.mapAttrsToList (pname: p: {
-        "dns-${pname}-static".terranix = p.static;
+        "dns-${pname}-static" = {
+          terranix = p.static;
+          inherit (p) secrets;
+        };
       }) config.ark.dns.providers)
       ++ [
         {

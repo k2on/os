@@ -1,6 +1,11 @@
 { ... }:
 {
   ark.dns.providers.porkbun = {
+    secrets = {
+      PORKBUN_API_KEY = { };
+      PORKBUN_SECRET_KEY = { };
+    };
+
     static = {
       terraform.required_providers.porkbun = {
         source = "cullenmcdermott/porkbun";

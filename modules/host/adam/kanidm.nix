@@ -1,11 +1,23 @@
-{ self, config, ... }:
+{ config, lib, ... }:
 let
   ark = config.ark;
+  clients = ark.oidc.clients;
 in
 {
   flake.nixosModules.kanidm =
     { pkgs, config, ... }:
     {
+      # kanidm's own copy of every service's client secret. The service's
+      # copy is declared by ark.services (lib/services.nix) on whichever
+      # host runs it; both read the same secrets/vars file.
+      ark.secrets = lib.mapAttrs' (
+        _: o:
+        lib.nameValuePair "${o.secret}_kanidm" {
+          key = o.secret;
+          owner = "kanidm";
+        }
+      ) clients;
+
       services.kanidm = {
         package = pkgs.kanidmWithSecretProvisioning_1_10;
         server = {
@@ -26,136 +38,33 @@ in
           settings.uri = "https://id.${ark.mainDomain}";
         };
 
+        # Persons and group memberships come from the secrets repo
+        # (secrets/ark.nix); clients from each service's `oidc` (lib/oidc.nix).
         provision = {
           enable = true;
 
-          persons.max = {
-            displayName = "Max Koon";
-            mailAddresses = [ "max@${ark.mainDomain}" ];
-          };
-          persons.heather = {
-            displayName = "Heather Koon";
-            mailAddresses = [ "heather@${ark.mainDomain}" ];
-          };
+          persons = lib.mapAttrs (_: p: {
+            inherit (p) displayName;
+            mailAddresses = [ p.mail ];
+          }) ark.persons;
 
-          groups.headscale_users.members = [
-            "max"
-            "heather"
-          ];
+          groups = lib.concatMapAttrs (
+            _: o: lib.mapAttrs' (_: g: lib.nameValuePair g.name { inherit (g) members; }) o.groups
+          ) clients;
 
-          groups.harken_users.members = [ "max" "heather" ];
-
-          groups.home_users.members = [ "max" ];
-          groups.home_admins.members = [
-            "max"
-            "heather"
-          ];
-
-          groups.photos_users.members = [
-            "max"
-            "heather"
-          ];
-
-          groups.git_users.members = [ "max" ];
-
-          groups.cloud_users.members = [
-            "max"
-            "heather"
-          ];
-
-          systems.oauth2 = {
-            headscale = {
-              displayName = "VPN";
-              originUrl = "https://vpn.${ark.mainDomain}/oidc/callback";
-              originLanding = "https://vpn.${ark.mainDomain}";
-              imageFile = "${self}/assets/vpn.svg";
-              basicSecretFile = config.sops.secrets.headscale_oidc_client_secret.path;
+          systems.oauth2 = lib.mapAttrs (
+            _: o:
+            {
+              inherit (o) displayName;
+              originUrl = o.callbacks;
+              originLanding = o.landing;
+              basicSecretFile = config.sops.secrets."${o.secret}_kanidm".path;
               preferShortUsername = true;
-              scopeMaps.headscale_users = [
-                "openid"
-                "profile"
-                "email"
-                "groups"
-              ];
-            };
-            harken = {
-              displayName = "Harken";
-              originUrl = "https://harken.${ark.mainDomain}/auth/callback";
-              originLanding = "https://harken.${ark.mainDomain}";
-              imageFile = "${self}/assets/home.svg";
-              basicSecretFile = config.sops.secrets.harken_oidc_client_secret_kanidm.path;
-              preferShortUsername = true;
-              scopeMaps.home_users = [
-                "openid"
-                "profile"
-                "email"
-                "groups"
-              ];
-            };
-            home = {
-              displayName = "Home";
-              originUrl = "https://home.${ark.mainDomain}/auth/oidc/callback";
-              originLanding = "https://home.${ark.mainDomain}";
-              imageFile = "${self}/assets/home.svg";
-              basicSecretFile = config.sops.secrets.home_oidc_client_secret.path;
-              preferShortUsername = true;
-              scopeMaps.home_users = [
-                "openid"
-                "profile"
-                "email"
-                "groups"
-              ];
-            };
-            photos = {
-              displayName = "Photos";
-              originUrl = [
-                "https://photos.${ark.mainDomain}/auth/login"
-                "app.immich:///oauth-callback"
-              ];
-              originLanding = "https://photos.${ark.mainDomain}";
-              imageFile = "${self}/assets/photos.svg";
-              basicSecretFile = config.sops.secrets.photos_oidc_client_secret.path;
-              preferShortUsername = true;
-              scopeMaps.photos_users = [
-                "openid"
-                "profile"
-                "email"
-                "groups"
-              ];
-            };
-            git = {
-              displayName = "Git";
-              originUrl = "https://git.${ark.mainDomain}/user/oauth2/KoonFamily/callback";
-              originLanding = "https://git.${ark.mainDomain}";
-              imageFile = "${self}/assets/git.svg";
-              basicSecretFile = config.sops.secrets.git_oidc_client_secret_kanidm.path;
-              preferShortUsername = true;
-              scopeMaps.git_users = [
-                "openid"
-                "profile"
-                "email"
-                "groups"
-              ];
-              # XXX: PKCE is currently not supported by gitea/forgejo,
-              # see https://github.com/go-gitea/gitea/issues/21376.
-              allowInsecureClientDisablePkce = true;
-            };
-            cloud = {
-              displayName = "Cloud";
-              originUrl = "https://cloud.${ark.mainDomain}/apps/user_oidc/code";
-              originLanding = "https://cloud.${ark.mainDomain}";
-              imageFile = "${self}/assets/cloud.svg";
-              basicSecretFile = config.sops.secrets.cloud_oidc_client_secret_kanidm.path;
-              preferShortUsername = true;
-              scopeMaps.cloud_users = [
-                "openid"
-                "profile"
-                "email"
-                "groups"
-              ];
-            };
-          };
-
+              scopeMaps = lib.mapAttrs' (_: g: lib.nameValuePair g.name o.scopes) o.groups;
+              allowInsecureClientDisablePkce = !o.pkce;
+            }
+            // lib.optionalAttrs (o.icon != null) { imageFile = o.icon; }
+          ) clients;
         };
       };
 

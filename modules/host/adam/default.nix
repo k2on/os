@@ -16,7 +16,6 @@
       service-git
       service-harken
       service-home
-      service-jellyfin
       # service-money
       service-photos
       service-radicale

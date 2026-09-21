@@ -1,23 +1,24 @@
-# Extend the host schema with infrastructure fields used by terranix aspects.
+# Extend the host schema with machine fields the vps providers read
+# (lib/vps.nix); each provider supplies its own defaults for nulls.
 { lib, den, ... }:
 let
   infraFields =
     { ... }:
     {
       options.server-type = lib.mkOption {
-        type = lib.types.str;
-        default = "cx22";
-        description = "Hetzner Cloud server type";
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Provider's machine size";
       };
       options.region = lib.mkOption {
-        type = lib.types.str;
-        default = "fsn1";
-        description = "Hetzner Cloud datacenter region";
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Provider's datacenter region";
       };
       options.image = lib.mkOption {
-        type = lib.types.str;
-        default = "ubuntu-24.04";
-        description = "Server image";
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Provider's base image";
       };
     };
 in

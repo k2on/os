@@ -56,5 +56,15 @@
     harken.url = "github:k2on/harken";
   };
 
-  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
+  # secrets/ is the private submodule: besides sops files it carries the
+  # people side of the config (secrets/ark.nix), so it is a module root too.
+  # It is only there with `?submodules=1`; without it Nix sees an untracked
+  # path, so only reference it once we know it was checked out.
+  outputs =
+    inputs:
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } (
+      inputs.import-tree (
+        [ ./modules ] ++ (if builtins.pathExists ./secrets/ark.nix then [ ./secrets ] else [ ])
+      )
+    );
 }

@@ -12,10 +12,10 @@
 
   den.aspects.infra-base = {
     includes = [
-      den.aspects.provider-hetzner
-      den.aspects.hcloud-ssh-key
+      den.aspects.vps-infra
       den.aspects.dns-infra
       den.aspects.ark
+      den.aspects.ark-infra-secrets
     ];
   };
 

@@ -1,26 +1,45 @@
 # Service registry with automatic port assignment, built on Den quirks.
 #
-# Define a service ONCE under ark.services, in one of two forms:
+# Each service lives in modules/ark/services/<name>/default.nix, with an
+# optional icon.svg next to it. Define it ONCE under ark.services, in one
+# of two forms:
 #
-#   # bare function — auto-assigned port, default domain
+#   # bare function — auto-assigned port, default domain, no OIDC
 #   ark.services.git = { service, config, pkgs, ... }: {
 #     services.gitea.settings.server.HTTP_PORT = service.port;
 #   };
 #
-#   # attrset — when pinning a port or domain
+#   # attrset — everything optional except nixos
 #   ark.services.home = {
-#     port = 8123;                 # optional: omit to auto-assign
-#     domain = "home.ark.us";     # optional: defaults to "<name>.example.com"
-#     make = { service, pkgs, ... }: { ... };   # or a plain module attrset
+#     port = 8123;                 # omit to auto-assign
+#     domain = "home.ark.us";     # defaults to "<name>.<ark.mainDomain>"
+#     aliases = [ "office" ];     # other names that reach this service; bare labels get mainDomain
+#     oidc = {                    # declaring this gives the service a kanidm client
+#       callbacks = [ "/auth/oidc/callback" ];    # relative to https://<domain>, or absolute
+#       displayName = "Home";     # defaults to the capitalised name
+#       landing = "https://...";  # defaults to https://<domain>
+#       scopes = [ ... ];         # defaults to openid profile email groups
+#       pkce = true;              # false for clients that cannot do PKCE
+#       owner = "hass";           # unix user on this host that reads the secret file
+#     };
+#     secrets.home_token = { };   # other sops secrets, see lib/secrets.nix
+#     nixos = { service, pkgs, ... }: { ... };   # or a plain module attrset
 #   };
 #
 # The module function receives ordinary NixOS module args (config, pkgs,
-# lib, ...) PLUS `service` = { name, port, domain }, pre-applied the same
-# way Den's wrapClassModule injects host/user — pipeline data resolved
+# lib, ...) PLUS `service` = { name, port, domain, oidc? }, pre-applied the
+# same way Den's wrapClassModule injects host/user — pipeline data resolved
 # before module evaluation, so ports can never cause infinite recursion.
+# With OIDC, service.oidc is the client from lib/oidc.nix (name, clientId,
+# issuer, discovery, groups.<g>.claim, ...) plus the secret as
+# clientSecretFile (a path) and clientSecret (a sops placeholder).
 #
 # Each entry generates den.aspects.service-<name>; hosts opt in:
 #   den.aspects.ark.includes = with den.aspects; [ service-git ... ];
+#
+# The OIDC client secret is one secrets/vars file, declared here for the
+# host running the service and again by kanidm for its own host, so the
+# two may be different machines.
 #
 # Auto-assigned ports are portBase + index in the alphabetically sorted
 # list of auto-assigned services on that host. Quirk data is scope-local,
@@ -29,8 +48,8 @@
 let
   portBase = 31600;
 
-  # Accept both definition forms; always work with { port?, domain?, make }.
-  normalize = spec: if lib.isFunction spec then { make = spec; } else spec;
+  # Accept both definition forms; always work with { port?, domain?, oidc?, nixos }.
+  normalize = spec: if lib.isFunction spec then { nixos = spec; } else spec;
 
   # list of { <name> = spec; } (one per producing aspect) -> { name -> spec }
   # Fails loudly if two producers register the same service name.
@@ -65,22 +84,37 @@ let
 
   domainFor = name: spec: spec.domain or "${name}.${config.ark.mainDomain}";
 
+  # Every name a service answers to: its domain plus aliases.
+  domainsFor =
+    name: spec:
+    [ (domainFor name spec) ]
+    ++ map (a: if lib.hasInfix "." a then a else "${a}.${config.ark.mainDomain}") (spec.aliases or [ ]);
+
   # Turn a spec into a NixOS module, injecting `service` alongside the
   # normal module args. setFunctionArgs advertises the user function's
-  # own argument names (minus service) so the module system supplies
-  # config/pkgs/lib/etc. as usual.
+  # own argument names (minus service, plus config for the secret paths)
+  # so the module system supplies config/pkgs/lib/etc. as usual.
   mkModule =
     name: port: spec:
     let
-      service = {
-        inherit name port;
-        domain = domainFor name spec;
-      };
-      m = spec.make or { };
+      oidc = config.ark.oidc.clients.${name} or null;
+      service =
+        args:
+        {
+          inherit name port;
+          domain = domainFor name spec;
+        }
+        // lib.optionalAttrs (oidc != null) {
+          oidc = oidc // {
+            clientSecretFile = args.config.sops.secrets.${oidc.secret}.path;
+            clientSecret = args.config.sops.placeholder.${oidc.secret};
+          };
+        };
+      m = spec.nixos or { };
     in
     if lib.isFunction m then
-      lib.setFunctionArgs (args: m (args // { inherit service; })) (
-        builtins.removeAttrs (lib.functionArgs m) [ "service" ]
+      lib.setFunctionArgs (args: m (args // { service = service args; })) (
+        builtins.removeAttrs (lib.functionArgs m) [ "service" ] // { config = false; }
       )
     else
       m;
@@ -93,7 +127,7 @@ in
       description = ''
         Service definitions. Either a module function taking
         { service, config, pkgs, lib, ... }, or an attrset
-        { port ? auto, domain ? "<name>.example.com", make ? <module> }.
+        { port ?, domain ?, oidc ?, secrets ?, nixos }.
         Each entry generates den.aspects.service-<name>.
       '';
     };
@@ -113,19 +147,50 @@ in
       readOnly = true;
       default = domainFor;
     };
+    serviceDomains = lib.mkOption {
+      type = lib.types.raw;
+      readOnly = true;
+      default = lib.mapAttrs (name: spec: domainsFor name (normalize spec)) config.ark.services;
+      description = "{ name -> [ domain aliases... ] } for every registered service.";
+    };
   };
 
   config.den = {
-    quirks.ark-service.description = "Service registrations keyed by name: { <name> = <module fn> | { port ?, domain ?, make ? }; }";
+    quirks.ark-service.description = "Service registrations keyed by name: { <name> = <module fn> | { port ?, domain ?, oidc ?, secrets ?, nixos ? }; }";
 
     aspects =
       # One generated aspect per defined service; including it on a host
       # is what registers (and therefore runs) the service there.
       lib.mapAttrs' (
-        name: spec:
-        lib.nameValuePair "service-${name}" {
-          ark-service.${name} = spec;
-        }
+        name: raw:
+        let
+          spec = normalize raw;
+          oidc = config.ark.oidc.clients.${name} or null;
+        in
+        lib.nameValuePair "service-${name}" (
+          {
+            ark-service.${name} = raw;
+            secrets =
+              (spec.secrets or { })
+              // lib.optionalAttrs (oidc != null) {
+                ${oidc.secret} = {
+                  generate = true;
+                }
+                // lib.optionalAttrs (spec.oidc ? owner) { inherit (spec.oidc) owner; };
+              };
+          }
+          # Anything else on a spec is quirk data (dns_records, ...) and goes
+          # on the aspect as-is. Not checked against den.quirks: reading it
+          # while defining den.aspects is an infinite recursion.
+          // builtins.removeAttrs spec [
+            "port"
+            "domain"
+            "aliases"
+            "oidc"
+            "secrets"
+            "nixos"
+          ]
+        )
       ) config.ark.services
       // {
         # Consumer: instantiates every registered service on this host

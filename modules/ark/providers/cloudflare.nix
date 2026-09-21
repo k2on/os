@@ -4,6 +4,8 @@ let
 in
 {
   ark.dns.providers.cloudflare = {
+    secrets.CLOUDFLARE_API_TOKEN = { };
+
     static = {
       terraform.required_providers.cloudflare = {
         source = "cloudflare/cloudflare";
