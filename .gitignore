@@ -4,3 +4,6 @@
 *.tfstate.*
 
 .direnv
+
+# symlink to the flake input, made by the terranix wrapper (modules/ark/lib/terranix.nix)
+/infra/nixos-anywhere
