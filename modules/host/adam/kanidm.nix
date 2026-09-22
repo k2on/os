@@ -62,6 +62,7 @@ in
               preferShortUsername = true;
               scopeMaps = lib.mapAttrs' (_: g: lib.nameValuePair g.name o.scopes) o.groups;
               allowInsecureClientDisablePkce = !o.pkce;
+              enableLegacyCrypto = o.legacyCrypto;
             }
             // lib.optionalAttrs (o.icon != null) { imageFile = o.icon; }
           ) clients;

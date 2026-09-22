@@ -20,6 +20,7 @@
 #       landing = "https://...";  # defaults to https://<domain>
 #       scopes = [ ... ];         # defaults to openid profile email groups
 #       pkce = true;              # false for clients that cannot do PKCE
+#       legacyCrypto = false;     # true for clients that only accept RS256 tokens
 #       owner = "hass";           # unix user on this host that reads the secret file
 #     };
 #     secrets.home_token = { };   # other sops secrets, see lib/secrets.nix

@@ -34,8 +34,10 @@ missing or needs rekeying. A host whose secret file is missing refuses to
 build until this has been run and committed in the secrets repo.
 
 Provider API tokens (Hetzner, Cloudflare, Porkbun) use the same `secrets`
-key on their provider aspect, are encrypted to the admin key only, and are
-exported into the environment by `ark plan`, `ark push` and `ark destroy`.
+key on their provider aspect. They share one admin-only file,
+`secrets/vars/infra.yaml`, which `ark plan`, `ark push` and `ark destroy`
+decrypt once into their environment; they refuse to run if a token is
+missing from it.
 
 ## Deploy
 

@@ -27,6 +27,8 @@
 # declares an admin-only secret: encrypted to ark.adminKeys alone and
 # exported into the environment of `ark plan/push/destroy` under its name.
 # It reaches the manifest through a terranix-class consumer on infra-base.
+# These all share one file, secrets/vars/infra.yaml, so loading them costs
+# a single decryption (one yubikey touch) per command.
 {
   self,
   inputs,
@@ -113,6 +115,7 @@ let
       acc
       // {
         ${s.key} = {
+          file = s.key;
           generate = if s.generate == null then prev.generate else script s.generate;
           hosts = lib.unique (prev.hosts ++ [ host.config.networking.hostName ]);
           recipients = lib.unique (prev.recipients ++ [ host.config.ark.hostKey ]);
@@ -140,6 +143,7 @@ let
       (
         _: s:
         lib.nameValuePair s.key {
+          file = "infra";
           generate = script s.generate;
           hosts = [ ];
           recipients = [ ];
@@ -176,17 +180,18 @@ in
     # For hosts declared outside den.
     flake.nixosModules.ark-secrets = nixosModule;
 
-    # Consumed by `ark secrets`. sopsConfig is written to ${varsDir}/.sops.yaml
-    # so plain `sops <key>.yaml` works from inside that directory too.
+    # Consumed by `ark secrets`. Each secret names the file (under ${varsDir},
+    # without .yaml) that holds it. sopsConfig is written to
+    # ${varsDir}/.sops.yaml so plain `sops <file>.yaml` works from inside
+    # that directory too; one rule per file.
     flake.arkSecrets = rec {
-      infra = lib.attrNames infraSecrets;
       secrets = lib.mapAttrs (
         _: s: s // { recipients = lib.unique (config.ark.adminKeys ++ s.recipients); }
       ) (hostSecrets // infraSecrets);
-      sopsConfig.creation_rules = lib.mapAttrsToList (key: s: {
-        path_regex = "^${lib.escapeRegex key}\\.yaml$";
-        key_groups = [ { age = s.recipients; } ];
-      }) secrets;
+      sopsConfig.creation_rules = lib.mapAttrsToList (file: recipients: {
+        path_regex = "^${lib.escapeRegex file}\\.yaml$";
+        key_groups = [ { age = recipients; } ];
+      }) (lib.foldl' (acc: s: acc // { ${s.file} = s.recipients; }) { } (lib.attrValues secrets));
     };
   };
 }

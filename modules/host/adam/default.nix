@@ -16,7 +16,7 @@
       service-git
       service-harken
       service-home
-      # service-money
+      service-money
       service-photos
       service-radicale
       service-waka

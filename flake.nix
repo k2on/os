@@ -51,8 +51,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    apple-fonts.url = "github:Lyndeno/apple-fonts.nix";
-
     harken.url = "github:k2on/harken";
   };
 

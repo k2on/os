@@ -38,6 +38,8 @@ let
           "groups"
         ];
       pkce = o.pkce or true;
+      # kanidm signs tokens with ES256; clients that only verify RS256 need this.
+      legacyCrypto = o.legacyCrypto or false;
       groups = lib.mapAttrs (g: members: {
         inherit members;
         name = "${name}_${g}";
