@@ -39,6 +39,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Only its terraform/ modules are used (modules/aspects/nixos-anywhere.nix
+    # and the offline infra test in modules/ark/lib/tftest.nix).
+    nixos-anywhere = {
+      url = "github:nix-community/nixos-anywhere";
+      flake = false;
+    };
+
     zen-browser = {
       url = "github:0xc000022070/zen-browser-flake";
       # IMPORTANT: we're using "libgbm" and is only available in unstable so ensure

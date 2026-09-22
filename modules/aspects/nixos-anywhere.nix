@@ -7,7 +7,12 @@
     {
       terranix = {
         module.deploy = {
-          source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one";
+          # Pinned by the nixos-anywhere flake input; the terranix wrapper
+          # symlinks its terraform/ directory into the workdir (lib/terranix.nix).
+          # It has to be a path inside the workdir: the all-in-one module
+          # reaches its siblings with ../, which OpenTofu refuses from an
+          # absolute store path ("local module path escapes module package").
+          source = "./nixos-anywhere/all-in-one";
           nixos_system_attr = ".?submodules=1#nixosConfigurations.${host.name}.config.system.build.toplevel";
           nixos_partitioner_attr = ".?submodules=1#nixosConfigurations.${host.name}.config.system.build.diskoScript";
           target_host = config.ark.vps.ip host;

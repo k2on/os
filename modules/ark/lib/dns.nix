@@ -39,6 +39,11 @@ in
           default = { };
           description = "API tokens the provider reads from its environment; see lib/secrets.nix.";
         };
+        options.mock = lib.mkOption {
+          type = lib.types.raw;
+          default = { };
+          description = "`tofu test` mock_provider blocks for the offline infra test, keyed by terraform provider name; see lib/tftest.nix.";
+        };
       }
     );
     default = { };

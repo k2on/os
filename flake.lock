@@ -261,6 +261,22 @@
         "type": "github"
       }
     },
+    "nixos-anywhere": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789567195,
+        "narHash": "sha256-ymvPUaBvMmGvxsPbmrocpxO4XK+H+K12YjgKIyG3Rwk=",
+        "owner": "nix-community",
+        "repo": "nixos-anywhere",
+        "rev": "1c2f124e970fed2a49bd14ce0a8b4e9bff74d3b4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "nixos-anywhere",
+        "type": "github"
+      }
+    },
     "nixos-apple-silicon": {
       "inputs": {
         "flake-compat": "flake-compat",
@@ -417,6 +433,7 @@
         "harken": "harken",
         "home-manager": "home-manager",
         "import-tree": "import-tree_2",
+        "nixos-anywhere": "nixos-anywhere",
         "nixos-apple-silicon": "nixos-apple-silicon",
         "nixpkgs": "nixpkgs_3",
         "nixpkgs-unstable": "nixpkgs-unstable",

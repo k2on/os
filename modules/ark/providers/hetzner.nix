@@ -6,6 +6,12 @@ in
   ark.vps.providers.hetzner = {
     secrets.HCLOUD_TOKEN = { };
 
+    # Offline test: servers get documentation addresses instead of random strings.
+    mock.hcloud.mock_resource.hcloud_server.defaults = {
+      ipv4_address = "203.0.113.10";
+      ipv6_address = "2001:db8::1";
+    };
+
     static = {
       terraform.required_providers.hcloud = {
         source = "hetznercloud/hcloud";

@@ -6,6 +6,9 @@ in
   ark.dns.providers.cloudflare = {
     secrets.CLOUDFLARE_API_TOKEN = { };
 
+    # Offline test: zone lookups answer with a fixed id.
+    mock.cloudflare.mock_data.cloudflare_zone.defaults.id = "0123456789abcdef0123456789abcdef";
+
     static = {
       terraform.required_providers.cloudflare = {
         source = "cloudflare/cloudflare";
