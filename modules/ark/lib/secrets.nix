@@ -38,7 +38,6 @@
 }:
 let
   varsDir = "secrets/vars";
-  varsFile = key: "${self}/${varsDir}/${key}.yaml";
 
   alnum = "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48";
 
@@ -79,6 +78,16 @@ let
           type = lib.types.str;
           description = "age recipient of this host: ssh-to-age of its ed25519 host key.";
         };
+        varsDir = lib.mkOption {
+          type = lib.types.str;
+          default = "${self}/${varsDir}";
+          description = "Where <key>.yaml sops files are read from. The VM test points this at generated throwaway secrets (test/_profile.nix).";
+        };
+        checkVars = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Fail the build when a declared secret has no file under varsDir. Off when varsDir is a derivation, which cannot be checked at evaluation time.";
+        };
         secrets = lib.mkOption {
           type = lib.types.attrsOf secretType;
           default = { };
@@ -86,16 +95,22 @@ let
         };
       };
 
-      config = {
-        sops.secrets = lib.mapAttrs (
-          _: s: builtins.removeAttrs s [ "generate" ] // { sopsFile = varsFile s.key; }
-        ) config.ark.secrets;
+      config =
+        let
+          varsFile = key: "${config.ark.varsDir}/${key}.yaml";
+        in
+        {
+          sops.secrets = lib.mapAttrs (
+            _: s: builtins.removeAttrs s [ "generate" ] // { sopsFile = varsFile s.key; }
+          ) config.ark.secrets;
 
-        assertions = map (key: {
-          assertion = builtins.pathExists (varsFile key);
-          message = "ark: secret '${key}' is not in sops yet. Run `ark secrets` and commit ${varsDir}/${key}.yaml";
-        }) (lib.unique (lib.mapAttrsToList (_: s: s.key) config.ark.secrets));
-      };
+          assertions = lib.optionals config.ark.checkVars (
+            map (key: {
+              assertion = builtins.pathExists (varsFile key);
+              message = "ark: secret '${key}' is not in sops yet. Run `ark secrets` and commit ${varsDir}/${key}.yaml";
+            }) (lib.unique (lib.mapAttrsToList (_: s: s.key) config.ark.secrets))
+          );
+        };
     };
 
   # Fold every host's declarations into { key -> { generate; hosts; recipients } }.
