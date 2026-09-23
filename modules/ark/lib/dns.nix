@@ -24,6 +24,20 @@ let
         );
     in
     p.records { inherit records recordAttrs lib; };
+  # The raw quirk data, kept in the terranix evaluation under an option the
+  # JSON never sees, so lib/terranix.nix can hand every record to the VM test
+  # (test/vm.nix) without knowing any provider.
+  recordsOption = {
+    options.ark.dnsRecords = lib.mkOption {
+      type = lib.types.listOf lib.types.raw;
+      default = [ ];
+    };
+  };
+  keepRecords =
+    { dns_records, ... }:
+    {
+      ark.dnsRecords = dns_records;
+    };
 in
 {
   options.ark.dns.providers = lib.mkOption {
@@ -61,12 +75,19 @@ in
       }) config.ark.dns.providers)
       ++ [
         {
-          dns-host.includes = lib.mapAttrsToList (pname: p: {
-            terranix = mkConsumer pname p;
-          }) config.ark.dns.providers;
+          dns-host.includes =
+            lib.mapAttrsToList (pname: p: {
+              terranix = mkConsumer pname p;
+            }) config.ark.dns.providers
+            ++ [ { terranix = keepRecords; } ];
+          dns-records-option.terranix = recordsOption;
           dns-infra.includes =
             lib.mapAttrsToList (pname: p: { terranix = mkConsumer pname p; }) config.ark.dns.providers
-            ++ map (n: den.aspects."dns-${n}-static") providerNames;
+            ++ map (n: den.aspects."dns-${n}-static") providerNames
+            ++ [
+              den.aspects.dns-records-option
+              { terranix = keepRecords; }
+            ];
         }
       ]
     );

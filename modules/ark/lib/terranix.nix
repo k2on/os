@@ -32,6 +32,19 @@ in
     description = "The terranix modules the infra configuration is built from.";
   };
 
+  # Same modules, evaluated only for the record list (lib/dns.nix keeps it
+  # under ark.dnsRecords); with checking off the terraform definitions need
+  # no declarations, as lib/secrets.nix does for its manifest.
+  options.ark.infra.dnsRecords = lib.mkOption {
+    type = lib.types.listOf lib.types.raw;
+    readOnly = true;
+    default =
+      (lib.evalModules {
+        modules = [ { _module.check = false; } ] ++ infraModules;
+      }).config.ark.dnsRecords;
+    description = "Every dns_records entry of every host and the infra, content still as terraform references.";
+  };
+
   config = {
     den.classes.terranix = { };
 

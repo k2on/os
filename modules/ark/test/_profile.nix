@@ -24,6 +24,9 @@
   ...
 }:
 let
+  # kanidm's host owns the wildcard cert (aspects/acme.nix); the other hosts
+  # get theirs per virtual host over HTTP-01, which pebble serves as is.
+  hasWildcard = config.services.kanidm.server.enable;
   dnsIp = nodes.dns.networking.primaryIPAddress;
   agePub = lib.head (
     lib.filter (l: lib.hasPrefix "age1" l) (
@@ -92,36 +95,42 @@ in
     gnupg.sshKeyPaths = lib.mkForce [ ];
   };
 
-  system.activationScripts = {
-    arkTestAgeKey.text = "install -m 0400 ${ageKey} /run/ark-test-age.key";
-    setupSecretsForUsers.deps = [ "arkTestAgeKey" ];
-    setupSecrets.deps = [ "arkTestAgeKey" ];
-  };
+  system.activationScripts = lib.mkMerge [
+    {
+      arkTestAgeKey.text = "install -m 0400 ${ageKey} /run/ark-test-age.key";
+      setupSecrets.deps = [ "arkTestAgeKey" ];
+    }
+    # sops-nix only defines this script when a secret is needed for users
+    (lib.mkIf (lib.any (s: s.neededForUsers) (lib.attrValues config.sops.secrets)) {
+      setupSecretsForUsers.deps = [ "arkTestAgeKey" ];
+    })
+  ];
 
   networking.nameservers = lib.mkForce [ dnsIp ];
 
-  security.acme.certs.${ark.mainDomain} = {
-    dnsProvider = lib.mkForce "exec";
-    dnsResolver = lib.mkForce "${dnsIp}:53";
-    dnsPropagationCheck = false;
-    environmentFile = lib.mkForce (
-      pkgs.writeText "acme-exec.env" ''
-        EXEC_PATH=${dnsHook}
-        EXEC_POLLING_INTERVAL=1
-        EXEC_PROPAGATION_TIMEOUT=1
-        EXEC_SEQUENCE_INTERVAL=1
-      ''
-    );
+  security.acme.certs = lib.mkIf hasWildcard {
+    ${ark.mainDomain} = {
+      dnsProvider = lib.mkForce "exec";
+      dnsResolver = lib.mkForce "${dnsIp}:53";
+      dnsPropagationCheck = false;
+      environmentFile = lib.mkForce (
+        pkgs.writeText "acme-exec.env" ''
+          EXEC_PATH=${dnsHook}
+          EXEC_POLLING_INTERVAL=1
+          EXEC_PROPAGATION_TIMEOUT=1
+          EXEC_SEQUENCE_INTERVAL=1
+        ''
+      );
+    };
   };
 
-  # Nothing outside the test network is reachable; the tailnet is not
-  # exercised here.
-  services.tailscale.enable = lib.mkForce false;
-
-  environment.systemPackages = [ pkgs.curl ];
+  environment.systemPackages = [
+    pkgs.curl
+    pkgs.dig
+  ];
 
   virtualisation = {
-    memorySize = 4096;
+    memorySize = if hasWildcard then 4096 else 2048;
     diskSize = 16384;
     cores = 2;
   };
