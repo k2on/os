@@ -22,6 +22,7 @@
       service-waka
       ark-nginx
       assistant
+      tailnet
     ];
 
     nixos = {
@@ -45,7 +46,6 @@
       ];
 
       services.tailscale = {
-        enable = true;
         useRoutingFeatures = "server";
         extraSetFlags = [ "--ssh=false" ];
       };
