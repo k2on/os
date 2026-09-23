@@ -21,6 +21,7 @@
       service-radicale
       service-waka
       ark-nginx
+      tailnet
     ];
 
     nixos = {
@@ -44,7 +45,6 @@
       ];
 
       services.tailscale = {
-        enable = true;
         useRoutingFeatures = "server";
         extraSetFlags = [ "--ssh=false" ];
       };

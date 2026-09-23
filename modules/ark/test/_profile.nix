@@ -124,6 +124,16 @@ in
     };
   };
 
+  # Production's kanidm host holds the first tailnet address (the vps
+  # streams id.* to it). Here every host joins at boot, so headscale's own
+  # host waits for another node before it joins, keeping the addresses as
+  # in production.
+  systemd.services.tailscaled-autoconnect.preStart = lib.mkIf config.services.headscale.enable ''
+    until [ "$(${config.services.headscale.package}/bin/headscale nodes list -o json | ${pkgs.jq}/bin/jq length)" -gt 0 ]; do
+      sleep 2
+    done
+  '';
+
   environment.systemPackages = [
     pkgs.curl
     pkgs.dig

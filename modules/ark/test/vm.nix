@@ -9,10 +9,10 @@
 # resolved to that host's test address.
 #
 # The test waits for each host's certificates and nginx, fetches every
-# virtual host over TLS, then builds the tailnet the way production does:
-# kanidm's host joins the headscale on the vps first (so it gets 100.64.0.1,
-# the address the vps streams id.<domain> to), the vps joins, and the
-# identity provider is fetched through that path.
+# virtual host over TLS, then watches the tailnet form on its own
+# (den.aspects.tailnet joins every member at boot): kanidm's host gets
+# 100.64.0.1, the address the vps streams id.<domain> to, the vps joins, and
+# the identity provider is fetched through that path.
 #
 # Layer 1 (lib/tftest.nix) checks the terraform side offline; this is the
 # NixOS side. Neither talks to a provider.
@@ -177,14 +177,12 @@ let
           ${lib.optionalString withTailnet ''
 
             with subtest("the tailnet forms and reaches the identity provider through it"):
-                ${headscaleHost}.wait_for_unit("headscale.service")
-                ${headscaleHost}.succeed("headscale users create test")
-                authkey = ${headscaleHost}.succeed("headscale preauthkeys --user 1 create --reusable").strip()
-                up = f"tailscale up --login-server '${loginServer}' --auth-key {authkey}"
-                # kanidm's host first: production streams id.* to the first tailnet address
-                ${kanidmHost}.succeed(up)
-                ${kanidmHost}.wait_until_succeeds("tailscale ip -4")
-                ${headscaleHost}.succeed(up)
+                ${headscaleHost}.wait_for_unit("headscale-provision.service")
+                # every member joins on its own (den.aspects.tailnet); kanidm's
+                # host first, since production streams id.* to the first address
+                ${kanidmHost}.wait_for_unit("tailscaled-autoconnect.service")
+                assert ${kanidmHost}.succeed("tailscale ip -4").strip() == "100.64.0.1"
+                ${headscaleHost}.wait_for_unit("tailscaled-autoconnect.service")
                 ${headscaleHost}.wait_until_succeeds("tailscale ping 100.64.0.1")
                 ${kanidmHost}.wait_for_unit("kanidm.service")
                 assert ${headscaleHost}.wait_until_succeeds("curl -sS --max-time 30 ${idUrl}/status").strip() == "true"
