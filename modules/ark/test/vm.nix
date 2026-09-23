@@ -20,26 +20,38 @@
 let
   cfg = config.ark.test;
   nixosConfigs = config.flake.nixosConfigurations;
-  profile = import ./_profile.nix {
-    inherit lib;
-    ark = config.ark;
-    ageKey = ./age.key;
-  };
+  profile =
+    system:
+    import ./_profile.nix {
+      inherit lib system;
+      ark = config.ark;
+      ageKey = ./age.key;
+    };
 
   denHosts = lib.concatMap lib.attrValues (lib.attrValues config.den.hosts);
-  hostByName =
-    name: lib.findFirst (h: h.name == name) (throw "ark.test: no den host '${name}'") denHosts;
+  # null for a nixosConfigurations entry declared outside den (the laptop)
+  hostByName = name: lib.findFirst (h: h.name == name) null denHosts;
 
   # A host node is the host's own modules plus the profile. The host's own
   # nixpkgs (den's instantiate) is what the test framework should use too.
-  # The test framework provides the disk; disko's layout would wait for
-  # partitions that do not exist, so hosts installed by disko turn it off.
-  hostNode = name: {
-    imports =
-      nixosConfigs.${name}._module.args.modules
-      ++ [ profile ]
-      ++ lib.optional (nixosConfigs.${name}.options ? disko) { disko.enableConfig = lib.mkForce false; };
-  };
+  # What a host's production hardware brings is switched off from outside,
+  # since a module cannot set an option it may not have: disko's layout
+  # would wait for partitions that do not exist, Apple Silicon support would
+  # bring an aarch64 kernel. A host outside den gets ark's secrets module so
+  # the profile can hand it the tailnet key.
+  hostNode =
+    system: name:
+    let
+      opts = nixosConfigs.${name}.options;
+    in
+    {
+      imports =
+        nixosConfigs.${name}._module.args.modules
+        ++ [ (profile system) ]
+        ++ lib.optional (opts ? disko) { disko.enableConfig = lib.mkForce false; }
+        ++ lib.optional (opts.hardware ? asahi) { hardware.asahi.enable = lib.mkForce false; }
+        ++ lib.optional (!(opts ? ark)) config.flake.nixosModules.ark-secrets;
+    };
 
   fqdn = r: if r.name == "" then r.domain else "${r.name}.${r.domain}";
 
@@ -50,24 +62,27 @@ let
       let
         ipOf = name: nodes.${name}.networking.primaryIPAddress;
 
-        # hostnames every host serves over TLS, resolved to that host
+        # public hostnames every host serves over TLS, resolved to that host
+        # (internal names like localhost stay out of the test's DNS)
         vhosts = lib.concatMap (
           name:
-          map (vhost: {
-            host = vhost;
-            ip = ipOf name;
-          }) (lib.filter (v: v != "_") (lib.attrNames nodes.${name}.services.nginx.virtualHosts))
+          map
+            (vhost: {
+              host = vhost;
+              ip = ipOf name;
+            })
+            (
+              lib.filter (v: lib.hasSuffix ".${config.ark.mainDomain}" v) (
+                lib.attrNames nodes.${name}.services.nginx.virtualHosts
+              )
+            )
         ) cfg.hosts;
 
         # provider reference -> test address, for hosts in the test
         refs = lib.listToAttrs (
-          map (
-            name:
-            let
-              h = hostByName name;
-            in
-            lib.nameValuePair (config.ark.vps.ip h) (ipOf name)
-          ) (lib.filter (name: (hostByName name).provider or null != null) cfg.hosts)
+          map (name: lib.nameValuePair (config.ark.vps.ip (hostByName name)) (ipOf name)) (
+            lib.filter (name: (hostByName name).provider or null != null) cfg.hosts
+          )
         );
         records = lib.concatMap (
           r:
@@ -91,13 +106,19 @@ let
         # every host waits for all of its certificates
         certTargets =
           name: map (c: "acme-finished-${c}.target") (lib.attrNames nodes.${name}.security.acme.certs);
+        serves = name: nodes.${name}.services.nginx.enable;
 
         # the tailnet: kanidm's host and the headscale host, when both are in
         kanidmHost = lib.findFirst (n: nodes.${n}.services.kanidm.server.enable) null cfg.hosts;
         headscaleHost = lib.findFirst (n: nodes.${n}.services.headscale.enable) null cfg.hosts;
         withTailnet = kanidmHost != null && headscaleHost != null;
-        loginServer = nodes.${headscaleHost}.services.headscale.settings.server_url;
         idUrl = "https://id.${config.ark.mainDomain}";
+        # everyone else on the tailnet reaches services through it, by the
+        # names headscale's extra_records give them
+        clients = lib.filter (
+          n: nodes.${n}.services.tailscale.enable && n != kanidmHost && n != headscaleHost
+        ) cfg.hosts;
+        viaTailnet = (lib.head (lib.filter (v: v.ip == ipOf kanidmHost) vhosts)).host;
       in
       {
         name = "ark-vm";
@@ -152,7 +173,7 @@ let
               networking.nameservers = lib.mkForce [ (ipOf "dns") ];
             };
         }
-        // lib.genAttrs cfg.hosts hostNode;
+        // lib.genAttrs cfg.hosts (hostNode pkgs.stdenv.hostPlatform.system);
 
         testScript = ''
           dns.start()
@@ -165,8 +186,10 @@ let
             ${name}.start()
             ${name}.wait_for_unit("multi-user.target")
             ${lib.concatMapStringsSep "\n" (t: "${name}.wait_for_unit(\"${t}\")") (certTargets name)}
-            ${name}.wait_for_unit("nginx.service")
-            ${name}.wait_for_open_port(443)
+            ${lib.optionalString (serves name) ''
+              ${name}.wait_for_unit("nginx.service")
+              ${name}.wait_for_open_port(443)
+            ''}
           '') cfg.hosts}
 
           with subtest("every virtual host answers over TLS"):
@@ -186,6 +209,16 @@ let
                 ${headscaleHost}.wait_until_succeeds("tailscale ping 100.64.0.1")
                 ${kanidmHost}.wait_for_unit("kanidm.service")
                 assert ${headscaleHost}.wait_until_succeeds("curl -sS --max-time 30 ${idUrl}/status").strip() == "true"
+
+            with subtest("every other member joins and reaches services over the tailnet"):
+                ${lib.concatStringsSep "\n    " (
+                  lib.concatMap (c: [
+                    "${c}.wait_for_unit(\"tailscaled-autoconnect.service\")"
+                    "${c}.wait_until_succeeds(\"tailscale ping 100.64.0.1\")"
+                    "assert ${c}.wait_until_succeeds(\"dig +short @100.100.100.100 ${viaTailnet}\").strip() == \"100.64.0.1\""
+                    "assert int(${c}.succeed(\"curl -sS -o /dev/null -w '%{http_code}' --max-time 60 --resolve ${viaTailnet}:443:100.64.0.1 https://${viaTailnet}/\")) < 500"
+                  ]) clients
+                )}
           ''}
         '';
       }
@@ -194,10 +227,8 @@ in
 {
   options.ark.test.hosts = lib.mkOption {
     type = lib.types.listOf lib.types.str;
-    default = [
-      "adam"
-      "vps"
-    ];
+    default = lib.attrNames nixosConfigs;
+    defaultText = "every nixosConfigurations entry";
     description = "Hosts (nixosConfigurations names) that boot in the VM test; the first one is what unknown names resolve to.";
   };
 

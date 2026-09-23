@@ -16,6 +16,7 @@
   ark,
   lib,
   ageKey,
+  system,
 }:
 {
   config,
@@ -27,6 +28,8 @@ let
   # kanidm's host owns the wildcard cert (aspects/acme.nix); the other hosts
   # get theirs per virtual host over HTTP-01, which pebble serves as is.
   hasWildcard = config.services.kanidm.server.enable;
+  isHeadscale = config.services.headscale.enable;
+  isClient = config.services.tailscale.enable && !hasWildcard && !isHeadscale;
   dnsIp = nodes.dns.networking.primaryIPAddress;
   agePub = lib.head (
     lib.filter (l: lib.hasPrefix "age1" l) (
@@ -50,10 +53,18 @@ let
         for key in $arkKeys; do
           printf '%s: test-%s\n' "$key" "$key" > "$out/vars/$key.yaml"
         done
-        for key in $legacyKeys; do
-          printf '%s: test-%s\n' "$key" "$key" >> "$out/default.yaml"
-        done
-        touch "$out/default.yaml"
+        # sops-nix reads "a/b" as the nested key a.b; JSON is YAML enough for sops
+        ${pkgs.python3}/bin/python3 - $legacyKeys > "$out/default.yaml" <<'EOF'
+        import json, sys
+        tree = {}
+        for key in sys.argv[1:]:
+            node = tree
+            parts = key.split("/")
+            for part in parts[:-1]:
+                node = node.setdefault(part, {})
+            node[parts[-1]] = "test-" + key
+        print(json.dumps(tree))
+        EOF
         for f in $out/vars/*.yaml $out/default.yaml; do
           [ -s "$f" ] || continue
           sops --encrypt --age ${agePub} --in-place "$f"
@@ -82,6 +93,22 @@ in
 
   ark.varsDir = "${testVars}/vars";
   ark.checkVars = false;
+  # hosts outside den have no host key; the test key stands in
+  ark.hostKey = lib.mkDefault agePub;
+
+  # Every member joins with the shared key; a host that logs in interactively
+  # in production (a laptop, through OIDC) gets the key here so it can join
+  # unattended. Members of den.aspects.tailnet already have both.
+  ark.secrets.headscale_preauth_key = { };
+  services.tailscale.authKeyFile = lib.mkIf config.services.tailscale.enable (
+    lib.mkDefault config.sops.secrets.headscale_preauth_key.path
+  );
+
+  # One test, one architecture: hosts that are aarch64 in production run as
+  # the test's system here (their hardware modules are switched off by
+  # test/vm.nix).
+  nixpkgs.hostPlatform = system;
+  boot.binfmt.emulatedSystems = lib.mkForce [ ];
 
   sops = {
     defaultSopsFile = lib.mkForce "${testVars}/default.yaml";
@@ -126,13 +153,21 @@ in
 
   # Production's kanidm host holds the first tailnet address (the vps
   # streams id.* to it). Here every host joins at boot, so headscale's own
-  # host waits for another node before it joins, keeping the addresses as
-  # in production.
-  systemd.services.tailscaled-autoconnect.preStart = lib.mkIf config.services.headscale.enable ''
-    until [ "$(${config.services.headscale.package}/bin/headscale nodes list -o json | ${pkgs.jq}/bin/jq length)" -gt 0 ]; do
-      sleep 2
-    done
-  '';
+  # host waits for another node before it joins, and every other member
+  # waits until the identity provider answers through the vps, which is the
+  # order production reached too.
+  systemd.services.tailscaled-autoconnect.preStart = lib.mkMerge [
+    (lib.mkIf isHeadscale ''
+      until [ "$(${config.services.headscale.package}/bin/headscale nodes list -o json | ${pkgs.jq}/bin/jq length)" -gt 0 ]; do
+        sleep 2
+      done
+    '')
+    (lib.mkIf isClient ''
+      until ${pkgs.curl}/bin/curl -sSf --max-time 10 https://id.${ark.mainDomain}/status >/dev/null 2>&1; do
+        sleep 5
+      done
+    '')
+  ];
 
   environment.systemPackages = [
     pkgs.curl
@@ -140,7 +175,13 @@ in
   ];
 
   virtualisation = {
-    memorySize = if hasWildcard then 4096 else 2048;
+    memorySize =
+      if hasWildcard then
+        4096
+      else if config.hardware.graphics.enable then
+        3072
+      else
+        2048;
     diskSize = 16384;
     cores = 2;
   };
