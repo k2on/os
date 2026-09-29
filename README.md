@@ -33,6 +33,11 @@ the rest are prompted for. `ark secrets --dry-run` only lists what is
 missing or needs rekeying. A host whose secret file is missing refuses to
 build until this has been run and committed in the secrets repo.
 
+Creating secrets needs no key. Whenever something has to be decrypted,
+`ark` asks the yubikey for its identity and, if it is not plugged in, asks
+you to plug it in; the dev shell itself works without it. To run sops by
+hand with that identity: `ark sops <file>.yaml` (in `secrets/vars`).
+
 Provider API tokens (Hetzner, Cloudflare, Porkbun) use the same `secrets`
 key on their provider aspect. They share one admin-only file,
 `secrets/vars/infra.yaml`, which `ark plan`, `ark push` and `ark destroy`
@@ -101,3 +106,34 @@ nix-shell -p neofetch --run "neofetch"
 just rebuild
 ```
 
+
+## Services from the laptop
+
+`ark` is installed on the laptop by the `arkCli` home module (modules/ark/lib/cli.nix),
+which also gives zsh tab completion for every command, down to the linked
+banks. `ark service <name> <command>` runs a service's own commands here,
+against the repo, so a service can be set up before its host is even deployed. Each
+service that has some ships them in `modules/ark/services/<name>/cli/mod.rs`
+(Rust, compiled into `ark`; `ark help` lists them). For example, money:
+
+```sh
+ark service money link chase   # connect a bank through Plaid; saves
+                               # secrets/services/money/links/chase.nix and the
+                               # money_plaid_chase secret, then asks which
+                               # accounts should show up in Actual
+ark service money select chase # change that choice
+ark service money accounts     # what is linked and what syncs
+ark service money sync         # import now, on the host, and show the log
+```
+
+The budget itself is run the same way: `budget` (the month, `budget set
+Groceries 450`), `categories` / `category add Bills Internet`, `transactions
+--uncategorized`, `categorize Groceries 3f9a`, `spending --by payee`,
+`payees`, `rules` / `rule add Groceries --contains COSTCO`, `balances`.
+`ark service money --help` has the whole list; each runs one operation on
+the host over ssh through Actual's official client library.
+
+Commands that reach a host find it through `ark hosts`: which host runs
+which service (from the `service-<name>` aspects it includes) and how to
+ssh to it (its sudo user at its tailnet name), all derived from the nix
+config.

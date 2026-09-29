@@ -37,6 +37,7 @@ in
         recommendedProxySettings = true;
         recommendedTlsSettings = true;
         recommendedGzipSettings = true;
+        clientMaxBodySize = "1G";
 
         virtualHosts = serviceVhosts // {
           # equivalent of cloudflared's `default = "http_status:404"`

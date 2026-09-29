@@ -195,7 +195,7 @@ in
       ) config.ark.services
       // {
         # Consumer: instantiates every registered service on this host
-        # with its resolved port.
+        # with its resolved port, and records which they are.
         ark-services.nixos =
           { ark-service, ... }:
           let
@@ -204,10 +204,52 @@ in
           in
           {
             imports = lib.mapAttrsToList (name: spec: mkModule name ports.${name} spec) services;
+            options.ark.hostedServices = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              readOnly = true;
+              default = lib.attrNames services;
+              description = "The ark services this host runs (from the service-<name> aspects it includes).";
+            };
           };
       };
 
     # Active on every host; inert (empty) where nothing registers.
     schema.host.includes = [ config.den.aspects.ark-services ];
   };
+
+  # Consumed by the `ark` CLI (`ark hosts`, and service commands that reach
+  # their host): every host, how to ssh to it, and the services it runs.
+  #   { adam = { name = "adam"; hostName = "ark"; ssh = "admin@ark.net.example.com"; services = [ "money" ... ]; }; ... }
+  # The ssh target is all derived: the host's one sudo user, at its MagicDNS
+  # name on the tailnet (headscale's base_domain, read off the host running
+  # headscale). null where that does not add up (no tailscale, no or several
+  # sudo users, no headscale anywhere).
+  config.flake.arkHosts =
+    let
+      hosts = lib.filterAttrs (_: h: h.config ? ark) config.flake.nixosConfigurations;
+      runsHeadscale = lib.filterAttrs (
+        _: h: lib.elem "headscale" (h.config.ark.hostedServices or [ ])
+      ) hosts;
+      tailnetDomain = lib.mapAttrsToList (
+        _: h: h.config.services.headscale.settings.dns.base_domain or null
+      ) runsHeadscale;
+      sshTarget =
+        host:
+        let
+          users = lib.attrNames (
+            lib.filterAttrs (_: u: u.isNormalUser && lib.elem "wheel" u.extraGroups) host.config.users.users
+          );
+          onTailnet = host.config.services.tailscale.enable or false;
+        in
+        if onTailnet && lib.length users == 1 && tailnetDomain != [ ] && lib.head tailnetDomain != null then
+          "${lib.head users}@${host.config.networking.hostName}.${lib.head tailnetDomain}"
+        else
+          null;
+    in
+    lib.mapAttrs (name: host: {
+      inherit name;
+      hostName = host.config.networking.hostName;
+      ssh = sshTarget host;
+      services = host.config.ark.hostedServices or [ ];
+    }) hosts;
 }

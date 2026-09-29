@@ -31,6 +31,7 @@
         self.homeModules.commonFeatureImageViewer
         self.homeModules.commonFeatureMusic
         self.homeModules.commonFeatureZsh
+        self.homeModules.arkCli
 
         self.homeModules.koonMaxBrowser
         self.homeModules.koonMaxNeovim

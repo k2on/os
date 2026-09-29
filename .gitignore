@@ -4,3 +4,6 @@
 *.tfstate.*
 
 .direnv
+
+# cargo builds from the dev shell (modules/ark is a Rust workspace)
+modules/ark/target/

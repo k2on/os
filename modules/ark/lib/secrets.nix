@@ -11,13 +11,15 @@
 #       owner = "kanidm";
 #     };
 #     foo_cert = { generate = "openssl ..."; mode = "0400"; };  # custom script
+#     foo_api_key = { file = "foo"; };                 # in secrets/vars/foo.yaml with
+#     foo_api_user = { file = "foo"; };                # others a CLI reads together
 #   };
 #
-# Every attribute other than `generate` is passed through to
+# Every attribute other than `generate` and `file` is passed through to
 # sops.secrets.<name>, so owner/group/mode/restartUnits/... work as usual.
-# Each declaration reads secrets/vars/<key>.yaml, encrypted to
-# ark.adminKeys (secrets/ark.nix) plus ark.hostKey of every host that
-# declares it. A host whose secret file is missing fails to build with a
+# Each declaration reads secrets/vars/<file>.yaml (by default one file per
+# key), encrypted to ark.adminKeys (secrets/ark.nix) plus ark.hostKey of
+# every host that declares anything in that file. A host whose secret file is missing fails to build with a
 # pointer to `ark secrets` (modules/shell.nix), which reads the
 # `arkSecrets` flake output below to create missing files (generating or
 # prompting) and to rekey files whose recipients changed.
@@ -53,13 +55,18 @@ let
       generate;
 
   secretType = lib.types.submodule (
-    { name, ... }:
+    { name, config, ... }:
     {
       freeformType = lib.types.attrsOf lib.types.raw;
       options.key = lib.mkOption {
         type = lib.types.str;
         default = name;
-        description = "Secret identity (file name under ${varsDir}). Set it to share one value between differently owned declarations.";
+        description = "Secret identity (its key inside the sops file). Set it to share one value between differently owned declarations.";
+      };
+      options.file = lib.mkOption {
+        type = lib.types.str;
+        default = config.key;
+        description = "File under ${varsDir} (without .yaml) holding this secret. Several secrets can share one, so a CLI reads them all with a single decryption (one yubikey touch).";
       };
       options.generate = lib.mkOption {
         type = lib.types.nullOr (lib.types.either lib.types.bool lib.types.str);
@@ -88,13 +95,20 @@ let
 
       config = {
         sops.secrets = lib.mapAttrs (
-          _: s: builtins.removeAttrs s [ "generate" ] // { sopsFile = varsFile s.key; }
+          _: s:
+          builtins.removeAttrs s [
+            "generate"
+            "file"
+          ]
+          // {
+            sopsFile = varsFile s.file;
+          }
         ) config.ark.secrets;
 
-        assertions = map (key: {
-          assertion = builtins.pathExists (varsFile key);
-          message = "ark: secret '${key}' is not in sops yet. Run `ark secrets` and commit ${varsDir}/${key}.yaml";
-        }) (lib.unique (lib.mapAttrsToList (_: s: s.key) config.ark.secrets));
+        assertions = map (file: {
+          assertion = builtins.pathExists (varsFile file);
+          message = "ark: ${varsDir}/${file}.yaml is not in sops yet. Run `ark secrets` and commit it";
+        }) (lib.unique (lib.mapAttrsToList (_: s: s.file) config.ark.secrets));
       };
     };
 
@@ -115,7 +129,7 @@ let
       acc
       // {
         ${s.key} = {
-          file = s.key;
+          file = s.file;
           generate = if s.generate == null then prev.generate else script s.generate;
           hosts = lib.unique (prev.hosts ++ [ host.config.networking.hostName ]);
           recipients = lib.unique (prev.recipients ++ [ host.config.ark.hostKey ]);
@@ -182,16 +196,24 @@ in
 
     # Consumed by `ark secrets`. Each secret names the file (under ${varsDir},
     # without .yaml) that holds it. sopsConfig is written to
-    # ${varsDir}/.sops.yaml so plain `sops <file>.yaml` works from inside
-    # that directory too; one rule per file.
+    # ${varsDir}/.sops.yaml so `ark sops <file>.yaml` (and plain sops) work
+    # from inside that directory too; one rule per file, encrypted to everyone
+    # who needs any secret in it.
     flake.arkSecrets = rec {
       secrets = lib.mapAttrs (
         _: s: s // { recipients = lib.unique (config.ark.adminKeys ++ s.recipients); }
       ) (hostSecrets // infraSecrets);
-      sopsConfig.creation_rules = lib.mapAttrsToList (file: recipients: {
-        path_regex = "^${lib.escapeRegex file}\\.yaml$";
-        key_groups = [ { age = recipients; } ];
-      }) (lib.foldl' (acc: s: acc // { ${s.file} = s.recipients; }) { } (lib.attrValues secrets));
+      sopsConfig.creation_rules =
+        lib.mapAttrsToList
+          (file: recipients: {
+            path_regex = "^${lib.escapeRegex file}\\.yaml$";
+            key_groups = [ { age = recipients; } ];
+          })
+          (
+            lib.foldl' (
+              acc: s: acc // { ${s.file} = lib.unique ((acc.${s.file} or [ ]) ++ s.recipients); }
+            ) { } (lib.attrValues secrets)
+          );
     };
   };
 }
