@@ -4,6 +4,9 @@ let
   clients = ark.oidc.clients;
 in
 {
+  # kanidm terminates its own TLS; the vps passes id.* through to it (lib/public.nix).
+  ark.public.id = 8443;
+
   flake.nixosModules.kanidm =
     { pkgs, config, ... }:
     {

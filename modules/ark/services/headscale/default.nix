@@ -1,7 +1,22 @@
-{ config, ... }:
+{ config, lib, ... }:
 let
   ark = config.ark;
-  idUrl = "id.${ark.mainDomain}";
+
+  # Public names the vps fronts for ark (lib/public.nix): TLS is passed
+  # through untouched, routed on the SNI name to the given port on ark.
+  # Everything else on 443 is the vps's own vhosts (headscale) on 8444.
+  arkTailnetIp = "100.64.0.1";
+  upstreamName = name: "ark_${lib.replaceStrings [ "." "-" ] [ "_" "_" ] name}";
+  publicMap = lib.concatStrings (
+    lib.mapAttrsToList (name: _: "  ${name}  ${upstreamName name};\n") ark.publicDomains
+  );
+  publicUpstreams = lib.concatStrings (
+    lib.mapAttrsToList (name: port: ''
+      upstream ${upstreamName name} {
+        server ${arkTailnetIp}:${toString port};
+      }
+    '') ark.publicDomains
+  );
 in
 {
   ark.services.headscale = {
@@ -36,7 +51,7 @@ in
               extra_records = map (name: {
                 inherit name;
                 type = "A";
-                value = "100.64.0.1";
+                value = arkTailnetIp;
               }) (lib.concatLists (lib.attrValues (builtins.removeAttrs ark.serviceDomains [ "headscale" ])));
             };
             prefixes = {
@@ -97,14 +112,10 @@ in
 
           streamConfig = ''
             map $ssl_preread_server_name $backend {
-              ${idUrl}  kanidm_ark;
-              default     https_local;
+            ${publicMap}  default  https_local;
             }
 
-            upstream kanidm_ark {
-              server 100.64.0.1:8443;
-            }
-
+            ${publicUpstreams}
             upstream https_local {
               server 127.0.0.1:8444;
             }
@@ -139,25 +150,18 @@ in
       };
   };
 
-  # The host-specific half: DNS for the vps that runs it.
+  # The host-specific half: DNS for the vps that runs it — its own name,
+  # plus every public name it fronts for ark.
   den.aspects.headscale =
     { host, ... }:
     {
       includes = [ config.den.aspects.service-headscale ];
 
-      dns_records = [
-        {
-          domain = ark.mainDomain;
-          name = "vpn";
-          type = "A";
-          content = ark.vps.ip host;
-        }
-        {
-          domain = ark.mainDomain;
-          name = "id";
-          type = "A";
-          content = ark.vps.ip host;
-        }
-      ];
+      dns_records = map (name: {
+        inherit name;
+        domain = ark.mainDomain;
+        type = "A";
+        content = ark.vps.ip host;
+      }) ([ "vpn" ] ++ lib.attrNames ark.public);
     };
 }

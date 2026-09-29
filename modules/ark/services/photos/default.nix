@@ -1,8 +1,15 @@
 { self, config, ... }:
 let
   ark = config.ark;
+  shareDomain = "share.${ark.mainDomain}";
 in
 {
+  # Shared albums are public through immich-public-proxy on share.*: it
+  # answers only for links Immich has shared, from Immich's own API, so
+  # Immich itself stays on the tailnet. The vps passes share.* through to
+  # ark's nginx (lib/public.nix).
+  ark.public.share = 443;
+
   ark.services.photos = {
     oidc.callbacks = [
       "/auth/login"
@@ -27,6 +34,9 @@ in
                 # We will do this ourselves
                 backup.database.enabled = false;
 
+                # Links Immich hands out point at the public proxy.
+                server.externalDomain = "https://${shareDomain}";
+
                 oauth = {
                   enabled = true;
                   autoLaunch = true;
@@ -41,7 +51,6 @@ in
               mode = "0400";
               restartUnits = [
                 "immich-server.service"
-                "pocket-id.service"
               ];
             };
           };
@@ -58,6 +67,35 @@ in
             HF_XET_CACHE = "/var/cache/immich/huggingface-xet";
           };
 
+        };
+
+        # Serves /share/<key> and /s/<slug> exactly as Immich links them, from
+        # Immich's API on loopback. /photos/<name> is the slug link under the
+        # name people are given (keys are long random strings nobody types);
+        # the proxy's own asset and media paths are absolute (/share/static,
+        # /share/photo), so the whole host is its.
+        services.immich-public-proxy = {
+          enable = true;
+          immichUrl = "http://127.0.0.1:${toString service.port}";
+          port = service.port + 1;
+        };
+        systemd.services.immich-public-proxy = {
+          # og: tags on a share page need the public origin, not the tailnet one.
+          environment.PUBLIC_BASE_URL = "https://${shareDomain}";
+          # Its startup version check hits Immich; do not race it.
+          after = [ "immich-server.service" ];
+          wants = [ "immich-server.service" ];
+        };
+
+        services.nginx.virtualHosts.${shareDomain} = {
+          useACMEHost = ark.mainDomain;
+          forceSSL = true;
+          locations = {
+            "/".proxyPass = "http://127.0.0.1:${toString config.services.immich-public-proxy.port}";
+            "= /photos".proxyPass =
+              "http://127.0.0.1:${toString config.services.immich-public-proxy.port}/share/";
+            "/photos/".proxyPass = "http://127.0.0.1:${toString config.services.immich-public-proxy.port}/s/";
+          };
         };
 
         users.users.immich = {
