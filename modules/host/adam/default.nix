@@ -21,7 +21,7 @@
       service-radicale
       service-waka
       ark-nginx
-      assistant
+      sivrad
       tailnet
     ];
 

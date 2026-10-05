@@ -1,20 +1,20 @@
-# The `assistant` microVM: an always-on Claude Code session fed by a Signal
+# The `sivrad` microVM: an always-on Claude Code session fed by a Signal
 # channel plugin, running in tmux under systemd.
 #
 # First boot (from adam):
-#   1. ssh assistant@192.168.77.2
-#   2. tmux attach -t claude, then complete the `claude` login (browser flow).
+#   1. ssh sivrad@192.168.77.2
+#   2. tmux attach -t sivrad, then complete the `claude` login (browser flow).
 #   3. In Claude: /plugin marketplace add bufothefrog/claude-signal
 #                 /plugin install signal@claude-signal
-#   4. Detach, then link Signal: `signal-cli link -n assistant` (scan the QR
+#   4. Detach, then link Signal: `signal-cli link -n sivrad` (scan the QR
 #      code) or register a dedicated number with `signal-cli -u +NUMBER
 #      register` / `verify`.
 #   5. Restart the session (`/exit` in Claude; systemd restarts it), accept
 #      the development-channel warning, then pair from the phone and run
 #      /signal:access pair <code> and /signal:access policy allowlist.
 #
-# The VM is a tailnet node of its own, `assistant` under headscale's `ark`
-# user, joining with adam's pre-auth key (see host.nix for how the key gets
+# The VM is a tailnet node of its own, `sivrad` under headscale's `ark`
+# user, joining with adam's pre-auth key (see _host.nix for how the key gets
 # here). What it may reach on the tailnet is headscale's ACL (follow-up);
 # the key is reusable, so a dedicated key and user are a follow-up too.
 #
@@ -36,7 +36,7 @@
 }:
 let
   mac = "02:00:00:77:00:02";
-  home = "/var/lib/assistant";
+  home = "/var/lib/sivrad";
 
   # Secrets the model must not read: the claude.ai OAuth token, the
   # signal-cli account keys, and the tailnet node and pre-auth keys (the
@@ -77,15 +77,15 @@ let
     };
   };
 
-  claude = pkgs.writeShellScript "assistant-claude" ''
+  claude = pkgs.writeShellScript "sivrad-claude" ''
     exec claude --dangerously-load-development-channels plugin:signal@claude-signal
   '';
   # `tmux -D` keeps the server in the foreground for systemd but takes no
   # command, so the session comes from this config; exit-empty (which -D
   # turns off) makes the server exit with Claude, so systemd restarts both.
-  tmuxConf = pkgs.writeText "assistant-tmux.conf" ''
+  tmuxConf = pkgs.writeText "sivrad-tmux.conf" ''
     set -s exit-empty on
-    new-session -d -s claude -c ${home}/workspace ${claude}
+    new-session -d -s sivrad -c ${home}/workspace ${claude}
   '';
 in
 {
@@ -125,7 +125,7 @@ in
     interfaces = [
       {
         type = "tap";
-        id = "vm-assistant";
+        id = "vm-sivrad";
         inherit mac;
       }
     ];
@@ -174,12 +174,14 @@ in
     };
   };
 
-  users.users.assistant = {
+  users.users.sivrad = {
     isNormalUser = true;
     uid = 1000;
+    group = "sivrad";
     inherit home;
-    openssh.authorizedKeys.keys = [ (builtins.readFile ../../aspects/key.pub) ];
+    openssh.authorizedKeys.keys = [ (builtins.readFile ../../../aspects/key.pub) ];
   };
+  users.groups.sivrad.gid = 1000;
 
   environment.systemPackages = with pkgs; [
     claude-code
@@ -196,7 +198,7 @@ in
   ];
 
   environment.etc."claude-code/managed-settings.json".text = builtins.toJSON managedSettings;
-  environment.etc."assistant/CLAUDE.md".text = ''
+  environment.etc."sivrad/CLAUDE.md".text = ''
     # Personal assistant
 
     You are a personal assistant. People reach you over Signal through the
@@ -217,12 +219,12 @@ in
 
   # The volume is mounted after users are created, so fix ownership here.
   systemd.tmpfiles.rules = [
-    "d ${home} 0700 assistant users -"
-    "d ${home}/workspace 0700 assistant users -"
+    "d ${home} 0700 sivrad sivrad -"
+    "d ${home}/workspace 0700 sivrad sivrad -"
   ];
 
-  systemd.services.assistant = {
-    description = "Claude Code assistant (tmux session `claude`)";
+  systemd.services.sivrad = {
+    description = "Claude Code assistant session (tmux session `sivrad`)";
     wantedBy = [ "multi-user.target" ];
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
@@ -235,10 +237,10 @@ in
       TERM = "xterm-256color";
     };
     serviceConfig = {
-      User = "assistant";
+      User = "sivrad";
       WorkingDirectory = "${home}/workspace";
-      # Seed the assistant's instructions once; it may edit its copy later.
-      ExecStartPre = "${pkgs.bash}/bin/bash -c '[ -e CLAUDE.md ] || install -m 0600 /etc/assistant/CLAUDE.md CLAUDE.md'";
+      # Seed the session's instructions once; it may edit its copy later.
+      ExecStartPre = "${pkgs.bash}/bin/bash -c '[ -e CLAUDE.md ] || install -m 0600 /etc/sivrad/CLAUDE.md CLAUDE.md'";
       ExecStart = "${pkgs.tmux}/bin/tmux -D -f ${tmuxConf}";
       Restart = "always";
       RestartSec = "30s";
