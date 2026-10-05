@@ -1,15 +1,17 @@
 # The `sivrad` microVM: an always-on Claude Code session in tmux under
 # systemd, fed by its own channel server (./channel, Rust). The family
 # reaches it from the sivrad app on their phones and over Signal; both arrive
-# through that channel, tagged with the same identity (the sivrad_people
-# table, see ./default.nix).
+# through that channel, tagged with the same identity: their Kanidm username,
+# which /etc/sivrad/people.json maps to their Signal number. That file comes
+# from ark.persons.<name>.signal in secrets/ark.nix (see ./default.nix), so
+# it changes with a deploy of adam and a restart of the VM.
 #
 # First boot, from the owner's laptop (`ark service sivrad`, ./cli/mod.rs;
 # it reaches the VM as sivrad@sivrad.<tailnet domain> over ssh):
-#   1. `ark service sivrad init`: makes sure the people table and the Signal
-#      backup secrets exist, then runs `claude auth login` in the VM (the
-#      browser flow, its code prompt passed through ssh) and restarts the
-#      session.
+#   1. `ark service sivrad init`: says who may use sivrad, makes sure the
+#      Signal backup secrets exist, then runs `claude auth login` in the VM
+#      (the browser flow, its code prompt passed through ssh) and restarts
+#      the session.
 #   2. Give the assistant its own Signal number:
 #        ark service sivrad signal register +NUMBER   (asks for the SMS code)
 #      It goes through the signal-cli daemon below, which loads the new
@@ -19,7 +21,7 @@
 #      sivrad) and accept the development-channel warning.
 #   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
 #      and sign in with Kanidm.
-# Only people in the identity table get through, from either side.
+# Only people in people.json get through, from either side.
 #
 # The channel listens on TCP 8788, reachable over tailscale0 only; the phone
 # long-polls it (./channel/src/http.rs). Signal goes through signal-cli's
@@ -45,11 +47,18 @@
   pkgs,
   loginServer,
   oidc,
+  people,
   ...
 }:
 let
   mac = "02:00:00:77:00:02";
   inherit (import ./_vm.nix) home signalDir signalSocket;
+
+  # Who may talk to sivrad, keyed by Kanidm username:
+  #   { "alice": { "signal": "+15551234567" } }
+  # The channel re-reads it on every request, but it only changes with the
+  # guest's configuration (deploy adam, then restart the VM).
+  peopleJson = pkgs.writeText "sivrad-people.json" (builtins.toJSON people);
 
   channel = pkgs.callPackage ../../_rust.nix { pname = "sivrad-channel"; };
   # Claude Code starts the channel server from the workspace's .mcp.json.
@@ -59,22 +68,25 @@ let
       SIVRAD_LISTEN = "0.0.0.0:8788";
       SIVRAD_OIDC_ISSUER = oidc.issuer;
       SIVRAD_OIDC_CLIENT = oidc.clientId;
-      # The identity table, from adam (see ./_host.nix).
-      SIVRAD_PEOPLE_FILE = "/run/host-credentials/people.json";
+      SIVRAD_PEOPLE_FILE = "/etc/sivrad/people.json";
       SIVRAD_SIGNAL_SOCKET = signalSocket;
     };
   };
 
   # Secrets the model must not read: the claude.ai OAuth token, the
   # signal-cli account (and the daemon's socket, which would send as it),
-  # the tailnet node and pre-auth keys (root-only anyway) and the identity
-  # table.
+  # the tailnet node and pre-auth keys (root-only anyway). Also people.json,
+  # by both of its paths: the model knows people by their usernames, and
+  # the channel resolves those to numbers. It is in the world-readable Nix
+  # store, so this keeps the numbers out of the model's way, not secret.
   secretPaths = [
     "${home}/.claude/.credentials.json"
     signalDir
     "/run/sivrad"
     "/var/lib/tailscale"
     "/run/host-credentials"
+    "/etc/sivrad/people.json"
+    "${peopleJson}"
   ];
 
   managedSettings = {
@@ -105,6 +117,8 @@ let
         "Read(//run/sivrad/**)"
         "Read(//var/lib/tailscale/**)"
         "Read(//run/host-credentials/**)"
+        "Read(//etc/sivrad/people.json)"
+        "Read(/${peopleJson})"
       ];
     };
   };
@@ -136,8 +150,8 @@ let
   # sivrad_signal_account secret, a base64 tar.gz of signalDir without its
   # attachment, avatar and sticker caches), unpacked when signalDir has no
   # account yet: after a rebuild, or a fresh state.img. The host copies it
-  # in, world-readable like people.json, as the daemon runs as sivrad; empty
-  # until an account has been saved. Unpacked aside and moved into place,
+  # in, world-readable, as the daemon runs as sivrad; empty until an
+  # account has been saved. Unpacked aside and moved into place,
   # so a failed restore leaves no half account behind and runs again on the
   # next start; until then the daemon does not start (journalctl -u
   # signal-cli says why) rather than run without the account. The model
@@ -280,6 +294,7 @@ in
   ];
 
   environment.etc."claude-code/managed-settings.json".text = builtins.toJSON managedSettings;
+  environment.etc."sivrad/people.json".source = peopleJson;
   environment.etc."sivrad/CLAUDE.md".text = ''
     # Personal assistant
 

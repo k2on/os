@@ -30,7 +30,6 @@ use clap::{Arg, ArgMatches, Command as Clap};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::people::valid_e164;
 use super::{Config, Vm};
 use crate::secrets::Manifest;
 use crate::service::Ctx;
@@ -39,6 +38,17 @@ pub const NUMBER: &str = "sivrad_signal_number";
 pub const ACCOUNT: &str = "sivrad_signal_account";
 
 const CAPTCHA_URL: &str = "https://signalcaptchas.org/registration/generate.html";
+
+/// E.164: a plus, a country code that does not start with 0, 7 to 15 digits
+/// in all (`^\+[1-9][0-9]{6,14}$`).
+fn valid_e164(s: &str) -> bool {
+    let Some(digits) = s.strip_prefix('+') else {
+        return false;
+    };
+    (7..=15).contains(&digits.len())
+        && digits.chars().all(|c| c.is_ascii_digit())
+        && !digits.starts_with('0')
+}
 
 pub fn command() -> Clap {
     let number = || {
@@ -413,6 +423,30 @@ pub fn store(ctx: &Ctx, manifest: &Manifest, values: &[(&str, String)]) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn e164() {
+        for ok in [
+            "+15551234567",
+            "+4930123456",
+            "+1234567",
+            "+123456789012345",
+        ] {
+            assert!(valid_e164(ok), "{ok}");
+        }
+        for bad in [
+            "15551234567",
+            "+05551234567",
+            "+123456",
+            "+1234567890123456",
+            "+1 555 123 4567",
+            "+1555123456a",
+            "+",
+            "",
+        ] {
+            assert!(!valid_e164(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn account_lists() {

@@ -1,12 +1,13 @@
 //! `ark service sivrad ...`: set up the sivrad VM from a laptop. Commands
 //! drive the VM over ssh (as `sivrad`, at its tailnet name) and keep what
-//! has to survive a rebuild in the secrets repo: the people table, the
-//! Kanidm group that follows it, and the Signal account. The Claude Code
-//! login lives on the VM's state volume.
+//! has to survive a rebuild in the secrets repo: the Signal account. The
+//! Claude Code login lives on the VM's state volume.
+//!
+//! Who may use sivrad is not a command: it is everyone with a Signal number
+//! in secrets/ark.nix (`ark.persons.<username>.signal`, see ../default.nix).
 //!
 //! This file is found by ../../../cli/build.rs and compiled as a module of
 //! the `ark` crate, like money's.
-mod people;
 mod signal;
 
 use std::process::{Command, Output, Stdio};
@@ -22,7 +23,7 @@ use crate::util;
 
 pub static SERVICE: Service = Service {
     name: "sivrad",
-    about: "The sivrad assistant VM: people, the Claude login, Signal",
+    about: "The sivrad assistant VM: the Claude login and Signal",
     command,
     run,
 };
@@ -35,20 +36,19 @@ fn command() -> Clap {
             Clap::new("init")
                 .about("First-time setup, step by step; skips what is already done")
                 .long_about(
-                    "First-time setup; run it again any time, it skips what is already done. Makes sure \
-                     the secrets exist (asking who may talk to sivrad), logs Claude Code in inside the VM \
-                     over ssh (the browser flow), and says what is left: the Signal account and accepting \
-                     the development-channel warning.",
+                    "First-time setup; run it again any time, it skips what is already done. Says who \
+                     may use sivrad (the people in secrets/ark.nix with a Signal number), makes sure the \
+                     Signal secrets exist, logs Claude Code in inside the VM over ssh (the browser flow), \
+                     and says what is left: the Signal account and accepting the development-channel \
+                     warning.",
                 ),
         )
-        .subcommand(people::command())
         .subcommand(signal::command())
 }
 
 fn run(ctx: &Ctx, m: &ArgMatches) -> Result<()> {
     match m.subcommand() {
         Some(("init", _)) => init(ctx),
-        Some(("people", m)) => people::run(ctx, m),
         Some(("signal", m)) => signal::run(ctx, m),
         _ => unreachable!("subcommand_required"),
     }
@@ -62,8 +62,9 @@ pub struct Config {
     host: Option<String>,
     user: String,
     signal: SignalConfig,
-    /// Kanidm usernames (ark.persons).
-    persons: Vec<String>,
+    /// Who may use sivrad: the Kanidm usernames in ark.persons with a Signal
+    /// number.
+    people: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -153,8 +154,9 @@ fn init(ctx: &Ctx) -> Result<()> {
     let cfg = Config::load(ctx)?;
     let manifest = Manifest::load(ctx)?;
 
-    println!("1. Secrets");
-    let created = init_secrets(ctx, &cfg, &manifest)?;
+    println!("1. People and secrets");
+    print_people(&cfg);
+    let created = init_secrets(ctx, &manifest)?;
     if created {
         println!("   Commit secrets/ and deploy adam so the VM gets them.");
     }
@@ -181,7 +183,9 @@ fn init(ctx: &Ctx) -> Result<()> {
             let ids: Vec<&str> = accounts.iter().map(signal::Account::id).collect();
             println!("   signal-cli has {}.", ids.join(", "));
             if !signal_backed_up(ctx, &manifest) {
-                println!("   It is not saved in the secrets repo yet: ark service sivrad signal backup");
+                println!(
+                    "   It is not saved in the secrets repo yet: ark service sivrad signal backup"
+                );
             }
         }
         Err(e) => println!("   Could not ask signal-cli in the VM: {e:#}"),
@@ -195,44 +199,34 @@ fn init(ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
-/// The people table (and its people.nix) and the Signal backup placeholders.
-/// True when anything was created.
-fn init_secrets(ctx: &Ctx, cfg: &Config, manifest: &Manifest) -> Result<bool> {
-    let mut created = false;
-    if manifest.present(ctx, people::SECRET) {
-        if people::people_nix_exists(ctx) {
-            println!("   {} exists", people::SECRET);
-        } else {
-            // From before people.nix: give the Kanidm group the table's people.
-            let table = people::load(ctx, manifest)?;
-            people::write_people_nix(ctx, &table)?;
-            println!(
-                "   {} exists; wrote secrets/services/sivrad/people.nix from it",
-                people::SECRET
-            );
-            created = true;
-        }
+/// Who may use sivrad, or how to add someone when nobody may yet.
+fn print_people(cfg: &Config) {
+    if cfg.people.is_empty() {
+        println!(
+            "   Nobody may use sivrad yet. Give a person in secrets/ark.nix a Signal number:\n\n     \
+             ark.persons.<username>.signal = \"+15551234567\";\n\n   then commit secrets/ and deploy \
+             adam."
+        );
     } else {
-        let table = people::prompt_people(ctx, cfg)?;
-        people::save(ctx, manifest, &table)?;
-        println!("   stored {}", people::SECRET);
-        created = true;
+        println!("   sivrad users: {}", cfg.people.join(", "));
     }
+}
 
+/// The Signal backup placeholders. True when anything was created.
+fn init_secrets(ctx: &Ctx, manifest: &Manifest) -> Result<bool> {
     let missing: Vec<&str> = [signal::NUMBER, signal::ACCOUNT]
         .into_iter()
         .filter(|key| !manifest.present(ctx, key))
         .collect();
     if missing.is_empty() {
         println!("   {} and {} exist", signal::NUMBER, signal::ACCOUNT);
-    } else {
-        // Empty until an account is registered; adam needs them to build.
-        let values: Vec<(&str, String)> = missing.iter().map(|k| (*k, String::new())).collect();
-        signal::store(ctx, manifest, &values)?;
-        println!("   created {} (empty for now)", missing.join(" and "));
-        created = true;
+        return Ok(false);
     }
-    Ok(created)
+    // Empty until an account is registered; adam needs them to build.
+    let values: Vec<(&str, String)> = missing.iter().map(|k| (*k, String::new())).collect();
+    signal::store(ctx, manifest, &values)?;
+    println!("   created {} (empty for now)", missing.join(" and "));
+    Ok(true)
 }
 
 /// Logs Claude Code in if it is not, then restarts the session so it picks

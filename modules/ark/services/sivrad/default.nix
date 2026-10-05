@@ -4,12 +4,22 @@
 # Den aspect den.aspects.sivrad directly. Files starting with `_` carry the
 # underscore so import-tree does not load them as flake modules.
 #
-# Set up from a laptop with `ark service sivrad ...` (./cli/mod.rs), which
-# drives the VM over ssh and keeps everything durable in the secrets repo:
+# Who may use sivrad: everyone in secrets/ark.nix with a Signal number,
 #
-#   ark service sivrad init                  # people, the Claude login, and
-#                                            # what is still missing
-#   ark service sivrad people add alice +15551234567
+#   ark.persons.alice.signal = "+15551234567";
+#
+# (lib/oidc.nix). They make up the Kanidm group sivrad_users, which may sign
+# in to the phone app (./_kanidm.nix), and the channel's people.json, which
+# maps their numbers to their usernames (./_guest.nix). There is no command
+# for it: edit secrets/ark.nix, commit it and deploy adam, then restart the
+# VM (`systemctl restart microvm@sivrad`) for the channel to see the change.
+#
+# The rest is set up from a laptop with `ark service sivrad ...`
+# (./cli/mod.rs), which drives the VM over ssh and keeps the Signal account
+# in the secrets repo:
+#
+#   ark service sivrad init                  # the Claude login, and what is
+#                                            # still missing
 #   ark service sivrad signal register +15557654321
 #
 # then commit secrets/ and deploy adam.
@@ -22,6 +32,16 @@
 let
   ark = config.ark;
   vm = import ./_vm.nix;
+  # Everyone who may use sivrad: the persons with a Signal number.
+  people = lib.filterAttrs (_: p: p.signal != null) ark.persons;
+  # E.164, as the channel and signal-cli expect: + and the country code.
+  notE164 = lib.attrNames (
+    lib.filterAttrs (_: p: builtins.match "[+][1-9][0-9]{6,14}" p.signal == null) people
+  );
+  # The channel tells Signal senders apart by their number.
+  shared = lib.filterAttrs (_: names: lib.length names > 1) (
+    lib.groupBy (name: people.${name}.signal) (lib.attrNames people)
+  );
   # Kanidm's per-client issuer, as in lib/oidc.nix.
   idOrigin = "https://id.${ark.mainDomain}";
 
@@ -36,28 +56,8 @@ let
   );
 in
 {
-  options.ark.sivrad.people = lib.mkOption {
-    type = lib.types.listOf lib.types.str;
-    default = [ ];
-    example = [ "alice" ];
-    description = ''
-      Kanidm usernames in the sivrad_users group, who may sign in to the
-      sivrad app. Written to secrets/services/sivrad/people.nix by
-      `ark service sivrad people ...` from the sivrad_people secret, so the
-      two stay in step.
-    '';
-  };
-
   config.den.aspects.sivrad = {
     secrets = {
-      # The identity table: who may talk to sivrad. A JSON object keyed by
-      # Kanidm username, e.g.
-      #   { "alice": { "signal": "+15551234567" }, "bob": { "signal": "+15557654321" } }
-      # kept by `ark service sivrad people`. The host hands it to the guest as
-      # people.json (./_host.nix); the channel re-reads it on every request,
-      # so edits apply without a restart.
-      sivrad_people.restartUnits = [ "sivrad-credentials.service" ];
-
       # The VM's Signal identity, saved by `ark service sivrad signal ...`
       # after registering, so a rebuilt VM comes back as the same
       # account: the number, and signal-cli's data directory as a base64
@@ -81,10 +81,23 @@ in
         ./_host.nix
         (import ./_kanidm.nix {
           origin = idOrigin;
-          members = ark.sivrad.people;
+          members = lib.attrNames people;
         })
       ];
+      assertions = [
+        {
+          assertion = notE164 == [ ];
+          message = "ark.persons.<name>.signal must be E.164 (+ and the country code, digits only, e.g. +15551234567); not so for: ${lib.concatStringsSep ", " notE164}";
+        }
+        {
+          assertion = shared == { };
+          message = "ark.persons: a Signal number belongs to one person only; shared by: ${lib.concatStringsSep "; " (map (lib.concatStringsSep ", ") (lib.attrValues shared))}";
+        }
+      ];
       microvm.vms.sivrad.specialArgs = {
+        # Who may use sivrad, for the channel's people.json (./_guest.nix):
+        # { "<username>": { "signal": "+..." } }.
+        people = lib.mapAttrs (_: p: { inherit (p) signal; }) people;
         # Same login server as den.aspects.tailnet.
         loginServer = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
         oidc = {
@@ -104,8 +117,7 @@ in
       configDir = vm.signalDir;
       socket = vm.signalSocket;
     };
-    # Who has a Kanidm account (secrets/ark.nix), since only they can join
-    # the sivrad_users group.
-    persons = lib.attrNames ark.persons;
+    # Who may use sivrad (ark.persons with a Signal number), for `init`.
+    people = lib.attrNames people;
   };
 }

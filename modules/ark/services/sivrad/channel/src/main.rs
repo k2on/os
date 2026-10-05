@@ -21,7 +21,7 @@
 //!   SIVRAD_TIMEOUT_MS    how long a request is held (default 120000)
 //!   SIVRAD_OIDC_ISSUER   e.g. https://id.example.org/oauth2/openid/sivrad
 //!   SIVRAD_OIDC_CLIENT   the phone's OAuth2 client id (sivrad)
-//!   SIVRAD_PEOPLE_FILE   identity table (default /run/host-credentials/people.json)
+//!   SIVRAD_PEOPLE_FILE   identity table (default /etc/sivrad/people.json)
 //!   SIVRAD_SIGNAL_SOCKET signal-cli's JSON-RPC socket (default /run/sivrad/signal.sock)
 
 mod http;
@@ -50,7 +50,7 @@ async fn main() {
         ),
         tool_wait: Duration::from_secs(180),
         people_file: env("SIVRAD_PEOPLE_FILE")
-            .unwrap_or_else(|| "/run/host-credentials/people.json".into())
+            .unwrap_or_else(|| "/etc/sivrad/people.json".into())
             .into(),
         signal_socket: env("SIVRAD_SIGNAL_SOCKET")
             .unwrap_or_else(|| "/run/sivrad/signal.sock".into())
