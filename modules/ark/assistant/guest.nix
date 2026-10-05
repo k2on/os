@@ -13,6 +13,11 @@
 #      the development-channel warning, then pair from the phone and run
 #      /signal:access pair <code> and /signal:access policy allowlist.
 #
+# The VM is a tailnet node of its own, `assistant` under headscale's `ark`
+# user, joining with adam's pre-auth key (see host.nix for how the key gets
+# here). What it may reach on the tailnet is headscale's ACL (follow-up);
+# the key is reusable, so a dedicated key and user are a follow-up too.
+#
 # The development-channel warning appears on every start, so after a VM or
 # service restart someone has to attach and accept it.
 #
@@ -23,17 +28,25 @@
 # from both the file tools and sandboxed commands. MCP servers (the Signal
 # bridge) run outside that sandbox; the VM and adam's egress policy bound
 # them.
-{ lib, pkgs, ... }:
+{
+  lib,
+  pkgs,
+  loginServer,
+  ...
+}:
 let
   mac = "02:00:00:77:00:02";
   home = "/var/lib/assistant";
 
-  # Secrets the model must not read: the claude.ai OAuth token and the
-  # signal-cli account keys. Attachments under signal-cli/attachments stay
+  # Secrets the model must not read: the claude.ai OAuth token, the
+  # signal-cli account keys, and the tailnet node and pre-auth keys (the
+  # last two are root-only anyway). Attachments under signal-cli/attachments stay
   # readable because the Signal bridge asks Claude to Read them.
   secretPaths = [
     "${home}/.claude/.credentials.json"
     "${home}/.local/share/signal-cli/data"
+    "/var/lib/tailscale"
+    "/run/host-credentials"
   ];
 
   managedSettings = {
@@ -58,6 +71,8 @@ let
       deny = [
         "Read(/${home}/.claude/.credentials.json)"
         "Read(/${home}/.local/share/signal-cli/data/**)"
+        "Read(//var/lib/tailscale/**)"
+        "Read(//run/host-credentials/**)"
       ];
     };
   };
@@ -99,6 +114,13 @@ in
         size = 4096;
         fsType = "ext4";
       }
+      # The node identity, so the VM stays one tailnet node across reboots.
+      {
+        image = "tailscale.img";
+        mountPoint = "/var/lib/tailscale";
+        size = 64;
+        fsType = "ext4";
+      }
     ];
     interfaces = [
       {
@@ -122,6 +144,25 @@ in
       "1.1.1.1"
       "8.8.8.8"
     ];
+  };
+
+  services.tailscale = {
+    enable = true;
+    authKeyFile = "/run/host-credentials/headscale_preauth_key";
+    extraUpFlags = [
+      "--login-server"
+      loginServer
+    ];
+  };
+  # As in den.aspects.tailnet: headscale may not be reachable yet, and the
+  # unit only logs in when the backend needs it.
+  systemd.services.tailscaled-autoconnect = {
+    unitConfig.RequiresMountsFor = "/run/host-credentials";
+    serviceConfig = {
+      Restart = "on-failure";
+      RestartSec = 10;
+      RemainAfterExit = true;
+    };
   };
 
   services.openssh = {

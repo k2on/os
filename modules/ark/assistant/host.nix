@@ -6,12 +6,22 @@
 #   - to adam itself: only TCP 443 (nginx) and 8123 (Home Assistant);
 #   - forwarded: DNS and TCP 443 to public addresses, nothing to the LAN,
 #     the tailnet, or link-local ranges; no IPv6 at all.
+#   - tailscale: UDP 41641 anywhere, any other UDP to public addresses
+#     (STUN, peers). Once the VM is on the tailnet its traffic there is
+#     WireGuard, so what it may reach on the tailnet is up to headscale's
+#     ACL, not to this chain.
 # The rules live in the mangle table because tailscaled inserts its own
 # ts-forward chain (which ACCEPTs everything leaving via tailscale0) at the
 # top of filter/FORWARD after the NixOS firewall has started.
-{ lib, ... }:
+{ config, lib, ... }:
 let
   tap = "vm-assistant";
+  # Root-only directory shared read-only into the guest. It holds a copy of
+  # adam's tailnet pre-auth key (den.aspects.tailnet), so the guest needs no
+  # sops of its own. microvm.credentialFiles would be the natural fit, but
+  # microvm.nix only implements it for qemu; the cloud-hypervisor runner
+  # throws (lib/runners/cloud-hypervisor.nix).
+  credentialsDir = "/run/assistant-credentials";
   hostAddress = "192.168.77.1";
   hostPorts = [
     443
@@ -45,7 +55,39 @@ in
     # Build the guest from its own nixpkgs instance so the claude-code
     # unfree allowance stays scoped to the VM (see guest.nix).
     pkgs = null;
-    config.imports = [ ./guest.nix ];
+    config = {
+      imports = [ ./guest.nix ];
+      microvm.shares = [
+        {
+          tag = "credentials";
+          source = credentialsDir;
+          mountPoint = "/run/host-credentials";
+          proto = "virtiofs";
+          readOnly = true;
+        }
+      ];
+    };
+  };
+
+  # Refresh the guest's copy before its virtiofsd starts. virtiofsd runs as
+  # root and passes ownership through, so in the guest the key is root:root
+  # 0400 and invisible to the `assistant` user.
+  systemd.services.assistant-credentials = {
+    description = "Credentials for the assistant microVM";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      install -d -m 0700 -o root -g root ${credentialsDir}
+      chmod 0700 ${credentialsDir}
+      chown root:root ${credentialsDir}
+      install -m 0400 -o root -g root ${config.sops.secrets.headscale_preauth_key.path} ${credentialsDir}/headscale_preauth_key
+    '';
+  };
+  systemd.services."microvm-virtiofsd@assistant" = {
+    requires = [ "assistant-credentials.service" ];
+    after = [ "assistant-credentials.service" ];
   };
 
   # The tap device is created by microvm-tap-interfaces@assistant.service;
@@ -84,11 +126,13 @@ in
     iptables -w -t mangle -A assistant-fwd -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
     iptables -w -t mangle -A assistant-fwd -p udp --dport 53 -j RETURN
     iptables -w -t mangle -A assistant-fwd -p tcp --dport 53 -j RETURN
+    iptables -w -t mangle -A assistant-fwd -p udp --dport 41641 -j RETURN
     ${lib.concatMapStringsSep "\n" (
       range: "iptables -w -t mangle -A assistant-fwd -d ${range} -j assistant-drop"
     ) privateRanges}
     iptables -w -t mangle -A assistant-fwd -p tcp --dport 443 -m conntrack --ctstate NEW -m limit --limit 10/min -j LOG --log-prefix "assistant-egress: "
     iptables -w -t mangle -A assistant-fwd -p tcp --dport 443 -j RETURN
+    iptables -w -t mangle -A assistant-fwd -p udp -j RETURN
     iptables -w -t mangle -A assistant-fwd -j assistant-drop
 
     iptables -w -t mangle -I INPUT 1 -i ${tap} -j assistant-in
