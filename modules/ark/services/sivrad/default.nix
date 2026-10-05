@@ -1,18 +1,27 @@
 # sivrad: a microVM on adam running an always-on Claude Code session, named
-# after the owner's phone voice assistant it serves.
-# Not an ark.services entry (no HTTP service behind nginx): it defines the
-# Den aspect den.aspects.sivrad directly. Files starting with `_` carry the
-# underscore so import-tree does not load them as flake modules.
+# after the owner's phone voice assistant it serves. An ark.services entry
+# like any other (lib/services.nix): its Kanidm client, group, secrets,
+# domain and nginx vhost come from the registry. Files starting with `_`
+# carry the underscore so import-tree does not load them as flake modules.
 #
-# Who may use sivrad: everyone in secrets/ark.nix with a Signal number,
+# The phone signs in through a public OIDC client `sivrad` (PKCE, no client
+# secret) that redirects to the app's custom scheme, and reaches the channel
+# at https://sivrad.<mainDomain>, a private name on the tailnet: adam's
+# nginx proxies it over the tap link to the channel in the VM (./_host.nix,
+# ./_guest.nix). The channel checks the access token against the client's
+# userinfo endpoint (./channel/src/oidc.rs).
 #
-#   ark.persons.alice.signal = "+15551234567";
+# Who may use sivrad is the registry's convention, in secrets/ark.nix:
 #
-# (lib/oidc.nix). They make up the Kanidm group sivrad_users, which may sign
-# in to the phone app (./_kanidm.nix), and the channel's people.json, which
-# maps their numbers to their usernames (./_guest.nix). There is no command
-# for it: edit secrets/ark.nix, commit it and deploy adam, then restart the
-# VM (`systemctl restart microvm@sivrad`) for the channel to see the change.
+#   ark.groups.sivrad.users = [ "alice" "bob" ];
+#   ark.persons.alice.signal = "+15551234567";   # optional
+#
+# The group's members make up the Kanidm group sivrad_users, which may sign
+# in to the phone app, and the channel's people.json, which maps them to
+# their Signal numbers (./_guest.nix). A member without a number uses the
+# phone app only. There is no command for it: edit secrets/ark.nix, commit
+# it and deploy adam, then restart the VM (`systemctl restart
+# microvm@sivrad`) for the channel to see the change.
 #
 # The rest is set up from a laptop with `ark service sivrad ...`
 # (./cli/mod.rs), which drives the VM over ssh and keeps the Signal account
@@ -32,18 +41,22 @@
 let
   ark = config.ark;
   vm = import ./_vm.nix;
-  # Everyone who may use sivrad: the persons with a Signal number.
-  people = lib.filterAttrs (_: p: p.signal != null) ark.persons;
+  # Who may use sivrad: the members of the Kanidm group sivrad_users.
+  members = ark.groups.sivrad.users or [ ];
+  # Their Signal numbers, null for a member without one. A member who is not
+  # a person is left to Kanidm's provisioning to report.
+  people = lib.genAttrs members (name: {
+    signal = ark.persons.${name}.signal or null;
+  });
+  onSignal = lib.filterAttrs (_: p: p.signal != null) people;
   # E.164, as the channel and signal-cli expect: + and the country code.
   notE164 = lib.attrNames (
-    lib.filterAttrs (_: p: builtins.match "[+][1-9][0-9]{6,14}" p.signal == null) people
+    lib.filterAttrs (_: p: builtins.match "[+][1-9][0-9]{6,14}" p.signal == null) onSignal
   );
   # The channel tells Signal senders apart by their number.
   shared = lib.filterAttrs (_: names: lib.length names > 1) (
-    lib.groupBy (name: people.${name}.signal) (lib.attrNames people)
+    lib.groupBy (name: onSignal.${name}.signal) (lib.attrNames onSignal)
   );
-  # Kanidm's per-client issuer, as in lib/oidc.nix.
-  idOrigin = "https://id.${ark.mainDomain}";
 
   # The VM's MagicDNS name: headscale's base_domain, read off the host that
   # runs headscale, the way lib/services.nix derives the arkHosts ssh targets.
@@ -56,7 +69,14 @@ let
   );
 in
 {
-  config.den.aspects.sivrad = {
+  config.ark.services.sivrad = {
+    oidc = {
+      # The Android app: PKCE, no client secret.
+      public = true;
+      displayName = "Sivrad";
+      callbacks = [ "sivrad://oauth/callback" ];
+    };
+
     secrets = {
       # The VM's Signal identity, saved by `ark service sivrad signal ...`
       # after registering, so a rebuilt VM comes back as the same
@@ -75,37 +95,44 @@ in
       };
     };
 
-    nixos = {
-      imports = [
-        inputs.microvm.nixosModules.host
-        ./_host.nix
-        (import ./_kanidm.nix {
-          origin = idOrigin;
-          members = lib.attrNames people;
-        })
-      ];
-      assertions = [
-        {
-          assertion = notE164 == [ ];
-          message = "ark.persons.<name>.signal must be E.164 (+ and the country code, digits only, e.g. +15551234567); not so for: ${lib.concatStringsSep ", " notE164}";
-        }
-        {
-          assertion = shared == { };
-          message = "ark.persons: a Signal number belongs to one person only; shared by: ${lib.concatStringsSep "; " (map (lib.concatStringsSep ", ") (lib.attrValues shared))}";
-        }
-      ];
-      microvm.vms.sivrad.specialArgs = {
-        # Who may use sivrad, for the channel's people.json (./_guest.nix):
-        # { "<username>": { "signal": "+..." } }.
-        people = lib.mapAttrs (_: p: { inherit (p) signal; }) people;
-        # Same login server as den.aspects.tailnet.
-        loginServer = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
-        oidc = {
-          issuer = "${idOrigin}/oauth2/openid/sivrad";
-          clientId = "sivrad";
+    nixos =
+      { service, lib, ... }:
+      {
+        imports = [
+          inputs.microvm.nixosModules.host
+          ./_host.nix
+        ];
+        assertions = [
+          {
+            assertion = notE164 == [ ];
+            message = "ark.persons.<name>.signal must be E.164 (+ and the country code, digits only, e.g. +15551234567); not so for: ${lib.concatStringsSep ", " notE164}";
+          }
+          {
+            assertion = shared == { };
+            message = "ark.persons: a Signal number belongs to one sivrad user only; shared by: ${lib.concatStringsSep "; " (map (lib.concatStringsSep ", ") (lib.attrValues shared))}";
+          }
+        ];
+
+        # The registry's vhost proxies to 127.0.0.1:<port>; the channel is in
+        # the VM, across the tap. It holds a request for up to 120 s
+        # (SIVRAD_TIMEOUT_MS) before answering, so nginx waits longer.
+        services.nginx.virtualHosts.${service.domain}.locations."/" = {
+          proxyPass = lib.mkForce "http://${vm.address}:${toString vm.channelPort}";
+          extraConfig = ''
+            proxy_read_timeout 150s;
+            proxy_send_timeout 150s;
+          '';
+        };
+
+        microvm.vms.sivrad.specialArgs = {
+          # Who may use sivrad, for the channel's people.json (./_guest.nix):
+          # { "<username>": { "signal": "+..." | null } }.
+          inherit people;
+          # Same login server as den.aspects.tailnet.
+          loginServer = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
+          oidc = { inherit (service.oidc) issuer clientId; };
         };
       };
-    };
   };
 
   # What `ark service sivrad ...` reads (cli/mod.rs), through `nix eval`.
@@ -117,7 +144,9 @@ in
       configDir = vm.signalDir;
       socket = vm.signalSocket;
     };
-    # Who may use sivrad (ark.persons with a Signal number), for `init`.
-    people = lib.attrNames people;
+    # Who may use sivrad (ark.groups.sivrad.users), for `init`.
+    people = members;
+    # Where the phone app reaches the channel.
+    domain = ark.serviceDomain "sivrad" ark.services.sivrad;
   };
 }

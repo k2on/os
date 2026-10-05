@@ -1,5 +1,6 @@
 # Host side of the `sivrad` microVM: a tap link to the guest, NAT, and an
-# egress policy. The guest itself is described in ./_guest.nix.
+# egress policy. The guest itself is described in ./_guest.nix; adam's nginx
+# reaches the channel in it over the tap (./default.nix).
 #
 # Policy for traffic from the VM (blocked packets are logged with the prefix
 # "sivrad-drop: ", allowed HTTPS with "sivrad-egress: "):
@@ -10,6 +11,9 @@
 #     (STUN, peers). Once the VM is on the tailnet its traffic there is
 #     WireGuard, so what it may reach on the tailnet is up to headscale's
 #     ACL, not to this chain.
+# Traffic from adam to the VM (nginx to the channel) is not filtered here:
+# it leaves adam, and sivrad-in lets the VM's replies through as
+# ESTABLISHED.
 # The rules live in the mangle table because tailscaled inserts its own
 # ts-forward chain (which ACCEPTs everything leaving via tailscale0) at the
 # top of filter/FORWARD after the NixOS firewall has started.
@@ -26,7 +30,7 @@ let
   # implements it for qemu; the cloud-hypervisor runner throws
   # (lib/runners/cloud-hypervisor.nix).
   credentialsDir = "/run/sivrad-credentials";
-  hostAddress = "192.168.77.1";
+  inherit (import ./_vm.nix) hostAddress;
   hostPorts = [
     443
     8123

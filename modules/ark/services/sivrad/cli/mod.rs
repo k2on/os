@@ -3,8 +3,9 @@
 //! has to survive a rebuild in the secrets repo: the Signal account. The
 //! Claude Code login lives on the VM's state volume.
 //!
-//! Who may use sivrad is not a command: it is everyone with a Signal number
-//! in secrets/ark.nix (`ark.persons.<username>.signal`, see ../default.nix).
+//! Who may use sivrad is not a command: it is the members of
+//! `ark.groups.sivrad.users` in secrets/ark.nix, with their Signal numbers
+//! in `ark.persons.<username>.signal` (see ../default.nix).
 //!
 //! This file is found by ../../../cli/build.rs and compiled as a module of
 //! the `ark` crate, like money's.
@@ -37,7 +38,7 @@ fn command() -> Clap {
                 .about("First-time setup, step by step; skips what is already done")
                 .long_about(
                     "First-time setup; run it again any time, it skips what is already done. Says who \
-                     may use sivrad (the people in secrets/ark.nix with a Signal number), makes sure the \
+                     may use sivrad (ark.groups.sivrad.users in secrets/ark.nix), makes sure the \
                      Signal secrets exist, logs Claude Code in inside the VM over ssh (the browser flow), \
                      and says what is left: the Signal account and accepting the development-channel \
                      warning.",
@@ -62,9 +63,10 @@ pub struct Config {
     host: Option<String>,
     user: String,
     signal: SignalConfig,
-    /// Who may use sivrad: the Kanidm usernames in ark.persons with a Signal
-    /// number.
+    /// Who may use sivrad: the Kanidm usernames in ark.groups.sivrad.users.
     people: Vec<String>,
+    /// Where the phone app reaches the channel, through adam's nginx.
+    domain: String,
 }
 
 #[derive(Deserialize)]
@@ -194,7 +196,8 @@ fn init(ctx: &Ctx) -> Result<()> {
     println!(
         "\nLeft to do by hand: attach to the session once and accept the development-channel warning \
          (it comes back after every restart of the session):\n\n  ssh -t {vm} tmux attach -t sivrad\n\n\
-         (detach with Ctrl-b d). Then, in the sivrad app, enter http://sivrad:8788 and sign in."
+         (detach with Ctrl-b d). Then, in the sivrad app, enter https://{} and sign in.",
+        cfg.domain
     );
     Ok(())
 }
@@ -203,9 +206,9 @@ fn init(ctx: &Ctx) -> Result<()> {
 fn print_people(cfg: &Config) {
     if cfg.people.is_empty() {
         println!(
-            "   Nobody may use sivrad yet. Give a person in secrets/ark.nix a Signal number:\n\n     \
-             ark.persons.<username>.signal = \"+15551234567\";\n\n   then commit secrets/ and deploy \
-             adam."
+            "   Nobody may use sivrad yet. Add people to the sivrad group in secrets/ark.nix, and \
+             optionally\n   their Signal numbers:\n\n     ark.groups.sivrad.users = [ \"alice\" ];\n     \
+             ark.persons.alice.signal = \"+15551234567\";\n\n   then commit secrets/ and deploy adam."
         );
     } else {
         println!("   sivrad users: {}", cfg.people.join(", "));

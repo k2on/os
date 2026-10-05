@@ -66,7 +66,7 @@ in
               type = lib.types.nullOr lib.types.str;
               default = null;
               example = "+15551234567";
-              description = "Signal number in E.164. A person with one may use sivrad (the phone app and Signal).";
+              description = "Signal number in E.164; sivrad maps the person's Signal messages to this account.";
             };
           }
         )

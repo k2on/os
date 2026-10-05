@@ -3,8 +3,10 @@
 # reaches it from the sivrad app on their phones and over Signal; both arrive
 # through that channel, tagged with the same identity: their Kanidm username,
 # which /etc/sivrad/people.json maps to their Signal number. That file comes
-# from ark.persons.<name>.signal in secrets/ark.nix (see ./default.nix), so
-# it changes with a deploy of adam and a restart of the VM.
+# from secrets/ark.nix (see ./default.nix): the members of
+# ark.groups.sivrad.users, each with ark.persons.<name>.signal (null for
+# someone without Signal), so it changes with a deploy of adam and a
+# restart of the VM.
 #
 # First boot, from the owner's laptop (`ark service sivrad`, ./cli/mod.rs;
 # it reaches the VM as sivrad@sivrad.<tailnet domain> over ssh):
@@ -19,18 +21,21 @@
 #      deploy adam so a rebuilt VM restores it (restoreSignal).
 #   3. Attach once (ssh -t sivrad@sivrad.<tailnet domain> tmux attach -t
 #      sivrad) and accept the development-channel warning.
-#   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
-#      and sign in with Kanidm.
+#   4. In the sivrad app on the phone, enter https://sivrad.<mainDomain>
+#      (a private name on the tailnet) and sign in with Kanidm.
 # Only people in people.json get through, from either side.
 #
-# The channel listens on TCP 8788, reachable over tailscale0 only; the phone
-# long-polls it (./channel/src/http.rs). Signal goes through signal-cli's
-# JSON-RPC daemon on /run/sivrad/signal.sock (./channel/src/signal.rs).
+# The channel listens on TCP 8788 on the tap address only (./_vm.nix);
+# adam's nginx proxies https://sivrad.<mainDomain> to it (./default.nix),
+# and the phone long-polls it there (./channel/src/http.rs). Signal goes
+# through signal-cli's JSON-RPC daemon on /run/sivrad/signal.sock
+# (./channel/src/signal.rs).
 #
-# The VM is a tailnet node of its own, `sivrad` under headscale's `ark`
-# user, joining with adam's pre-auth key (see _host.nix for how the key gets
-# here). What it may reach on the tailnet is headscale's ACL (follow-up);
-# the key is reusable, so a dedicated key and user are a follow-up too.
+# The VM is also a tailnet node of its own, `sivrad` under headscale's `ark`
+# user, for ssh (`ark service sivrad`), joining with adam's pre-auth key (see
+# _host.nix for how the key gets here). What it may reach on the tailnet is
+# headscale's ACL (follow-up); the key is reusable, so a dedicated key and
+# user are a follow-up too.
 #
 # The development-channel warning appears on every start, so after a VM or
 # service restart someone has to attach and accept it.
@@ -52,10 +57,20 @@
 }:
 let
   mac = "02:00:00:77:00:02";
-  inherit (import ./_vm.nix) home signalDir signalSocket;
+  # The NIC on the tap link to adam, renamed by its MAC (below) so the
+  # firewall does not depend on its PCI slot.
+  nic = "host0";
+  inherit (import ./_vm.nix)
+    home
+    signalDir
+    signalSocket
+    hostAddress
+    address
+    channelPort
+    ;
 
   # Who may talk to sivrad, keyed by Kanidm username:
-  #   { "alice": { "signal": "+15551234567" } }
+  #   { "alice": { "signal": "+15551234567" }, "bob": { "signal": null } }
   # The channel re-reads it on every request, but it only changes with the
   # guest's configuration (deploy adam, then restart the VM).
   peopleJson = pkgs.writeText "sivrad-people.json" (builtins.toJSON people);
@@ -65,7 +80,7 @@ let
   mcpConfig.mcpServers.sivrad = {
     command = "${channel}/bin/sivrad-channel";
     env = {
-      SIVRAD_LISTEN = "0.0.0.0:8788";
+      SIVRAD_LISTEN = "${address}:${toString channelPort}";
       SIVRAD_OIDC_ISSUER = oidc.issuer;
       SIVRAD_OIDC_CLIENT = oidc.clientId;
       SIVRAD_PEOPLE_FILE = "/etc/sivrad/people.json";
@@ -226,13 +241,17 @@ in
 
   nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
 
-  # microvm.nix defaults guests to networkd; match the NIC by MAC because the
-  # name depends on its PCI slot.
+  # microvm.nix defaults guests to networkd; match the NIC by MAC because its
+  # name would depend on its PCI slot, and give it a fixed one.
   networking.useDHCP = false;
+  systemd.network.links."10-host" = {
+    matchConfig.MACAddress = mac;
+    linkConfig.Name = nic;
+  };
   systemd.network.networks."10-eth" = {
     matchConfig.MACAddress = mac;
-    address = [ "192.168.77.2/24" ];
-    gateway = [ "192.168.77.1" ];
+    address = [ "${address}/24" ];
+    gateway = [ hostAddress ];
     dns = [
       "1.1.1.1"
       "8.8.8.8"
@@ -258,9 +277,9 @@ in
     };
   };
 
-  # The phone reaches the sivrad channel over the tailnet only; the tap side
-  # (adam) stays SSH-only.
-  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8788 ];
+  # The phone reaches the sivrad channel through adam's nginx, over the tap;
+  # on the tailnet the VM answers ssh only.
+  networking.firewall.interfaces.${nic}.allowedTCPPorts = [ channelPort ];
 
   services.openssh = {
     enable = true;

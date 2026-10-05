@@ -19,9 +19,9 @@
       service-money
       service-photos
       service-radicale
+      service-sivrad
       service-waka
       ark-nginx
-      sivrad
       tailnet
     ];
 
