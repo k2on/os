@@ -18,8 +18,7 @@
           pkgs.makeWrapper
         ];
         # The tools ark shells out to ride along, so it works outside the dev
-        # shell too (nix, git and ssh are on every host already). qrencode
-        # draws the QR code of `ark service sivrad signal link`.
+        # shell too (nix and git are on every host already).
         #
         # `COMPLETE=<shell> ark` prints the shell's completion shim (clap_complete);
         # at completion time the shim asks the binary itself, so this file never
@@ -30,7 +29,6 @@
               pkgs.lib.makeBinPath [
                 pkgs.sops
                 pkgs.age-plugin-yubikey
-                pkgs.qrencode
               ]
             }
           installShellCompletion --cmd ark \

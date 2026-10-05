@@ -1,12 +1,12 @@
 //! `ark service sivrad signal ...`: the VM's Signal account.
 //!
-//! Registering and linking go through the signal-cli daemon in the VM
+//! Registering goes through the signal-cli daemon in the VM
 //! (signal-cli.service, ../_guest.nix), over its JSON-RPC socket, rather
 //! than through a second `signal-cli` process: the daemon runs in
-//! multi-account mode, which offers `register`, `verify`, `startLink` and
-//! `finishLink` (signal-cli-jsonrpc(5); the dispatcher in 0.14 hands them a
-//! fresh registration manager), and adds the new account to itself and to
-//! every live subscription the moment it is verified or linked. So there is
+//! multi-account mode, which offers `register` and `verify`
+//! (signal-cli-jsonrpc(5); the dispatcher in 0.14 hands them a fresh
+//! registration manager), and adds the new account to itself and to every
+//! live subscription the moment it is verified. So there is
 //! no lock on the data directory to fight over (a separate `signal-cli
 //! register` would need the daemon gone, and a non-root user can only kill
 //! it and race systemd's restart), and the channel gets the account without
@@ -14,8 +14,8 @@
 //!
 //! The JSON-RPC calls run in the VM as `socat` on the socket, from a bash
 //! coprocess so the connection stays open until the answer arrives (socat
-//! would hang up shortly after its stdin ends, and `finishLink` waits for a
-//! phone). The daemon receives in on-connection mode, so such a connection
+//! would hang up shortly after its stdin ends). The daemon receives in
+//! on-connection mode, so such a connection
 //! is also handed incoming messages for as long as it lasts; they are
 //! skipped, and the channel gets its own copy.
 //!
@@ -24,8 +24,6 @@
 //! number in sivrad_signal_number), from which a rebuilt VM restores the
 //! account.
 use std::collections::BTreeMap;
-use std::io::Write;
-use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use clap::{Arg, ArgMatches, Command as Clap};
@@ -41,8 +39,6 @@ pub const NUMBER: &str = "sivrad_signal_number";
 pub const ACCOUNT: &str = "sivrad_signal_account";
 
 const CAPTCHA_URL: &str = "https://signalcaptchas.org/registration/generate.html";
-/// The linked device's name, as the phone lists it.
-const DEVICE_NAME: &str = "sivrad";
 
 pub fn command() -> Clap {
     let number = || {
@@ -51,11 +47,11 @@ pub fn command() -> Clap {
             .help("The number in E.164, e.g. +15551234567")
     };
     Clap::new("signal")
-        .about("The VM's Signal account: register or link it, and back it up")
+        .about("The VM's Signal account: register its number, and back it up")
         .long_about(
-            "The VM's Signal account: register a number or link to an existing account, through the \
-             signal-cli daemon in the VM (over ssh), then back it up to the secrets repo so a rebuilt \
-             VM comes back as the same account. Commit secrets/ and deploy adam afterwards.",
+            "The VM's Signal account: register sivrad's own number through the signal-cli daemon in \
+             the VM (over ssh), then back it up to the secrets repo so a rebuilt VM comes back as the \
+             same account. Commit secrets/ and deploy adam afterwards.",
         )
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -81,11 +77,8 @@ pub fn command() -> Clap {
                         .help("The registration lock PIN, if the number has one"),
                 ),
         )
-        .subcommand(Clap::new("link").about(
-            "Link to an existing Signal account as a device named sivrad (shows a QR code to scan)",
-        ))
         .subcommand(Clap::new("backup").about(
-            "Save the VM's Signal account to the secrets repo (done after register/verify/link)",
+            "Save the VM's Signal account to the secrets repo (done after register/verify)",
         ))
 }
 
@@ -117,7 +110,6 @@ pub fn run(ctx: &Ctx, m: &ArgMatches) -> Result<()> {
                 get(m, "pin").as_deref(),
             )
         }
-        Some(("link", _)) => link(ctx, &cfg, &vm),
         Some(("backup", _)) => backup(ctx, &cfg, &vm, &Manifest::load(ctx)?),
         _ => unreachable!("subcommand_required"),
     }
@@ -334,55 +326,6 @@ fn verify(
     backup(ctx, cfg, vm, manifest)
 }
 
-fn link(ctx: &Ctx, cfg: &Config, vm: &Vm) -> Result<()> {
-    refuse_other_account(cfg, vm, None)?;
-    let started = rpc(cfg, vm, "startLink", json!({}))?;
-    let uri = started
-        .get("deviceLinkUri")
-        .and_then(Value::as_str)
-        .context("signal-cli's startLink gave no deviceLinkUri")?
-        .to_string();
-
-    println!(
-        "On the phone with the account: Signal -> Settings -> Linked devices -> Link a new device, \
-         and scan this:\n"
-    );
-    if !show_qr(&uri) {
-        println!("(install qrencode to see a QR code here; or make one from the link)\n");
-    }
-    println!("  {uri}\n\nWaiting for the phone...");
-
-    let linked = rpc(
-        cfg,
-        vm,
-        "finishLink",
-        json!({ "deviceLinkUri": uri, "deviceName": DEVICE_NAME }),
-    )?;
-    let who = linked
-        .get("number")
-        .and_then(Value::as_str)
-        .unwrap_or("the account");
-    println!("linked to {who} as '{DEVICE_NAME}'; signal-cli in the VM has loaded it.");
-    backup(ctx, cfg, vm, &Manifest::load(ctx)?)
-}
-
-/// Renders the link as a QR code on the terminal with qrencode, when it is
-/// on PATH (the ark package carries it).
-fn show_qr(uri: &str) -> bool {
-    let Ok(mut child) = Command::new("qrencode")
-        .args(["-t", "ANSIUTF8"])
-        .stdin(Stdio::piped())
-        .spawn()
-    else {
-        return false;
-    };
-    let wrote = child
-        .stdin
-        .take()
-        .is_some_and(|mut stdin| stdin.write_all(uri.as_bytes()).is_ok());
-    child.wait().is_ok_and(|s| s.success()) && wrote
-}
-
 /// The script that prints the data directory as a base64 tar.gz. Downloaded
 /// attachments, avatars and stickers are caches (and the daemon fetches
 /// none); everything else, the account and its keys under data/, is kept.
@@ -417,7 +360,7 @@ pub fn backup(ctx: &Ctx, cfg: &Config, vm: &Vm, manifest: &Manifest) -> Result<(
     let existing = accounts(cfg, vm)?;
     let account = match &existing[..] {
         [one] => one,
-        [] => bail!("signal-cli in the VM has no account to back up; register or link one first"),
+        [] => bail!("signal-cli in the VM has no account to back up; register one first"),
         _ => bail!(
             "signal-cli in the VM has {} accounts; sivrad uses exactly one",
             existing.len()
@@ -499,9 +442,9 @@ mod tests {
     #[test]
     fn responses() {
         assert_eq!(
-            parse_response(r#"{"jsonrpc":"2.0","result":{"deviceLinkUri":"sgnl://x"},"id":"a"}"#)
-                .unwrap()["deviceLinkUri"],
-            "sgnl://x"
+            parse_response(r#"{"jsonrpc":"2.0","result":{"number":"+15551234567"},"id":"a"}"#)
+                .unwrap()["number"],
+            "+15551234567"
         );
         // verify answers with no result at all.
         assert_eq!(

@@ -10,11 +10,9 @@
 #      backup secrets exist, then runs `claude auth login` in the VM (the
 #      browser flow, its code prompt passed through ssh) and restarts the
 #      session.
-#   2. Give the assistant a Signal account, with a dedicated number:
+#   2. Give the assistant its own Signal number:
 #        ark service sivrad signal register +NUMBER   (asks for the SMS code)
-#      or as a linked device of an existing account:
-#        ark service sivrad signal link               (shows a QR code)
-#      Both go through the signal-cli daemon below, which loads the new
+#      It goes through the signal-cli daemon below, which loads the new
 #      account at once, and save it to the secrets repo; commit secrets/ and
 #      deploy adam so a rebuilt VM restores it (restoreSignal).
 #   3. Attach once (ssh -t sivrad@sivrad.<tailnet domain> tmux attach -t
@@ -341,7 +339,7 @@ in
         "daemon --socket ${signalSocket} --receive-mode on-connection"
         "--ignore-attachments --ignore-stories --ignore-avatars --ignore-stickers"
       ];
-      # Also after a plain exit. Accounts registered or linked through the
+      # Also after a plain exit. Accounts registered through the
       # daemon (`ark service sivrad signal`) load without a restart.
       Restart = "always";
       RestartSec = "10s";

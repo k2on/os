@@ -174,9 +174,8 @@ fn init(ctx: &Ctx) -> Result<()> {
     println!("3. Signal");
     match signal::accounts(&cfg, &vm) {
         Ok(accounts) if accounts.is_empty() => println!(
-            "   No Signal account yet. Give sivrad a dedicated number with\n     ark service sivrad \
-             signal register <+number>\n   or link it to an existing account with\n     ark service \
-             sivrad signal link"
+            "   No Signal account yet. Give sivrad its own number with\n     ark service sivrad \
+             signal register <+number>"
         ),
         Ok(accounts) => {
             let ids: Vec<&str> = accounts.iter().map(signal::Account::id).collect();
@@ -227,7 +226,7 @@ fn init_secrets(ctx: &Ctx, cfg: &Config, manifest: &Manifest) -> Result<bool> {
     if missing.is_empty() {
         println!("   {} and {} exist", signal::NUMBER, signal::ACCOUNT);
     } else {
-        // Empty until an account is registered or linked; adam needs them to build.
+        // Empty until an account is registered; adam needs them to build.
         let values: Vec<(&str, String)> = missing.iter().map(|k| (*k, String::new())).collect();
         signal::store(ctx, manifest, &values)?;
         println!("   created {} (empty for now)", missing.join(" and "));

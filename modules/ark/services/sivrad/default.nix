@@ -10,7 +10,7 @@
 #   ark service sivrad init                  # people, the Claude login, and
 #                                            # what is still missing
 #   ark service sivrad people add alice +15551234567
-#   ark service sivrad signal register +15557654321   # or `signal link`
+#   ark service sivrad signal register +15557654321
 #
 # then commit secrets/ and deploy adam.
 {
@@ -59,7 +59,7 @@ in
       sivrad_people.restartUnits = [ "sivrad-credentials.service" ];
 
       # The VM's Signal identity, saved by `ark service sivrad signal ...`
-      # after registering or linking, so a rebuilt VM comes back as the same
+      # after registering, so a rebuilt VM comes back as the same
       # account: the number, and signal-cli's data directory as a base64
       # tar.gz, which the guest unpacks when it has no account yet
       # (./_guest.nix). Empty until then; one file, so the CLI reads and
