@@ -12,6 +12,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::identity::People;
 use crate::oidc::Oidc;
+use crate::signal::Signal;
 
 pub struct Config {
     /// How long a phone request is held before 504.
@@ -19,6 +20,7 @@ pub struct Config {
     /// How long `phone_tool` waits for the phone's /tool_result.
     pub tool_wait: Duration,
     pub people_file: PathBuf,
+    pub signal_socket: PathBuf,
 }
 
 /// The eventual HTTP answer to a held request.
@@ -87,6 +89,7 @@ struct ToolCall {
 pub struct State {
     pub config: Config,
     pub oidc: Oidc,
+    pub signal: Signal,
     out: mpsc::UnboundedSender<Value>,
     seq: AtomicU64,
     waiting: Mutex<HashMap<String, Waiter>>,
@@ -98,6 +101,7 @@ impl State {
     pub fn new(config: Config, oidc: Oidc) -> (Self, mpsc::UnboundedReceiver<Value>) {
         let (out, rx) = mpsc::unbounded_channel();
         let state = State {
+            signal: Signal::new(config.signal_socket.clone()),
             config,
             oidc,
             out,
@@ -277,6 +281,7 @@ mod tests {
             timeout: Duration::from_millis(timeout_ms),
             tool_wait: Duration::from_millis(timeout_ms),
             people_file: "/nonexistent".into(),
+            signal_socket: "/nonexistent.sock".into(),
         };
         Arc::new(State::new(config, Oidc::new(None, None)).0)
     }

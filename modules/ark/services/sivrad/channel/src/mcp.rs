@@ -8,20 +8,22 @@ use serde_json::{json, Map, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+use crate::signal;
 use crate::state::{Answer, Outcome, State};
 
 pub const INSTRUCTIONS: &str = "\
-Messages arrive as <channel source=\"sivrad\" chat_id=\"...\" kind=\"voice\" locked=\"...\" sender=\"...\"> events from the owner's phone voice assistant. They are transcribed from speech, so expect transcription errors. sender is the Kanidm username of the trusted person speaking.
-Answer with the reply tool, passing the event's chat_id, in one or two short plain sentences suitable to be read aloud or shown on a small overlay: no markdown, no lists, no code.
+Messages arrive as <channel source=\"sivrad\" ...> events from a small group of trusted people. Every event carries sender, the Kanidm username of the person; it is the same person whether the message came from the phone or from Signal.
+kind=\"voice\" events come from the phone voice assistant, transcribed from speech, so expect transcription errors. Answer with the reply tool, passing the event's chat_id, in one or two short plain sentences suitable to be read aloud or shown on a small overlay: no markdown, no lists, no code.
 When the request is something the phone itself must do (a timer, an alarm, a text message, opening an app, an HTTP request to one of the owner's services) and the event lists a matching phone tool, call phone_tool with that chat_id, the tool name and arguments matching the listed JSON schema; then reply with a short confirmation or the tool's own message.
-The phone waits about two minutes per step, so reply before starting long work.
-locked=\"true\" means the phone is locked; tools marked requiresUnlock will prompt the owner to unlock it.";
+The phone waits about two minutes per step, so reply before starting long work. locked=\"true\" means the phone is locked; tools marked requiresUnlock will prompt the owner to unlock it.
+kind=\"signal\" events are Signal messages; their chat_id is signal:<number>. Answer them with reply to that chat_id, in plain text.
+Message another trusted person only with signal_send, and only when the sender asked for it; then confirm back to the sender with reply.";
 
 fn tools() -> Value {
     json!([
         {
             "name": "reply",
-            "description": "Send the final spoken answer to the phone for a sivrad conversation.",
+            "description": "Answer a sivrad channel event: the spoken answer for a phone conversation, or a Signal message for a signal:<number> chat_id.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -42,6 +44,18 @@ fn tools() -> Value {
                     "arguments": { "type": "object", "description": "Arguments matching that tool's JSON schema" }
                 },
                 "required": ["chat_id", "name", "arguments"]
+            }
+        },
+        {
+            "name": "signal_send",
+            "description": "Send a Signal message to another trusted person, only when the sender asked for it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to": { "type": "string", "description": "The person's username, as in an event's sender" },
+                    "text": { "type": "string", "description": "The message" }
+                },
+                "required": ["to", "text"]
             }
         }
     ])
@@ -103,6 +117,9 @@ pub async fn handle(state: &State, message: Value) -> Option<Value> {
 }
 
 async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
+    if name == "signal_send" {
+        return signal_send(state, args).await;
+    }
     let Some(chat) = args["chat_id"].as_str() else {
         return Outcome::error("chat_id must be a string");
     };
@@ -111,6 +128,12 @@ async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
             let Some(text) = args["text"].as_str() else {
                 return Outcome::error("text must be a string");
             };
+            if let Some(number) = signal::number_of_chat(chat) {
+                if state.people().by_number(number).is_none() {
+                    return Outcome::error(format!("{chat} is not a trusted person's number"));
+                }
+                return sent(state.signal.send(number, text).await);
+            }
             if state.answer(chat, Answer::reply(text)) {
                 Outcome::ok("sent")
             } else {
@@ -138,6 +161,27 @@ async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
             }
         }
         _ => Outcome::error(format!("unknown tool: {name}")),
+    }
+}
+
+async fn signal_send(state: &State, args: &Value) -> Outcome {
+    let (Some(to), Some(text)) = (args["to"].as_str(), args["text"].as_str()) else {
+        return Outcome::error("to and text must be strings");
+    };
+    let people = state.people();
+    let Some(number) = people.number_of(to) else {
+        return Outcome::error(format!(
+            "unknown person; known: {}",
+            people.on_signal().join(", ")
+        ));
+    };
+    sent(state.signal.send(number, text).await)
+}
+
+fn sent(result: Result<(), String>) -> Outcome {
+    match result {
+        Ok(()) => Outcome::ok("sent"),
+        Err(e) => Outcome::error(format!("Signal: {e}")),
     }
 }
 
@@ -191,6 +235,7 @@ mod tests {
             timeout: Duration::from_secs(1),
             tool_wait: Duration::from_millis(50),
             people_file: "/nonexistent".into(),
+            signal_socket: "/nonexistent.sock".into(),
         };
         Arc::new(State::new(config, Oidc::new(None, None)).0)
     }
@@ -230,7 +275,7 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["reply", "phone_tool"]);
+        assert_eq!(names, ["reply", "phone_tool", "signal_send"]);
         let r = call(
             &s,
             json!({ "jsonrpc": "2.0", "id": 2, "method": "resources/list" }),
@@ -310,6 +355,61 @@ mod tests {
             r["result"]["content"][0]["text"],
             "the phone did not report a result"
         );
+    }
+
+    fn with_people() -> Arc<State> {
+        let path =
+            std::env::temp_dir().join(format!("sivrad-people-{}.json", crate::state::random_id()));
+        std::fs::write(&path, r#"{ "alice": { "signal": "+15550000001" }, "bob": { "signal": "+15550000002" }, "carol": {} }"#).unwrap();
+        let config = Config {
+            timeout: Duration::from_secs(1),
+            tool_wait: Duration::from_millis(50),
+            people_file: path,
+            signal_socket: "/nonexistent.sock".into(),
+        };
+        Arc::new(State::new(config, Oidc::new(None, None)).0)
+    }
+
+    async fn tool(state: &State, name: &str, arguments: Value) -> Value {
+        call(
+            state,
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": name, "arguments": arguments } }),
+        )
+        .await["result"]
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn signal_routing() {
+        let s = with_people();
+        // a trusted number goes to signal-cli (not running here)
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "signal:+15550000001", "text": "hi" }),
+        )
+        .await;
+        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
+        // anyone else's number is refused before reaching signal-cli
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "signal:+15550000009", "text": "hi" }),
+        )
+        .await;
+        assert_eq!(
+            r["content"][0]["text"],
+            "signal:+15550000009 is not a trusted person's number"
+        );
+        let r = tool(&s, "signal_send", json!({ "to": "bob", "text": "hi" })).await;
+        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
+        let r = tool(&s, "signal_send", json!({ "to": "mallory", "text": "hi" })).await;
+        assert_eq!(r["isError"], true);
+        assert_eq!(r["content"][0]["text"], "unknown person; known: alice, bob");
+        let r = tool(&s, "signal_send", json!({ "to": "carol", "text": "hi" })).await;
+        assert_eq!(r["content"][0]["text"], "unknown person; known: alice, bob");
+        std::fs::remove_file(&s.config.people_file).unwrap();
     }
 
     #[test]

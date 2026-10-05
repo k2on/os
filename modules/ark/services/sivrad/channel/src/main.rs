@@ -1,11 +1,11 @@
-//! sivrad-channel: a Claude Code channel for the owner's phone voice
-//! assistant (sivrad-android, on the tailnet).
+//! sivrad-channel: a Claude Code channel for sivrad, reached from the phone
+//! voice assistant (sivrad-android, on the tailnet) and from Signal.
 //!
 //! Claude Code runs it as a stdio MCP server (newline-delimited JSON-RPC 2.0;
 //! stdout carries the protocol, logs go to stderr). It declares the
 //! experimental `claude/channel` capability, pushes each phone request to
 //! Claude as a `notifications/claude/channel` event and offers the tools
-//! `reply` and `phone_tool` (mcp.rs).
+//! `reply`, `phone_tool` and `signal_send` (mcp.rs).
 //!
 //! The phone talks to it over HTTP (http.rs): `POST /ask` and
 //! `POST /tool_result` are held until Claude answers with `reply` or asks the
@@ -13,17 +13,22 @@
 //! access token (oidc.rs) for a person listed in the identity table
 //! (identity.rs).
 //!
+//! The same people reach it over Signal (signal.rs): signal-cli's JSON-RPC
+//! daemon delivers their messages, and `reply` / `signal_send` answer.
+//!
 //! Environment:
 //!   SIVRAD_LISTEN        HTTP address (default 0.0.0.0:8788)
 //!   SIVRAD_TIMEOUT_MS    how long a request is held (default 120000)
 //!   SIVRAD_OIDC_ISSUER   e.g. https://id.example.org/oauth2/openid/sivrad
 //!   SIVRAD_OIDC_CLIENT   the phone's OAuth2 client id (sivrad)
 //!   SIVRAD_PEOPLE_FILE   identity table (default /run/host-credentials/people.json)
+//!   SIVRAD_SIGNAL_SOCKET signal-cli's JSON-RPC socket (default /run/sivrad/signal.sock)
 
 mod http;
 mod identity;
 mod mcp;
 mod oidc;
+mod signal;
 mod state;
 
 use std::sync::Arc;
@@ -47,6 +52,9 @@ async fn main() {
         people_file: env("SIVRAD_PEOPLE_FILE")
             .unwrap_or_else(|| "/run/host-credentials/people.json".into())
             .into(),
+        signal_socket: env("SIVRAD_SIGNAL_SOCKET")
+            .unwrap_or_else(|| "/run/sivrad/signal.sock".into())
+            .into(),
     };
     let issuer = env("SIVRAD_OIDC_ISSUER");
     let client_id = env("SIVRAD_OIDC_CLIENT");
@@ -57,6 +65,7 @@ async fn main() {
     let state = Arc::new(state);
 
     tokio::spawn(mcp::write_stdout(outgoing));
+    tokio::spawn(signal::Signal::run(state.clone()));
 
     let listen = env("SIVRAD_LISTEN").unwrap_or_else(|| "0.0.0.0:8788".into());
     let server = state.clone();

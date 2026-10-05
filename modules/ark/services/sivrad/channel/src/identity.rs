@@ -1,9 +1,11 @@
 //! The identity table: who may talk to sivrad. A JSON object keyed by Kanidm
-//! username (the phone's `preferred_username`):
+//! username (the phone's `preferred_username`), with each person's Signal
+//! number:
 //!
 //!   { "alice": { "signal": "+15551234567" }, "bob": { "signal": "+15557654321" } }
 //!
-//! A missing or unreadable file is an empty table: nobody gets in.
+//! The same person may write from the phone or from Signal. A missing or
+//! unreadable file is an empty table: nobody gets in.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -38,6 +40,28 @@ impl People {
     pub fn contains(&self, username: &str) -> bool {
         self.0.contains_key(username)
     }
+
+    /// Who owns a Signal number.
+    pub fn by_number(&self, number: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(_, p)| p.signal.as_deref() == Some(number))
+            .map(|(user, _)| user.as_str())
+    }
+
+    /// A person's Signal number.
+    pub fn number_of(&self, username: &str) -> Option<&str> {
+        self.0.get(username)?.signal.as_deref()
+    }
+
+    /// Everyone reachable over Signal.
+    pub fn on_signal(&self) -> Vec<&str> {
+        self.0
+            .iter()
+            .filter(|(_, p)| p.signal.is_some())
+            .map(|(user, _)| user.as_str())
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -53,6 +77,17 @@ mod tests {
         assert!(people.contains("bob"));
         assert!(!people.contains("mallory"));
         assert_eq!(people.0["bob"].signal, None);
+    }
+
+    #[test]
+    fn lookups() {
+        let people = People::parse(TABLE).unwrap();
+        assert_eq!(people.by_number("+15551234567"), Some("alice"));
+        assert_eq!(people.by_number("+15550000000"), None);
+        assert_eq!(people.number_of("alice"), Some("+15551234567"));
+        assert_eq!(people.number_of("bob"), None);
+        assert_eq!(people.number_of("mallory"), None);
+        assert_eq!(people.on_signal(), ["alice"]);
     }
 
     #[test]
