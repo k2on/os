@@ -4,21 +4,22 @@
 # through that channel, tagged with the same identity (the sivrad_people
 # table, see ./default.nix).
 #
-# First boot (from adam):
-#   1. ssh sivrad@192.168.77.2
-#   2. tmux attach -t sivrad, then complete the `claude` login (browser flow).
-#   3. Detach and give the assistant a Signal account, with a dedicated
-#      number:
-#        signal-cli --config /var/lib/sivrad/signal-cli -a +NUMBER register
-#        signal-cli --config /var/lib/sivrad/signal-cli -a +NUMBER verify CODE
+# First boot, from the owner's laptop (`ark service sivrad`, ./cli/mod.rs;
+# it reaches the VM as sivrad@sivrad.<tailnet domain> over ssh):
+#   1. `ark service sivrad init`: makes sure the people table and the Signal
+#      backup secrets exist, then runs `claude auth login` in the VM (the
+#      browser flow, its code prompt passed through ssh) and restarts the
+#      session.
+#   2. Give the assistant a Signal account, with a dedicated number:
+#        ark service sivrad signal register +NUMBER   (asks for the SMS code)
 #      or as a linked device of an existing account:
-#        signal-cli --config /var/lib/sivrad/signal-cli link -n sivrad
-#      signal-cli.service only loads accounts when it starts, and sudo is
-#      off in the VM, so then restart it by ending it: `pkill -f
-#      'signal-cli.*daemon'` (it runs as sivrad; systemd starts it again).
-#   4. Restart the session (`/exit` in Claude; systemd restarts it) and
-#      accept the development-channel warning.
-#   5. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
+#        ark service sivrad signal link               (shows a QR code)
+#      Both go through the signal-cli daemon below, which loads the new
+#      account at once, and save it to the secrets repo; commit secrets/ and
+#      deploy adam so a rebuilt VM restores it (restoreSignal).
+#   3. Attach once (ssh -t sivrad@sivrad.<tailnet domain> tmux attach -t
+#      sivrad) and accept the development-channel warning.
+#   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
 #      and sign in with Kanidm.
 # Only people in the identity table get through, from either side.
 #
@@ -50,9 +51,7 @@
 }:
 let
   mac = "02:00:00:77:00:02";
-  home = "/var/lib/sivrad";
-  signalDir = "${home}/signal-cli";
-  signalSocket = "/run/sivrad/signal.sock";
+  inherit (import ./_vm.nix) home signalDir signalSocket;
 
   channel = pkgs.callPackage ../../_rust.nix { pname = "sivrad-channel"; };
   # Claude Code starts the channel server from the workspace's .mcp.json.
@@ -133,6 +132,41 @@ let
     cd ${home}/workspace
     [ -e CLAUDE.md ] || install -m 0600 /etc/sivrad/CLAUDE.md CLAUDE.md
     install -m 0600 ${pkgs.writeText "mcp.json" (builtins.toJSON mcpConfig)} .mcp.json
+  '';
+
+  # The Signal account saved by `ark service sivrad signal ...` (the
+  # sivrad_signal_account secret, a base64 tar.gz of signalDir without its
+  # attachment, avatar and sticker caches), unpacked when signalDir has no
+  # account yet: after a rebuild, or a fresh state.img. The host copies it
+  # in, world-readable like people.json, as the daemon runs as sivrad; empty
+  # until an account has been saved. Unpacked aside and moved into place,
+  # so a failed restore leaves no half account behind and runs again on the
+  # next start; until then the daemon does not start (journalctl -u
+  # signal-cli says why) rather than run without the account. The model
+  # cannot read the backup: /run/host-credentials is in secretPaths.
+  restoreSignal = pkgs.writeShellScript "sivrad-restore-signal" ''
+    set -euo pipefail
+    export PATH=${
+      lib.makeBinPath [
+        pkgs.coreutils
+        pkgs.gnutar
+        pkgs.gzip
+      ]
+    }
+    backup=/run/host-credentials/signal-account.tar.gz.b64
+    if [ -e ${signalDir}/data ] || [ ! -s "$backup" ]; then
+      exit 0
+    fi
+    echo "restoring the Signal account from $backup"
+    tmp=$(mktemp -d ${signalDir}/.restore.XXXXXX)
+    trap 'rm -rf "$tmp"' EXIT
+    base64 -d "$backup" | tar -xzf - -C "$tmp"
+    if [ ! -d "$tmp/data" ]; then
+      echo "$backup holds no data/ directory; not restoring" >&2
+      exit 1
+    fi
+    chmod -R go= "$tmp/data"
+    mv "$tmp/data" ${signalDir}/data
   '';
 in
 {
@@ -292,19 +326,23 @@ in
     wantedBy = [ "multi-user.target" ];
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
-    unitConfig.RequiresMountsFor = home;
+    unitConfig.RequiresMountsFor = [
+      home
+      "/run/host-credentials"
+    ];
     serviceConfig = {
       User = "sivrad";
       Group = "sivrad";
       RuntimeDirectory = "sivrad";
       RuntimeDirectoryMode = "0700";
+      ExecStartPre = restoreSignal;
       ExecStart = lib.concatStringsSep " " [
         "${pkgs.signal-cli}/bin/signal-cli --config ${signalDir}"
         "daemon --socket ${signalSocket} --receive-mode on-connection"
         "--ignore-attachments --ignore-stories --ignore-avatars --ignore-stickers"
       ];
-      # Also after a plain exit: ending it is how a newly registered account
-      # gets loaded (see the first-boot steps).
+      # Also after a plain exit. Accounts registered or linked through the
+      # daemon (`ark service sivrad signal`) load without a restart.
       Restart = "always";
       RestartSec = "10s";
       NoNewPrivileges = true;

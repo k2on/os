@@ -18,9 +18,11 @@ let
   tap = "vm-sivrad";
   # Directory shared read-only into the guest, so the guest needs no sops of
   # its own. It holds a copy of adam's tailnet pre-auth key
-  # (den.aspects.tailnet), root-only, and the identity table people.json
-  # (sivrad_people, see ./default.nix), world-readable for the channel
-  # server, which runs as `sivrad`. The directory is 0711: no listing.
+  # (den.aspects.tailnet), root-only, the identity table people.json
+  # (sivrad_people, see ./default.nix) and the saved Signal account
+  # signal-account.tar.gz.b64 (sivrad_signal_account, empty until one is
+  # saved), both world-readable for the channel server and signal-cli,
+  # which run as `sivrad`. The directory is 0711: no listing.
   # microvm.credentialFiles would be the natural fit, but microvm.nix only
   # implements it for qemu; the cloud-hypervisor runner throws
   # (lib/runners/cloud-hypervisor.nix).
@@ -88,6 +90,7 @@ in
       chown root:root ${credentialsDir}
       install -m 0400 -o root -g root ${config.sops.secrets.headscale_preauth_key.path} ${credentialsDir}/headscale_preauth_key
       install -m 0444 -o root -g root ${config.sops.secrets.sivrad_people.path} ${credentialsDir}/people.json
+      install -m 0444 -o root -g root ${config.sops.secrets.sivrad_signal_account.path} ${credentialsDir}/signal-account.tar.gz.b64
     '';
   };
   systemd.services."microvm-virtiofsd@sivrad" = {
