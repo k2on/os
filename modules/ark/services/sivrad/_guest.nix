@@ -1,5 +1,6 @@
 # The `sivrad` microVM: an always-on Claude Code session fed by a Signal
-# channel plugin, running in tmux under systemd.
+# channel plugin and by the owner's phone voice assistant (the sivrad
+# channel, ./channel), running in tmux under systemd.
 #
 # First boot (from adam):
 #   1. ssh sivrad@192.168.77.2
@@ -10,8 +11,15 @@
 #      code) or register a dedicated number with `signal-cli -u +NUMBER
 #      register` / `verify`.
 #   5. Restart the session (`/exit` in Claude; systemd restarts it), accept
-#      the development-channel warning, then pair from the phone and run
+#      the development-channel warning (and approve the project's `sivrad`
+#      MCP server if asked), then pair from the phone and run
 #      /signal:access pair <code> and /signal:access policy allowlist.
+#   6. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
+#      and sign in with Kanidm. Only people in the identity table
+#      (sivrad_people, see ./default.nix) get through.
+#
+# The sivrad channel server (./channel, Rust) listens on TCP 8788, reachable
+# over tailscale0 only; the phone long-polls it (see ./channel/src/http.rs).
 #
 # The VM is a tailnet node of its own, `sivrad` under headscale's `ark`
 # user, joining with adam's pre-auth key (see _host.nix for how the key gets
@@ -26,17 +34,31 @@
 # sandbox with a strict network allowlist and no unsandboxed retry, bypass
 # mode is disabled, and the OAuth token and the Signal identity are hidden
 # from both the file tools and sandboxed commands. MCP servers (the Signal
-# bridge) run outside that sandbox; the VM and adam's egress policy bound
-# them.
+# bridge, the sivrad channel) run outside that sandbox; the VM and adam's
+# egress policy bound them.
 {
   lib,
   pkgs,
   loginServer,
+  oidc,
   ...
 }:
 let
   mac = "02:00:00:77:00:02";
   home = "/var/lib/sivrad";
+
+  channel = pkgs.callPackage ../../_rust.nix { pname = "sivrad-channel"; };
+  # Claude Code starts the channel server from the workspace's .mcp.json.
+  mcpConfig.mcpServers.sivrad = {
+    command = "${channel}/bin/sivrad-channel";
+    env = {
+      SIVRAD_LISTEN = "0.0.0.0:8788";
+      SIVRAD_OIDC_ISSUER = oidc.issuer;
+      SIVRAD_OIDC_CLIENT = oidc.clientId;
+      # The identity table, from adam (see ./_host.nix).
+      SIVRAD_PEOPLE_FILE = "/run/host-credentials/people.json";
+    };
+  };
 
   # Secrets the model must not read: the claude.ai OAuth token, the
   # signal-cli account keys, and the tailnet node and pre-auth keys (the
@@ -50,6 +72,9 @@ let
   ];
 
   managedSettings = {
+    # Pre-approves the workspace's .mcp.json server, which Claude Code would
+    # otherwise ask about once.
+    enabledMcpjsonServers = [ "sivrad" ];
     sandbox = {
       enabled = true;
       autoAllowBashIfSandboxed = true;
@@ -78,7 +103,7 @@ let
   };
 
   claude = pkgs.writeShellScript "sivrad-claude" ''
-    exec claude --dangerously-load-development-channels plugin:signal@claude-signal
+    exec claude --dangerously-load-development-channels plugin:signal@claude-signal server:sivrad
   '';
   # `tmux -D` keeps the server in the foreground for systemd but takes no
   # command, so the session comes from this config; exit-empty (which -D
@@ -86,6 +111,18 @@ let
   tmuxConf = pkgs.writeText "sivrad-tmux.conf" ''
     set -s exit-empty on
     new-session -d -s sivrad -c ${home}/workspace ${claude}
+  '';
+
+  # Seeds CLAUDE.md once (Claude may edit its copy later) and writes
+  # .mcp.json on every start: it names the channel's store path, so it is
+  # configuration, not user data. Managed settings approve the server; the
+  # sandbox denies the model writes to .mcp.json.
+  seed = pkgs.writeShellScript "sivrad-seed" ''
+    set -eu
+    export PATH=${pkgs.coreutils}/bin
+    cd ${home}/workspace
+    [ -e CLAUDE.md ] || install -m 0600 /etc/sivrad/CLAUDE.md CLAUDE.md
+    install -m 0600 ${pkgs.writeText "mcp.json" (builtins.toJSON mcpConfig)} .mcp.json
   '';
 in
 {
@@ -165,6 +202,10 @@ in
     };
   };
 
+  # The phone reaches the sivrad channel over the tailnet only; the tap side
+  # (adam) stays SSH-only.
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8788 ];
+
   services.openssh = {
     enable = true;
     settings = {
@@ -215,6 +256,13 @@ in
       workspace and read them when they are relevant.
     - Never try to read credentials: the Claude login, signal-cli's account data,
       SSH keys, or anything under /run/credentials.
+
+    The family also talks to you from their phones through the `sivrad`
+    channel: `<channel source="sivrad" ...>` events are voice messages,
+    transcribed from speech, from the person named in `sender`. Answer them
+    briefly with the sivrad `reply` tool (it is read aloud), and use
+    `phone_tool` for things the phone must do itself, such as timers, alarms or
+    texts. Only people in sivrad's identity table can send these.
   '';
 
   # The volume is mounted after users are created, so fix ownership here.
@@ -239,8 +287,7 @@ in
     serviceConfig = {
       User = "sivrad";
       WorkingDirectory = "${home}/workspace";
-      # Seed the session's instructions once; it may edit its copy later.
-      ExecStartPre = "${pkgs.bash}/bin/bash -c '[ -e CLAUDE.md ] || install -m 0600 /etc/sivrad/CLAUDE.md CLAUDE.md'";
+      ExecStartPre = seed;
       ExecStart = "${pkgs.tmux}/bin/tmux -D -f ${tmuxConf}";
       Restart = "always";
       RestartSec = "30s";

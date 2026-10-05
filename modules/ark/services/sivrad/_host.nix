@@ -16,11 +16,14 @@
 { config, lib, ... }:
 let
   tap = "vm-sivrad";
-  # Root-only directory shared read-only into the guest. It holds a copy of
-  # adam's tailnet pre-auth key (den.aspects.tailnet), so the guest needs no
-  # sops of its own. microvm.credentialFiles would be the natural fit, but
-  # microvm.nix only implements it for qemu; the cloud-hypervisor runner
-  # throws (lib/runners/cloud-hypervisor.nix).
+  # Directory shared read-only into the guest, so the guest needs no sops of
+  # its own. It holds a copy of adam's tailnet pre-auth key
+  # (den.aspects.tailnet), root-only, and the identity table people.json
+  # (sivrad_people, see ./default.nix), world-readable for the channel
+  # server, which runs as `sivrad`. The directory is 0711: no listing.
+  # microvm.credentialFiles would be the natural fit, but microvm.nix only
+  # implements it for qemu; the cloud-hypervisor runner throws
+  # (lib/runners/cloud-hypervisor.nix).
   credentialsDir = "/run/sivrad-credentials";
   hostAddress = "192.168.77.1";
   hostPorts = [
@@ -69,9 +72,10 @@ in
     };
   };
 
-  # Refresh the guest's copy before its virtiofsd starts. virtiofsd runs as
-  # root and passes ownership through, so in the guest the key is root:root
-  # 0400 and invisible to the `sivrad` user.
+  # Refresh the guest's copies before its virtiofsd starts. virtiofsd runs
+  # as root and passes ownership through, so in the guest the key is
+  # root:root 0400 and invisible to the `sivrad` user. Managed settings keep
+  # the model away from all of /run/host-credentials.
   systemd.services.sivrad-credentials = {
     description = "Credentials for the sivrad microVM";
     serviceConfig = {
@@ -79,10 +83,11 @@ in
       RemainAfterExit = true;
     };
     script = ''
-      install -d -m 0700 -o root -g root ${credentialsDir}
-      chmod 0700 ${credentialsDir}
+      install -d -m 0711 -o root -g root ${credentialsDir}
+      chmod 0711 ${credentialsDir}
       chown root:root ${credentialsDir}
       install -m 0400 -o root -g root ${config.sops.secrets.headscale_preauth_key.path} ${credentialsDir}/headscale_preauth_key
+      install -m 0444 -o root -g root ${config.sops.secrets.sivrad_people.path} ${credentialsDir}/people.json
     '';
   };
   systemd.services."microvm-virtiofsd@sivrad" = {
