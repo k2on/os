@@ -12,14 +12,15 @@ in
     {
       # kanidm's own copy of every service's client secret. The service's
       # copy is declared by ark.services (lib/services.nix) on whichever
-      # host runs it; both read the same secrets/vars file.
+      # host runs it; both read the same secrets/vars file. Public clients
+      # have none.
       ark.secrets = lib.mapAttrs' (
         _: o:
         lib.nameValuePair "${o.secret}_kanidm" {
           key = o.secret;
           owner = "kanidm";
         }
-      ) clients;
+      ) (lib.filterAttrs (_: o: !o.public) clients);
 
       services.kanidm = {
         package = pkgs.kanidmWithSecretProvisioning_1_10;
@@ -58,14 +59,17 @@ in
           systems.oauth2 = lib.mapAttrs (
             _: o:
             {
-              inherit (o) displayName;
+              inherit (o) displayName public;
               originUrl = o.callbacks;
               originLanding = o.landing;
-              basicSecretFile = config.sops.secrets."${o.secret}_kanidm".path;
               preferShortUsername = true;
               scopeMaps = lib.mapAttrs' (_: g: lib.nameValuePair g.name o.scopes) o.groups;
               allowInsecureClientDisablePkce = !o.pkce;
               enableLegacyCrypto = o.legacyCrypto;
+            }
+            # kanidm rejects a basic secret on a public client.
+            // lib.optionalAttrs (!o.public) {
+              basicSecretFile = config.sops.secrets."${o.secret}_kanidm".path;
             }
             // lib.optionalAttrs (o.icon != null) { imageFile = o.icon; }
           ) clients;

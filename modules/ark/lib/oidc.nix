@@ -19,13 +19,16 @@ let
       domain = config.ark.serviceDomain name spec;
       issuer = "https://id.${mainDomain}/oauth2/openid/${name}";
       icon = ../services/${name}/icon.svg;
+      # A native/mobile app: PKCE enforced, no client secret.
+      public = o.public or false;
     in
     {
-      inherit domain issuer;
+      inherit domain issuer public;
       inherit (config.ark.oidc) name;
       clientId = name;
       discovery = "${issuer}/.well-known/openid-configuration";
-      secret = "${name}_oidc_client_secret";
+      # The sops secret holding the client secret; null for a public client.
+      secret = if public then null else "${name}_oidc_client_secret";
       icon = if builtins.pathExists icon then icon else null;
       displayName = o.displayName or (lib.toSentenceCase name);
       landing = o.landing or "https://${domain}";

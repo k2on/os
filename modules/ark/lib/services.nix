@@ -20,6 +20,7 @@
 #       landing = "https://...";  # defaults to https://<domain>
 #       scopes = [ ... ];         # defaults to openid profile email groups
 #       pkce = true;              # false for clients that cannot do PKCE
+#       public = true;            # a native/mobile app: PKCE only, no client secret
 #       legacyCrypto = false;     # true for clients that only accept RS256 tokens
 #       owner = "hass";           # unix user on this host that reads the secret file
 #     };
@@ -33,14 +34,15 @@
 # before module evaluation, so ports can never cause infinite recursion.
 # With OIDC, service.oidc is the client from lib/oidc.nix (name, clientId,
 # issuer, discovery, groups.<g>.claim, ...) plus the secret as
-# clientSecretFile (a path) and clientSecret (a sops placeholder).
+# clientSecretFile (a path) and clientSecret (a sops placeholder), except
+# for a public client, which has no secret.
 #
 # Each entry generates den.aspects.service-<name>; hosts opt in:
 #   den.aspects.ark.includes = with den.aspects; [ service-git ... ];
 #
-# The OIDC client secret is one secrets/vars file, declared here for the
-# host running the service and again by kanidm for its own host, so the
-# two may be different machines.
+# The OIDC client secret (confidential clients only) is one secrets/vars
+# file, declared here for the host running the service and again by kanidm
+# for its own host, so the two may be different machines.
 #
 # Auto-assigned ports are portBase + index in the alphabetically sorted
 # list of auto-assigned services on that host. Quirk data is scope-local,
@@ -106,10 +108,12 @@ let
           domain = domainFor name spec;
         }
         // lib.optionalAttrs (oidc != null) {
-          oidc = oidc // {
-            clientSecretFile = args.config.sops.secrets.${oidc.secret}.path;
-            clientSecret = args.config.sops.placeholder.${oidc.secret};
-          };
+          oidc =
+            oidc
+            // lib.optionalAttrs (oidc.secret != null) {
+              clientSecretFile = args.config.sops.secrets.${oidc.secret}.path;
+              clientSecret = args.config.sops.placeholder.${oidc.secret};
+            };
         };
       m = spec.nixos or { };
     in
@@ -173,7 +177,7 @@ in
             ark-service.${name} = raw;
             secrets =
               (spec.secrets or { })
-              // lib.optionalAttrs (oidc != null) {
+              // lib.optionalAttrs (oidc != null && oidc.secret != null) {
                 ${oidc.secret} = {
                   generate = true;
                 }
