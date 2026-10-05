@@ -21,6 +21,7 @@
       service-radicale
       service-waka
       ark-nginx
+      assistant
     ];
 
     nixos = {
