@@ -1,4 +1,9 @@
-{ config, lib, ... }:
+{
+  self,
+  config,
+  lib,
+  ...
+}:
 let
   ark = config.ark;
 
@@ -33,11 +38,17 @@ in
         service,
         config,
         lib,
+        pkgs,
         ...
       }:
       {
+        imports = [ self.nixosModules.commonUnstablePkgsOverlay ];
+
         services.headscale = {
           enable = true;
+          # The vps stays on stable nixpkgs; only headscale itself tracks
+          # unstable so it keeps pace with the tailscale clients.
+          package = pkgs.pkgs-unstable.headscale;
           address = "127.0.0.1"; # only nginx talks to it directly
           port = service.port;
           settings = {
