@@ -59,6 +59,12 @@ in
               type = lib.types.str;
               default = "${name}@${mainDomain}";
             };
+            options.signal = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              example = "+15551234567";
+              description = "Signal number in E.164. A person with one may use sivrad (the phone app and Signal).";
+            };
           }
         )
       );

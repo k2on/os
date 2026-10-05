@@ -1,5 +1,5 @@
 # One workspace for everything Rust under modules/ark: the `ark` CLI (cli/)
-# and the services' daemons (services/<name>/sync). Build a member with
+# and the services' daemons (services/<name>/sync, services/sivrad/channel). Build a member with
 # `pkgs.callPackage ./_rust.nix { pname = "..."; }`, or `cargo build -p ...`
 # from here. Service commands for the CLI are not members: cli/build.rs
 # compiles services/<name>/cli/mod.rs straight into the `ark` crate.
@@ -8,6 +8,7 @@ resolver = "2"
 members = [
   "cli",
   "services/money/sync",
+  "services/sivrad/channel",
 ]
 
 [workspace.package]
@@ -27,3 +28,10 @@ clap = { version = "4", default-features = false, features = ["std", "help", "us
 # unstable-dynamic: `COMPLETE=zsh ark` prints a shell shim that asks the binary itself for completions
 clap_complete = { version = "4", default-features = false, features = ["unstable-dynamic"] }
 rpassword = "7"
+# sivrad-channel only: async stdio, a long-polling HTTP server, SHA-256 and
+# random ids (ring is already here through ureq's rustls)
+tokio = { version = "1", features = ["rt-multi-thread", "io-std", "io-util", "net", "time", "macros", "sync"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+ring = "0.17"

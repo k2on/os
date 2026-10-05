@@ -52,6 +52,13 @@
     };
 
     harken.url = "github:k2on/harken";
+
+    # git+https rather than github: so the lock can be produced without the
+    # GitHub tarball API.
+    microvm = {
+      url = "git+https://github.com/microvm-nix/microvm.nix";
+      inputs.nixpkgs.follows = "nixpkgs-unstable";
+    };
   };
 
   # secrets/ is the private submodule: besides sops files it carries the
