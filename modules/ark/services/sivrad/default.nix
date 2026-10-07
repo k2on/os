@@ -57,6 +57,9 @@ let
 in
 {
   config.den.aspects.sivrad = {
+    # The VM is a tailnet node of its own, which its host answers for.
+    includes = [ config.den.aspects.tailnet ];
+
     secrets = {
       # The VM's Signal identity, saved by `ark service sivrad signal ...`
       # after registering, so a rebuilt VM comes back as the same
@@ -94,12 +97,14 @@ in
           message = "ark.persons: a Signal number belongs to one person only; shared by: ${lib.concatStringsSep "; " (map (lib.concatStringsSep ", ") (lib.attrValues shared))}";
         }
       ];
+      # headscale mints the VM's pre-auth key from this (../headscale/default.nix).
+      ark.tailnet.nodes = lib.optionalAttrs (vm.hostKey != null) { ${vm.name} = vm.hostKey; };
       microvm.vms.sivrad.specialArgs = {
         # Who may use sivrad, for the channel's people.json (./_guest.nix):
         # { "<username>": { "signal": "+..." } }.
         people = lib.mapAttrs (_: p: { inherit (p) signal; }) people;
-        # Same login server as den.aspects.tailnet.
-        loginServer = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
+        # How a node joins the tailnet, shared with the hosts (den.aspects.tailnet).
+        tailnet = config.flake.nixosModules.ark-tailnet;
         oidc = {
           issuer = "${idOrigin}/oauth2/openid/sivrad";
           clientId = "sivrad";

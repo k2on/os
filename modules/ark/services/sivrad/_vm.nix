@@ -12,4 +12,13 @@ rec {
   signalDir = "${home}/signal-cli";
   # The JSON-RPC socket of the signal-cli daemon.
   signalSocket = "/run/sivrad/signal.sock";
+  # The VM's ed25519 ssh host key, on a volume of its own so a rebuilt VM
+  # keeps its identity: the name `ark service sivrad` knows it by over ssh,
+  # and what it joins the tailnet with (ark.tailnet in
+  # ../headscale/default.nix).
+  sshDir = "/var/lib/ssh";
+  # That key's age recipient, read off the VM after its first boot (see
+  # the first-boot steps in _guest.nix). null until then: the VM boots, but
+  # headscale mints it no pre-auth key and it stays off the tailnet.
+  hostKey = null;
 }

@@ -8,6 +8,11 @@
 #
 # First boot, from the owner's laptop (`ark service sivrad`, ./cli/mod.rs;
 # it reaches the VM as sivrad@sivrad.<tailnet domain> over ssh):
+#   0. Put the VM on the tailnet: read its host key's age recipient off its
+#      volume on adam, once the VM has booted and sshd made the key:
+#        debugfs -R 'cat ssh_host_ed25519_key.pub' \
+#          /var/lib/microvms/sivrad/ssh.img | ssh-to-age
+#      into _vm.nix (hostKey); deploy the vps and adam, restart the VM.
 #   1. `ark service sivrad init`: says who may use sivrad, makes sure the
 #      Signal backup secrets exist, then runs `claude auth login` in the VM
 #      (the browser flow, its code prompt passed through ssh) and restarts
@@ -28,9 +33,10 @@
 # JSON-RPC daemon on /run/sivrad/signal.sock (./channel/src/signal.rs).
 #
 # The VM is a tailnet node of its own, `sivrad` under headscale's `ark`
-# user, joining with adam's pre-auth key (see _host.nix for how the key gets
-# here). What it may reach on the tailnet is headscale's ACL (follow-up);
-# the key is reusable, so a dedicated key and user are a follow-up too.
+# user, joining like the hosts do (ark.tailnet, ../headscale/default.nix):
+# with the pre-auth key headscale minted for it, decrypted with its ssh host
+# key, which lives on its own volume (_vm.nix: sshDir, hostKey). What it may
+# reach on the tailnet is headscale's ACL (follow-up).
 #
 # The development-channel warning appears on every start, so after a VM or
 # service restart someone has to attach and accept it.
@@ -45,14 +51,20 @@
 {
   lib,
   pkgs,
-  loginServer,
+  tailnet,
   oidc,
   people,
   ...
 }:
 let
   mac = "02:00:00:77:00:02";
-  inherit (import ./_vm.nix) home signalDir signalSocket;
+  inherit (import ./_vm.nix)
+    home
+    signalDir
+    signalSocket
+    sshDir
+    hostKey
+    ;
 
   # Who may talk to sivrad, keyed by Kanidm username:
   #   { "alice": { "signal": "+15551234567" } }
@@ -75,7 +87,8 @@ let
 
   # Secrets the model must not read: the claude.ai OAuth token, the
   # signal-cli account (and the daemon's socket, which would send as it),
-  # the tailnet node and pre-auth keys (root-only anyway). Also people.json,
+  # the ssh host key and the tailnet node and pre-auth keys (root-only
+  # anyway). Also people.json,
   # by both of its paths: the model knows people by their usernames, and
   # the channel resolves those to numbers. It is in the world-readable Nix
   # store, so this keeps the numbers out of the model's way, not secret.
@@ -83,7 +96,9 @@ let
     "${home}/.claude/.credentials.json"
     signalDir
     "/run/sivrad"
+    sshDir
     "/var/lib/tailscale"
+    "/run/tailnet"
     "/run/host-credentials"
     "/etc/sivrad/people.json"
     "${peopleJson}"
@@ -115,7 +130,9 @@ let
         "Read(/${home}/.claude/.credentials.json)"
         "Read(/${signalDir}/**)"
         "Read(//run/sivrad/**)"
+        "Read(/${sshDir}/**)"
         "Read(//var/lib/tailscale/**)"
+        "Read(//run/tailnet/**)"
         "Read(//run/host-credentials/**)"
         "Read(//etc/sivrad/people.json)"
         "Read(/${peopleJson})"
@@ -182,6 +199,8 @@ let
   '';
 in
 {
+  imports = [ tailnet ];
+
   microvm = {
     hypervisor = "cloud-hypervisor";
     vcpu = 2;
@@ -214,6 +233,13 @@ in
         size = 64;
         fsType = "ext4";
       }
+      # The ssh host key (_vm.nix), generated there by sshd on first boot.
+      {
+        image = "ssh.img";
+        mountPoint = sshDir;
+        size = 16;
+        fsType = "ext4";
+      }
     ];
     interfaces = [
       {
@@ -239,31 +265,24 @@ in
     ];
   };
 
-  services.tailscale = {
-    enable = true;
-    authKeyFile = "/run/host-credentials/headscale_preauth_key";
-    extraUpFlags = [
-      "--login-server"
-      loginServer
-    ];
-  };
-  # As in den.aspects.tailnet: headscale may not be reachable yet, and the
-  # unit only logs in when the backend needs it.
-  systemd.services.tailscaled-autoconnect = {
-    unitConfig.RequiresMountsFor = "/run/host-credentials";
-    serviceConfig = {
-      Restart = "on-failure";
-      RestartSec = 10;
-      RemainAfterExit = true;
-    };
-  };
+  # Joins the tailnet as the hosts do (the `tailnet` module), with the host
+  # key below once its recipient is known.
+  ark.tailnet.recipient = hostKey;
 
   # The phone reaches the sivrad channel over the tailnet only; the tap side
   # (adam) stays SSH-only.
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8788 ];
 
+  systemd.services.sshd.unitConfig.RequiresMountsFor = sshDir;
   services.openssh = {
     enable = true;
+    # Only the key on the persistent volume: the node's identity.
+    hostKeys = [
+      {
+        path = "${sshDir}/ssh_host_ed25519_key";
+        type = "ed25519";
+      }
+    ];
     settings = {
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
