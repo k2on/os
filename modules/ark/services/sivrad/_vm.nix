@@ -12,4 +12,7 @@ rec {
   signalDir = "${home}/signal-cli";
   # The JSON-RPC socket of the signal-cli daemon.
   signalSocket = "/run/sivrad/signal.sock";
+  # The VM's ed25519 ssh host key, on a volume of its own so a rebuilt VM
+  # keeps the identity `ark service sivrad` knows it by over ssh.
+  sshDir = "/var/lib/ssh";
 }

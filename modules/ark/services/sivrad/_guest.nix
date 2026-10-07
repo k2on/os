@@ -28,9 +28,10 @@
 # JSON-RPC daemon on /run/sivrad/signal.sock (./channel/src/signal.rs).
 #
 # The VM is a tailnet node of its own, `sivrad` under headscale's `ark`
-# user, joining with adam's pre-auth key (see _host.nix for how the key gets
-# here). What it may reach on the tailnet is headscale's ACL (follow-up);
-# the key is reusable, so a dedicated key and user are a follow-up too.
+# user, with a pre-auth key of its own that headscale minted for it and
+# adam, answering for the VM, hands in through /run/host-credentials
+# (ark.tailnet, ../headscale/default.nix; _host.nix). What it may reach on
+# the tailnet is headscale's ACL (follow-up).
 #
 # The development-channel warning appears on every start, so after a VM or
 # service restart someone has to attach and accept it.
@@ -45,14 +46,19 @@
 {
   lib,
   pkgs,
-  loginServer,
+  tailnet,
   oidc,
   people,
   ...
 }:
 let
   mac = "02:00:00:77:00:02";
-  inherit (import ./_vm.nix) home signalDir signalSocket;
+  inherit (import ./_vm.nix)
+    home
+    signalDir
+    signalSocket
+    sshDir
+    ;
 
   # Who may talk to sivrad, keyed by Kanidm username:
   #   { "alice": { "signal": "+15551234567" } }
@@ -75,7 +81,8 @@ let
 
   # Secrets the model must not read: the claude.ai OAuth token, the
   # signal-cli account (and the daemon's socket, which would send as it),
-  # the tailnet node and pre-auth keys (root-only anyway). Also people.json,
+  # the ssh host key and the tailnet node and pre-auth keys (root-only
+  # anyway). Also people.json,
   # by both of its paths: the model knows people by their usernames, and
   # the channel resolves those to numbers. It is in the world-readable Nix
   # store, so this keeps the numbers out of the model's way, not secret.
@@ -83,6 +90,7 @@ let
     "${home}/.claude/.credentials.json"
     signalDir
     "/run/sivrad"
+    sshDir
     "/var/lib/tailscale"
     "/run/host-credentials"
     "/etc/sivrad/people.json"
@@ -115,6 +123,7 @@ let
         "Read(/${home}/.claude/.credentials.json)"
         "Read(/${signalDir}/**)"
         "Read(//run/sivrad/**)"
+        "Read(/${sshDir}/**)"
         "Read(//var/lib/tailscale/**)"
         "Read(//run/host-credentials/**)"
         "Read(//etc/sivrad/people.json)"
@@ -182,6 +191,8 @@ let
   '';
 in
 {
+  imports = [ tailnet ];
+
   microvm = {
     hypervisor = "cloud-hypervisor";
     vcpu = 2;
@@ -214,6 +225,14 @@ in
         size = 64;
         fsType = "ext4";
       }
+      # The ssh host key (_vm.nix), generated there by sshd on first boot,
+      # so the VM keeps its ssh identity across rebuilds.
+      {
+        image = "ssh.img";
+        mountPoint = sshDir;
+        size = 16;
+        fsType = "ext4";
+      }
     ];
     interfaces = [
       {
@@ -239,31 +258,24 @@ in
     ];
   };
 
-  services.tailscale = {
-    enable = true;
-    authKeyFile = "/run/host-credentials/headscale_preauth_key";
-    extraUpFlags = [
-      "--login-server"
-      loginServer
-    ];
-  };
-  # As in den.aspects.tailnet: headscale may not be reachable yet, and the
-  # unit only logs in when the backend needs it.
-  systemd.services.tailscaled-autoconnect = {
-    unitConfig.RequiresMountsFor = "/run/host-credentials";
-    serviceConfig = {
-      Restart = "on-failure";
-      RestartSec = 10;
-      RemainAfterExit = true;
-    };
-  };
+  # Joins the tailnet as the hosts do (the `tailnet` module), with the key
+  # adam hands in; waited for until it is there.
+  ark.tailnet.keyFile = "/run/host-credentials/tailnet-authkey";
 
   # The phone reaches the sivrad channel over the tailnet only; the tap side
   # (adam) stays SSH-only.
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8788 ];
 
+  systemd.services.sshd.unitConfig.RequiresMountsFor = sshDir;
   services.openssh = {
     enable = true;
+    # Only the key on the persistent volume.
+    hostKeys = [
+      {
+        path = "${sshDir}/ssh_host_ed25519_key";
+        type = "ed25519";
+      }
+    ];
     settings = {
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
