@@ -17,11 +17,13 @@
 let
   tap = "vm-sivrad";
   # Directory shared read-only into the guest, so the guest needs no sops of
-  # its own. It holds the saved Signal account signal-account.tar.gz.b64
-  # (sivrad_signal_account, empty until one is saved), world-readable for
-  # signal-cli, which runs as `sivrad`. The directory is 0711: no listing.
-  # The guest's tailnet key is not here: the VM fetches its own with its
-  # ssh host key (./_guest.nix).
+  # its own. It holds the VM's tailnet pre-auth key (tailnet-authkey, from
+  # ark.tailnet.guests below, which fetches it with adam's host key and
+  # leaves it here root-only, whenever headscale comes to serve it: the
+  # share is live, so the VM sees it then) and the saved Signal account
+  # signal-account.tar.gz.b64 (sivrad_signal_account, empty until one is
+  # saved), world-readable for signal-cli, which runs as `sivrad`. The
+  # directory is 0711: no listing.
   # microvm.credentialFiles would be the natural fit, but microvm.nix only
   # implements it for qemu; the cloud-hypervisor runner throws
   # (lib/runners/cloud-hypervisor.nix).
@@ -52,6 +54,9 @@ let
   '';
 in
 {
+  # adam answers for the VM on the tailnet (../headscale/default.nix).
+  ark.tailnet.guests.${(import ./_vm.nix).name} = "${credentialsDir}/tailnet-authkey";
+
   microvm.vms.sivrad = {
     # Rebuilding adam must not kill a running conversation; restart the VM
     # by hand (`systemctl restart microvm@sivrad`) to pick up changes.
@@ -74,8 +79,9 @@ in
   };
 
   # Refresh the guest's copy before its virtiofsd starts. virtiofsd runs as
-  # root and passes ownership through. Managed settings keep the model away
-  # from all of /run/host-credentials.
+  # root and passes ownership through, so in the guest the key is root:root
+  # 0400 and invisible to the `sivrad` user. Managed settings keep the model
+  # away from all of /run/host-credentials.
   systemd.services.sivrad-credentials = {
     description = "Credentials for the sivrad microVM";
     serviceConfig = {

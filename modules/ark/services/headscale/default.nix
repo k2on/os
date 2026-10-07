@@ -9,9 +9,14 @@
 # decrypts it with its host key (tailnet-authkey) and hands the key to
 # `tailscale up`. The ciphertexts are public: only the matching host key
 # opens them, so joining as a node takes its ssh host key, as it did with
-# sops. Revoking one is `headscale preauthkeys expire --id $(cat
-# /var/lib/tailnet-keys/<node>.id)` on headscale's host, then a new
-# recipient (or deleting <node>.age) to have a new one minted.
+# sops. A VM has no identity of its own here: whatever is on its disk, its
+# host can read, so its host answers for it (ark.tailnet.guests), gets its
+# key encrypted to the host's recipient and hands it in (ark.tailnet.keyFile
+# in the VM). Nothing has to happen in order: a node whose key headscale
+# does not serve yet keeps trying, and joins once it does. Revoking one is
+# `headscale preauthkeys expire --id $(cat /var/lib/tailnet-keys/<node>.id)`
+# on headscale's host, then a new recipient (or deleting <node>.age) to have
+# a new one minted.
 { config, lib, ... }:
 let
   ark = config.ark;
@@ -45,7 +50,7 @@ let
     '') ark.publicDomains
   );
 
-  # A node of the tailnet, host or VM: fetches the pre-auth key headscale
+  # A node of the tailnet, host or VM: gets the pre-auth key headscale
   # minted for it and joins at boot. Also flake.nixosModules.ark-tailnet,
   # for nodes declared outside den (the sivrad microVM).
   tailnetModule =
@@ -58,9 +63,17 @@ let
     let
       cfg = config.ark.tailnet;
       node = config.networking.hostName;
+      # Own key and the guests' land here before the guests' move on.
+      runDir = "/run/tailnet";
       hostKey = lib.findFirst (k: k.type == "ed25519") (throw
         "ark.tailnet: ${node} has no ed25519 key in services.openssh.hostKeys"
       ) config.services.openssh.hostKeys;
+      fetches = cfg.recipient != null;
+      joins = fetches || cfg.keyFile != null;
+      fetch = name: ''
+        curl -fsS --retry 3 -o "${name}.age" ${loginServer}${keysPath}${name}.age
+        age -d -i identity -o "${name}" "${name}.age"
+      '';
     in
     {
       options.ark.tailnet = {
@@ -70,9 +83,26 @@ let
           description = ''
             age recipient of this node's ed25519 ssh host key, the identity it
             joins the tailnet with: `ssh-to-age < ssh_host_ed25519_key.pub` on
-            the machine. Hosts take it from ark.hostKey. null until read off a
-            new machine after its first boot; headscale mints it no key until
-            then, and it stays off the tailnet.
+            the machine. Hosts take it from ark.hostKey. null for a VM, whose
+            host hands its key in (keyFile), or a new machine not read off yet.
+          '';
+        };
+        keyFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = ''
+            A VM's pre-auth key, where its host leaves it (ark.tailnet.guests
+            on the host): used as is, waited for while it is not there yet.
+          '';
+        };
+        guests = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = { };
+          description = ''
+            Node name -> file: VMs this host answers for. headscale encrypts
+            their keys to this host's recipient; tailnet-authkey fetches them
+            with its own and installs each at its file, root-only, for the VM
+            to read (keyFile there).
           '';
         };
         nodes = lib.mkOption {
@@ -80,7 +110,7 @@ let
           default = { };
           description = ''
             Node name -> age recipient of every tailnet node this host answers
-            for: itself, and the VMs it runs. Folded over all hosts into
+            for: itself, and its guests. Folded over all hosts into
             headscale-provision on headscale's host.
           '';
         };
@@ -89,35 +119,46 @@ let
       config = {
         assertions = [
           {
-            assertion = config.services.openssh.enable;
+            assertion = !fetches || config.services.openssh.enable;
             message = "ark.tailnet: ${node} needs services.openssh: its host key is the node's identity";
+          }
+          {
+            assertion = cfg.recipient == null || cfg.keyFile == null;
+            message = "ark.tailnet: ${node} either has a recipient or is handed its key (keyFile), not both";
+          }
+          {
+            assertion = cfg.guests == { } || fetches;
+            message = "ark.tailnet: ${node} answers for guests, so it needs a recipient of its own";
           }
         ];
 
-        warnings = lib.optional (cfg.recipient == null) "ark.tailnet: ${node} has no recipient (ark.tailnet.recipient), so it does not join the tailnet";
+        warnings = lib.optional (!joins) "ark.tailnet: ${node} has neither a recipient nor a keyFile, so it does not join the tailnet";
 
-        ark.tailnet.nodes = lib.mkIf (cfg.recipient != null) { ${node} = cfg.recipient; };
+        ark.tailnet.nodes = lib.mkIf fetches (
+          { ${node} = cfg.recipient; } // lib.mapAttrs (_: _: cfg.recipient) cfg.guests
+        );
 
         services.tailscale = {
           enable = true;
-          authKeyFile = lib.mkIf (cfg.recipient != null) "/run/tailnet/authkey";
+          authKeyFile = lib.mkIf joins (if fetches then "${runDir}/${node}" else cfg.keyFile);
           extraUpFlags = [
             "--login-server"
             loginServer
           ];
         };
 
-        # The key headscale minted for this node, decrypted with the host key
-        # (converted to the age identity its recipient was made from). Fetched
-        # every boot: it only matters when tailscaled needs to log in, and a
-        # headscale that is not up yet is retried, not fatal.
-        systemd.services.tailnet-authkey = lib.mkIf (cfg.recipient != null) {
+        # The key headscale minted for this node (and its guests'), decrypted
+        # with the host key, converted to the age identity its recipient was
+        # made from; or, handed in, just waited for. Every boot: it only
+        # matters when tailscaled needs to log in, and a headscale that does
+        # not serve it yet is retried, not fatal.
+        systemd.services.tailnet-authkey = lib.mkIf joins {
           description = "pre-auth key for the tailnet, from headscale";
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ];
           wants = [ "network-online.target" ];
-          unitConfig.RequiresMountsFor = [ (dirOf hostKey.path) ];
-          path = [
+          unitConfig.RequiresMountsFor = [ (dirOf (if fetches then hostKey.path else cfg.keyFile)) ];
+          path = lib.mkIf fetches [
             pkgs.curl
             pkgs.age
             pkgs.ssh-to-age
@@ -127,21 +168,37 @@ let
             RemainAfterExit = true;
             Restart = "on-failure";
             RestartSec = 10;
-            RuntimeDirectory = "tailnet";
+            RuntimeDirectory = baseNameOf runDir;
             RuntimeDirectoryMode = "0700";
+            # Keys already there stay while a retry (a guest's key not served
+            # yet) runs again.
+            RuntimeDirectoryPreserve = "yes";
             UMask = "0077";
           };
-          script = ''
-            cd "$RUNTIME_DIRECTORY"
-            curl -fsS --retry 3 -o authkey.age ${loginServer}${keysPath}${node}.age
-            age -d -i <(ssh-to-age -private-key -i ${hostKey.path}) -o authkey authkey.age
-          '';
+          script =
+            if fetches then
+              ''
+                cd ${runDir}
+                trap 'rm -f identity' EXIT
+                ssh-to-age -private-key -i ${hostKey.path} >identity
+                ${fetch node}
+                ${lib.concatStrings (
+                  lib.mapAttrsToList (guest: file: ''
+                    ${fetch guest}
+                    install -D -m 0400 "${guest}" ${file}
+                  '') cfg.guests
+                )}
+              ''
+            else
+              ''
+                test -s ${cfg.keyFile} || { echo "${cfg.keyFile} is not there yet"; exit 1; }
+              '';
         };
 
         # nixpkgs' unit runs `tailscale up` once; headscale may not be up yet,
-        # or the key not fetched. It only logs in when the backend needs it,
-        # so this is safe on a node that already joined.
-        systemd.services.tailscaled-autoconnect = lib.mkIf (cfg.recipient != null) {
+        # or the key not there. It only logs in when the backend needs it, so
+        # this is safe on a node that already joined.
+        systemd.services.tailscaled-autoconnect = lib.mkIf joins {
           after = [ "tailnet-authkey.service" ];
           wants = [ "tailnet-authkey.service" ];
           serviceConfig = {

@@ -51,11 +51,12 @@ Every host, and the sivrad VM, is a node of the headscale tailnet
 secret in the repo: headscale's host mints a pre-auth key per node,
 encrypts it to the node's age recipient (its ed25519 ssh host key, the
 `ark.hostKey` sops needs anyway) and serves the ciphertext; the node
-fetches and decrypts it with that key. A new machine is on the tailnet
-once its recipient is in the config (`ssh-to-age <
-/etc/ssh/ssh_host_ed25519_key.pub` after its first boot; for the VM,
-`hostKey` in `modules/ark/services/sivrad/_vm.nix`) and the vps is
-deployed. To throw a node out: `headscale preauthkeys expire --id $(cat
+fetches and decrypts it with that key. A VM's key is encrypted to its
+host, which hands it in (adam does for sivrad). Nothing is ordered: a node
+whose key is not served yet keeps trying and joins once the vps is
+deployed. A new host is on the tailnet once its recipient is in the config
+(`ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub` after its first boot).
+To throw a node out: `headscale preauthkeys expire --id $(cat
 /var/lib/tailnet-keys/<node>.id)` on the vps, and a new key is minted
 there when the node's recipient changes.
 
