@@ -1,8 +1,9 @@
 //! The identity table: who may talk to sivrad. A JSON object keyed by Kanidm
-//! username (the phone's `preferred_username`), with each person's Signal
-//! number:
+//! username (the phone's `preferred_username`), with how each person is
+//! reached on Signal: their number (E.164) or their Signal username
+//! (`name.NN`), for people who do not share their number:
 //!
-//!   { "alice": { "signal": "+15551234567" }, "bob": { "signal": "+15557654321" } }
+//!   { "alice": { "signal": "+15551234567" }, "bob": { "signal": "bob.42" } }
 //!
 //! The same person may write from the phone or from Signal. A missing or
 //! unreadable file is an empty table: nobody gets in.
@@ -14,9 +15,27 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Person {
-    /// The person's Signal number (E.164).
+    /// The person's Signal number (E.164) or Signal username.
     #[serde(default)]
     pub signal: Option<String>,
+}
+
+/// How a person is reached on Signal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SignalId<'a> {
+    Number(&'a str),
+    Username(&'a str),
+}
+
+impl Person {
+    pub fn signal_id(&self) -> Option<SignalId<'_>> {
+        let s = self.signal.as_deref()?;
+        Some(if s.starts_with('+') {
+            SignalId::Number(s)
+        } else {
+            SignalId::Username(s)
+        })
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -43,15 +62,24 @@ impl People {
 
     /// Who owns a Signal number.
     pub fn by_number(&self, number: &str) -> Option<&str> {
+        self.find(SignalId::Number(number))
+    }
+
+    /// Who owns a Signal username.
+    pub fn by_signal_username(&self, username: &str) -> Option<&str> {
+        self.find(SignalId::Username(username))
+    }
+
+    fn find(&self, id: SignalId) -> Option<&str> {
         self.0
             .iter()
-            .find(|(_, p)| p.signal.as_deref() == Some(number))
+            .find(|(_, p)| p.signal_id() == Some(id))
             .map(|(user, _)| user.as_str())
     }
 
-    /// A person's Signal number.
-    pub fn number_of(&self, username: &str) -> Option<&str> {
-        self.0.get(username)?.signal.as_deref()
+    /// How a person is reached on Signal.
+    pub fn signal_of(&self, username: &str) -> Option<SignalId<'_>> {
+        self.0.get(username)?.signal_id()
     }
 
     /// Everyone reachable over Signal.
@@ -62,13 +90,25 @@ impl People {
             .map(|(user, _)| user.as_str())
             .collect()
     }
+
+    /// The Signal usernames in the table, which have to be resolved to
+    /// account ids before their messages can be told apart.
+    pub fn signal_usernames(&self) -> Vec<&str> {
+        self.0
+            .values()
+            .filter_map(|p| match p.signal_id() {
+                Some(SignalId::Username(u)) => Some(u),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const TABLE: &str = r#"{ "alice": { "signal": "+15551234567" }, "bob": {} }"#;
+    const TABLE: &str = r#"{ "alice": { "signal": "+15551234567" }, "bob": {}, "carol": { "signal": "carol.42" } }"#;
 
     #[test]
     fn parses_the_table() {
@@ -84,10 +124,21 @@ mod tests {
         let people = People::parse(TABLE).unwrap();
         assert_eq!(people.by_number("+15551234567"), Some("alice"));
         assert_eq!(people.by_number("+15550000000"), None);
-        assert_eq!(people.number_of("alice"), Some("+15551234567"));
-        assert_eq!(people.number_of("bob"), None);
-        assert_eq!(people.number_of("mallory"), None);
-        assert_eq!(people.on_signal(), ["alice"]);
+        assert_eq!(people.by_number("carol.42"), None);
+        assert_eq!(people.by_signal_username("carol.42"), Some("carol"));
+        assert_eq!(people.by_signal_username("+15551234567"), None);
+        assert_eq!(
+            people.signal_of("alice"),
+            Some(SignalId::Number("+15551234567"))
+        );
+        assert_eq!(
+            people.signal_of("carol"),
+            Some(SignalId::Username("carol.42"))
+        );
+        assert_eq!(people.signal_of("bob"), None);
+        assert_eq!(people.signal_of("mallory"), None);
+        assert_eq!(people.on_signal(), ["alice", "carol"]);
+        assert_eq!(people.signal_usernames(), ["carol.42"]);
     }
 
     #[test]

@@ -104,7 +104,6 @@ in
               DEFAULT_THEME = "github-auto";
             };
             server = {
-              DOMAIN = "git.${ark.mainDomain}";
               ROOT_URL = "https://git.${ark.mainDomain}";
               HTTP_PORT = service.port;
               LANDING_PAGE = "/max";

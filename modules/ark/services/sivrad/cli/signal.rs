@@ -1,6 +1,6 @@
-//! `ark service sivrad signal ...`: the VM's Signal account.
+//! `ark service sivrad signal ...`: the container's Signal account.
 //!
-//! Registering goes through the signal-cli daemon in the VM
+//! Registering goes through the signal-cli daemon in the container
 //! (signal-cli.service, ../_guest.nix), over its JSON-RPC socket, rather
 //! than through a second `signal-cli` process: the daemon runs in
 //! multi-account mode, which offers `register` and `verify`
@@ -12,7 +12,7 @@
 //! it and race systemd's restart), and the channel gets the account without
 //! a restart.
 //!
-//! The JSON-RPC calls run in the VM as `socat` on the socket, from a bash
+//! The JSON-RPC calls run in the container as `socat` on the socket, from a bash
 //! coprocess so the connection stays open until the answer arrives (socat
 //! would hang up shortly after its stdin ends). The daemon receives in
 //! on-connection mode, so such a connection
@@ -20,8 +20,8 @@
 //! skipped, and the channel gets its own copy.
 //!
 //! Each success ends with a backup: signal-cli's data directory, tarred in
-//! the VM and stored in the secrets repo (sivrad_signal_account, with the
-//! number in sivrad_signal_number), from which a rebuilt VM restores the
+//! the container and stored in the secrets repo (sivrad_signal_account, with the
+//! number in sivrad_signal_number), from which a rebuilt container restores the
 //! account.
 use std::collections::BTreeMap;
 
@@ -57,10 +57,10 @@ pub fn command() -> Clap {
             .help("The number in E.164, e.g. +15551234567")
     };
     Clap::new("signal")
-        .about("The VM's Signal account: register its number, and back it up")
+        .about("The container's Signal account: register its number, and back it up")
         .long_about(
-            "The VM's Signal account: register sivrad's own number through the signal-cli daemon in \
-             the VM (over ssh), then back it up to the secrets repo so a rebuilt VM comes back as the \
+            "The container's Signal account: register sivrad's own number through the signal-cli daemon in \
+             the container (over ssh), then back it up to the secrets repo so a rebuilt container comes back as the \
              same account. Commit secrets/ and deploy adam afterwards.",
         )
         .subcommand_required(true)
@@ -88,7 +88,7 @@ pub fn command() -> Clap {
                 ),
         )
         .subcommand(Clap::new("backup").about(
-            "Save the VM's Signal account to the secrets repo (done after register/verify)",
+            "Save the container's Signal account to the secrets repo (done after register/verify)",
         ))
 }
 
@@ -200,7 +200,7 @@ pub fn rpc_script(socket: &str, id: &str, request: &str) -> String {
         r#"set -u
 sock={sock}
 if [ ! -S "$sock" ]; then
-  echo "signal-cli is not running in the VM (no socket at $sock); see journalctl -u signal-cli there" >&2
+  echo "signal-cli is not running in the container (no socket at $sock); see journalctl -u signal-cli there" >&2
   exit 3
 fi
 # socat's stderr is dropped: it complains when killed below.
@@ -221,14 +221,14 @@ exit 3
     )
 }
 
-/// Calls a method of the daemon in the VM and returns its result.
+/// Calls a method of the daemon in the container and returns its result.
 fn rpc(cfg: &Config, vm: &Vm, method: &str, params: Value) -> Result<Value> {
     let id = format!("ark-{}", std::process::id());
     let request = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
     let script = rpc_script(&cfg.signal.socket, &id, &request.to_string());
     let line = vm
         .output(&format!("bash -c {}", sh_quote(&script)))
-        .with_context(|| format!("calling {method} on signal-cli in the VM"))?;
+        .with_context(|| format!("calling {method} on signal-cli in the container"))?;
     parse_response(&line)
 }
 
@@ -242,12 +242,12 @@ fn refuse_other_account(cfg: &Config, vm: &Vm, number: Option<&str>) -> Result<(
     match (existing.first(), number) {
         (None, _) => Ok(()),
         (Some(a), Some(n)) if existing.len() == 1 && a.number.as_deref() == Some(n) => bail!(
-            "{n} is already registered in the VM; `ark service sivrad signal backup` saves it to the \
+            "{n} is already registered in the container; `ark service sivrad signal backup` saves it to the \
              secrets repo"
         ),
         (Some(_), _) => bail!(
-            "signal-cli in the VM already has {}; sivrad uses exactly one account. To replace it, \
-             delete {}/data in the VM, end the daemon so systemd restarts it empty (pkill -f \
+            "signal-cli in the container already has {}; sivrad uses exactly one account. To replace it, \
+             delete {}/data in the container, end the daemon so systemd restarts it empty (pkill -f \
              'signal-cli.*daemon') and empty the sivrad_signal_account secret, or the next restart \
              restores the old account",
             existing
@@ -332,7 +332,7 @@ fn verify(
              --number {number}` (add --pin if the number has a registration lock)"
         )
     })?;
-    println!("{number} is registered; signal-cli in the VM has loaded it.");
+    println!("{number} is registered; signal-cli in the container has loaded it.");
     backup(ctx, cfg, vm, manifest)
 }
 
@@ -365,24 +365,24 @@ tar -C "$dir" --exclude=./attachments --exclude=./avatars --exclude=./stickers -
     )
 }
 
-/// Saves the account in the VM to the secrets repo.
+/// Saves the account in the container to the secrets repo.
 pub fn backup(ctx: &Ctx, cfg: &Config, vm: &Vm, manifest: &Manifest) -> Result<()> {
     let existing = accounts(cfg, vm)?;
     let account = match &existing[..] {
         [one] => one,
-        [] => bail!("signal-cli in the VM has no account to back up; register one first"),
+        [] => bail!("signal-cli in the container has no account to back up; register one first"),
         _ => bail!(
-            "signal-cli in the VM has {} accounts; sivrad uses exactly one",
+            "signal-cli in the container has {} accounts; sivrad uses exactly one",
             existing.len()
         ),
     };
-    println!("backing up {} from the VM...", account.id());
+    println!("backing up {} from the container...", account.id());
     let archive = vm
         .output(&format!(
             "bash -c {}",
             sh_quote(&backup_script(&cfg.signal.config_dir))
         ))
-        .context("archiving signal-cli's data directory in the VM")?;
+        .context("archiving signal-cli's data directory in the container")?;
     let archive = archive.trim();
     if archive.is_empty() {
         bail!("the archive of signal-cli's data directory came back empty");
@@ -396,7 +396,7 @@ pub fn backup(ctx: &Ctx, cfg: &Config, vm: &Vm, manifest: &Manifest) -> Result<(
         ],
     )?;
     println!(
-        "Saved as {ACCOUNT} ({} KiB) and {NUMBER}. Commit secrets/ and deploy adam: a rebuilt VM \
+        "Saved as {ACCOUNT} ({} KiB) and {NUMBER}. Commit secrets/ and deploy adam: a rebuilt container \
          then restores this account.",
         archive.len().div_ceil(1024)
     );

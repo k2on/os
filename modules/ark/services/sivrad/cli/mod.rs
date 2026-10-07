@@ -1,7 +1,7 @@
-//! `ark service sivrad ...`: set up the sivrad VM from a laptop. Commands
-//! drive the VM over ssh (as `sivrad`, at its tailnet name) and keep what
+//! `ark service sivrad ...`: set up the sivrad container from a laptop. Commands
+//! drive the container over ssh (as `sivrad`, at its tailnet name) and keep what
 //! has to survive a rebuild in the secrets repo: the Signal account. The
-//! Claude Code login lives on the VM's state volume.
+//! Claude Code login lives on the container's state directory.
 //!
 //! Who may use sivrad is not a command: it is everyone with a Signal number
 //! in secrets/ark.nix (`ark.persons.<username>.signal`, see ../default.nix).
@@ -23,7 +23,7 @@ use crate::util;
 
 pub static SERVICE: Service = Service {
     name: "sivrad",
-    about: "The sivrad assistant VM: the Claude login and Signal",
+    about: "The sivrad assistant container: the Claude login and Signal",
     command,
     run,
 };
@@ -37,8 +37,8 @@ fn command() -> Clap {
                 .about("First-time setup, step by step; skips what is already done")
                 .long_about(
                     "First-time setup; run it again any time, it skips what is already done. Says who \
-                     may use sivrad (the people in secrets/ark.nix with a Signal number), makes sure the \
-                     Signal secrets exist, logs Claude Code in inside the VM over ssh (the browser flow), \
+                     may use sivrad (the people in secrets/ark.nix with a Signal number or username), makes sure the \
+                     Signal secrets exist, logs Claude Code in inside the container over ssh (the browser flow), \
                      and says what is left: the Signal account and accepting the development-channel \
                      warning.",
                 ),
@@ -58,7 +58,7 @@ fn run(ctx: &Ctx, m: &ArgMatches) -> Result<()> {
 /// output, defined in ../default.nix from ../_vm.nix.
 #[derive(Deserialize)]
 pub struct Config {
-    /// The VM's tailnet name; null when no host runs headscale.
+    /// The container's tailnet name; null when no host runs headscale.
     host: Option<String>,
     user: String,
     signal: SignalConfig,
@@ -82,7 +82,7 @@ impl Config {
 
     pub fn vm(&self) -> Result<Vm> {
         let host = self.host.as_deref().context(
-            "the VM has no tailnet name: some host has to run headscale (its dns.base_domain names it)",
+            "the container has no tailnet name: some host has to run headscale (its dns.base_domain names it)",
         )?;
         Ok(Vm {
             target: format!("{}@{host}", self.user),
@@ -90,7 +90,7 @@ impl Config {
     }
 }
 
-/// The VM, over ssh. Its tailnet name is new to known_hosts the first time;
+/// The container, over ssh. Its tailnet name is new to known_hosts the first time;
 /// accept-new takes it then and still refuses a key that changed.
 pub struct Vm {
     target: String,
@@ -145,7 +145,7 @@ fn logged_in(status: &str) -> Option<bool> {
         .as_bool()
 }
 
-/// Claude Code in the VM runs from the sivrad service's environment; these
+/// Claude Code in the container runs from the sivrad service's environment; these
 /// match it for commands run over ssh.
 const CLAUDE_ENV: &str = "DISABLE_AUTOUPDATER=1";
 
@@ -158,15 +158,15 @@ fn init(ctx: &Ctx) -> Result<()> {
     print_people(&cfg);
     let created = init_secrets(ctx, &manifest)?;
     if created {
-        println!("   Commit secrets/ and deploy adam so the VM gets them.");
+        println!("   Commit secrets/ and deploy adam so the container gets them.");
     }
 
-    println!("2. Claude Code in the VM");
+    println!("2. Claude Code in the container");
     let vm = cfg.vm()?;
     let reach = vm.probe("true")?;
     if !reach.status.success() {
         bail!(
-            "cannot reach {vm} over ssh ({}). Is adam deployed and the VM up on the tailnet? Then run \
+            "cannot reach {vm} over ssh ({}). Is adam deployed and the container up on the tailnet? Then run \
              `ark service sivrad init` again",
             String::from_utf8_lossy(&reach.stderr).trim()
         );
@@ -188,7 +188,7 @@ fn init(ctx: &Ctx) -> Result<()> {
                 );
             }
         }
-        Err(e) => println!("   Could not ask signal-cli in the VM: {e:#}"),
+        Err(e) => println!("   Could not ask signal-cli in the container: {e:#}"),
     }
 
     println!(
@@ -262,14 +262,14 @@ fn init_claude(vm: &Vm) -> Result<()> {
     }
 
     println!(
-        "   Not logged in. Logging in inside the VM: open the link it prints, sign in, and paste the code \
+        "   Not logged in. Logging in inside the container: open the link it prints, sign in, and paste the code \
          back here."
     );
     vm.interactive(&format!("{CLAUDE_ENV} claude auth login"))
-        .context("claude auth login in the VM")?;
+        .context("claude auth login in the container")?;
     let status = vm.probe(&format!("{CLAUDE_ENV} claude auth status --json"))?;
     if logged_in(&String::from_utf8_lossy(&status.stdout)) != Some(true) {
-        bail!("Claude Code in the VM still is not logged in; run `ark service sivrad init` again");
+        bail!("Claude Code in the container still is not logged in; run `ark service sivrad init` again");
     }
     // The running session started logged out; ending it makes systemd start a
     // fresh one (tmux exits with its last session) that has the login.

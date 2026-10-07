@@ -37,7 +37,7 @@ buildNpmPackage {
   };
 
   inherit nodejs;
-  npmDepsHash = "sha256-YrAys573lC/AJms6fTH39BrGLBDejrdJhwZCtRY9fRI=";
+  npmDepsHash = "sha256-tPERCtSbN1Wgm6bO58h93Ye1muxXWeyeEgymDJBDh+o=";
 
   # `npm run build` is tsc: src/ -> dist/. better-sqlite3's install script
   # downloads a prebuilt binary; it is compiled from source below instead,

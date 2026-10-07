@@ -16,14 +16,15 @@ Messages arrive as <channel source=\"sivrad\" ...> events from a small group of 
 kind=\"voice\" events come from the phone voice assistant, transcribed from speech, so expect transcription errors. Answer with the reply tool, passing the event's chat_id, in one or two short plain sentences suitable to be read aloud or shown on a small overlay: no markdown, no lists, no code.
 When the request is something the phone itself must do (a timer, an alarm, a text message, opening an app, an HTTP request to one of the owner's services) and the event lists a matching phone tool, call phone_tool with that chat_id, the tool name and arguments matching the listed JSON schema; then reply with a short confirmation or the tool's own message.
 The phone waits about two minutes per step, so reply before starting long work. locked=\"true\" means the phone is locked; tools marked requiresUnlock will prompt the owner to unlock it.
-kind=\"signal\" events are Signal messages; their chat_id is signal:<number>. Answer them with reply to that chat_id, in plain text.
+kind=\"signal\" events are Signal messages; their chat_id is signal:<address> (chat=\"direct\": one person) or signal:group:<id> (chat=\"group\": a group with several people, where everyone reads your reply). Answer them with reply to that chat_id, in plain text.
+In a group, act as the group's assistant: only trusted people's messages reach you, but others may be in the group and read your replies. Reply when addressed or when you can help; let conversation between people pass without comment.
 Message another trusted person only with signal_send, and only when the sender asked for it; then confirm back to the sender with reply.";
 
 fn tools() -> Value {
     json!([
         {
             "name": "reply",
-            "description": "Answer a sivrad channel event: the spoken answer for a phone conversation, or a Signal message for a signal:<number> chat_id.",
+            "description": "Answer a sivrad channel event: the spoken answer for a phone conversation, or a Signal message for a signal:<address> or signal:group:<id> chat_id.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -128,11 +129,13 @@ async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
             let Some(text) = args["text"].as_str() else {
                 return Outcome::error("text must be a string");
             };
-            if let Some(number) = signal::number_of_chat(chat) {
-                if state.people().by_number(number).is_none() {
-                    return Outcome::error(format!("{chat} is not a trusted person's number"));
+            if let Some(target) = signal::Chat::parse(chat) {
+                if !state.signal.is_trusted(&state.people(), &target) {
+                    return Outcome::error(format!(
+                        "{chat} is not a trusted person's Signal address or group"
+                    ));
                 }
-                return sent(state.signal.send(number, text).await);
+                return sent(state.signal.send(&target, text).await);
             }
             if state.answer(chat, Answer::reply(text)) {
                 Outcome::ok("sent")
@@ -168,14 +171,15 @@ async fn signal_send(state: &State, args: &Value) -> Outcome {
     let (Some(to), Some(text)) = (args["to"].as_str(), args["text"].as_str()) else {
         return Outcome::error("to and text must be strings");
     };
-    let people = state.people();
-    let Some(number) = people.number_of(to) else {
-        return Outcome::error(format!(
-            "unknown person; known: {}",
-            people.on_signal().join(", ")
-        ));
-    };
-    sent(state.signal.send(number, text).await)
+    match state.signal.address_of(&state.people(), to).await {
+        Ok(address) => sent(
+            state
+                .signal
+                .send(&signal::Chat::Direct(address), text)
+                .await,
+        ),
+        Err(e) => Outcome::error(e),
+    }
 }
 
 fn sent(result: Result<(), String>) -> Outcome {
@@ -400,8 +404,16 @@ mod tests {
         .await;
         assert_eq!(
             r["content"][0]["text"],
-            "signal:+15550000009 is not a trusted person's number"
+            "signal:+15550000009 is not a trusted person's Signal address or group"
         );
+        // a group nobody trusted has written in is refused too
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "signal:group:g1==", "text": "hi" }),
+        )
+        .await;
+        assert_eq!(r["isError"], true);
         let r = tool(&s, "signal_send", json!({ "to": "bob", "text": "hi" })).await;
         assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
         let r = tool(&s, "signal_send", json!({ "to": "mallory", "text": "hi" })).await;

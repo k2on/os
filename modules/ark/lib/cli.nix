@@ -7,9 +7,17 @@
 # a `pub static SERVICE`; ../cli/build.rs finds it, nothing is registered by
 # hand. Service commands read what they need from the flake through
 # `nix eval`, e.g. money's `arkServiceConfig.money` output.
-{ self, ... }:
+{ self, lib, ... }:
 {
-  perSystem =
+  # Each service module defines its own `flake.arkServiceConfig.<name>`;
+  # flake-parts only merges definitions of a declared output.
+  options.flake.arkServiceConfig = lib.mkOption {
+    type = lib.types.lazyAttrsOf lib.types.raw;
+    default = { };
+    description = "What `ark service <name>` reads from the flake through `nix eval`, keyed by service.";
+  };
+
+  config.perSystem =
     { pkgs, ... }:
     {
       packages.ark = (pkgs.callPackage ../_rust.nix { pname = "ark"; }).overrideAttrs (old: {
@@ -41,7 +49,7 @@
 
   # home-manager: `ark` (and its completions) for a user's shell, wherever they
   # are; it still has to be run from inside a checkout of this repo.
-  flake.homeModules.arkCli =
+  config.flake.homeModules.arkCli =
     { pkgs, ... }:
     {
       home.packages = [ self.packages.${pkgs.stdenv.hostPlatform.system}.ark ];

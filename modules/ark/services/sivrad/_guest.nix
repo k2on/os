@@ -1,22 +1,24 @@
-# The `sivrad` microVM: an always-on Claude Code session in tmux under
+# The `sivrad` container: an always-on Claude Code session in tmux under
 # systemd, fed by its own channel server (./channel, Rust). The family
 # reaches it from the sivrad app on their phones and over Signal; both arrive
 # through that channel, tagged with the same identity: their Kanidm username,
-# which /etc/sivrad/people.json maps to their Signal number. That file comes
+# which /etc/sivrad/people.json maps to their Signal number or username. That file comes
 # from ark.persons.<name>.signal in secrets/ark.nix (see ./default.nix), so
-# it changes with a deploy of adam and a restart of the VM.
+# it changes with a deploy of adam and a restart of the container.
 #
 # First boot, from the owner's laptop (`ark service sivrad`, ./cli/mod.rs;
-# it reaches the VM as sivrad@sivrad.<tailnet domain> over ssh):
+# it reaches the container as sivrad@sivrad.<tailnet domain> over ssh):
 #   1. `ark service sivrad init`: says who may use sivrad, makes sure the
-#      Signal backup secrets exist, then runs `claude auth login` in the VM
-#      (the browser flow, its code prompt passed through ssh) and restarts
-#      the session.
+#      Signal backup secrets exist, then runs `claude auth login` in the
+#      container (the browser flow, its code prompt passed through ssh) and
+#      restarts the session.
 #   2. Give the assistant its own Signal number:
 #        ark service sivrad signal register +NUMBER   (asks for the SMS code)
 #      It goes through the signal-cli daemon below, which loads the new
 #      account at once, and save it to the secrets repo; commit secrets/ and
-#      deploy adam so a rebuilt VM restores it (restoreSignal).
+#      deploy adam so a rebuilt container restores it (restoreSignal). Its
+#      profile, the name and the picture, is configuration: signalProfile in
+#      ./default.nix, applied by signal-cli's post-start check below.
 #   3. Attach once (ssh -t sivrad@sivrad.<tailnet domain> tmux attach -t
 #      sivrad) and accept the development-channel warning.
 #   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
@@ -27,32 +29,37 @@
 # long-polls it (./channel/src/http.rs). Signal goes through signal-cli's
 # JSON-RPC daemon on /run/sivrad/signal.sock (./channel/src/signal.rs).
 #
-# The VM is a tailnet node of its own, `sivrad` under headscale's `ark`
-# user, joining with adam's pre-auth key (see _host.nix for how the key gets
-# here). What it may reach on the tailnet is headscale's ACL (follow-up);
-# the key is reusable, so a dedicated key and user are a follow-up too.
+# The container is a tailnet node of its own, `sivrad` under headscale's
+# `ark` user, joining with adam's pre-auth key (see _host.nix for how the
+# key gets here). What it may reach on the tailnet is headscale's ACL
+# (follow-up); the key is reusable, so a dedicated key and user are a
+# follow-up too.
 #
-# The development-channel warning appears on every start, so after a VM or
-# service restart someone has to attach and accept it.
+# The development-channel warning appears on every start, so after a
+# container or service restart someone has to attach and accept it.
 #
-# Inside the VM, Claude Code is locked down by managed settings (highest
-# precedence, not overridable from ~/.claude): Bash runs in the bubblewrap
-# sandbox with a strict network allowlist and no unsandboxed retry, bypass
-# mode is disabled, and the OAuth token, the Signal account and its socket
-# are hidden from both the file tools and sandboxed commands. The channel
-# server runs outside that sandbox; the VM and adam's egress policy bound
-# it.
+# Inside the container, Claude Code is locked down by managed settings
+# (highest precedence, not overridable from ~/.claude): Bash runs in the
+# bubblewrap sandbox with a strict network allowlist and no unsandboxed
+# retry, bypass mode is disabled, and the OAuth token, the Signal account
+# and its socket are hidden from both the file tools and sandboxed commands.
+# The channel server runs outside that sandbox; the container and adam's
+# egress policy bound it.
+#
+# State (the Claude login, signal-cli's account, the tailnet node identity)
+# lives on the host under /var/lib/nixos-containers/sivrad, the container's
+# root, and survives rebuilds and restarts.
 {
   lib,
   pkgs,
   loginServer,
   oidc,
   people,
+  signalProfile,
   ...
 }:
 let
-  mac = "02:00:00:77:00:02";
-  inherit (import ./_vm.nix) home signalDir signalSocket;
+  inherit (import ./_container.nix) home signalDir signalSocket;
 
   # Who may talk to sivrad, keyed by Kanidm username:
   #   { "alice": { "signal": "+15551234567" } }
@@ -93,6 +100,16 @@ let
     # Pre-approves the workspace's .mcp.json server, which Claude Code would
     # otherwise ask about once.
     enabledMcpjsonServers = [ "sivrad" ];
+    # The latest Opus, with fast mode (faster output, same model) on.
+    model = "opus";
+    fastMode = true;
+    # Channels on, by policy. The development-channel warning still shows
+    # on every start (only an organisation policy that blocks channels, and
+    # with them their messages, skips it); acceptDevChannels below answers
+    # it. The plugin allowlist is empty: sivrad is a plain MCP server from
+    # .mcp.json, not a channel plugin.
+    channelsEnabled = true;
+    allowedChannelPlugins = [ ];
     sandbox = {
       enabled = true;
       autoAllowBashIfSandboxed = true;
@@ -126,30 +143,77 @@ let
   claude = pkgs.writeShellScript "sivrad-claude" ''
     exec claude --dangerously-load-development-channels server:sivrad
   '';
+  # Claude Code asks about --dangerously-load-development-channels on every
+  # start, and nothing in its configuration answers that: the dialog is
+  # only skipped for organisations whose policy blocks channels, which
+  # blocks their messages too. So it is answered from outside: this watches
+  # the session's pane for the prompt and sends Enter, the first choice
+  # ("I am using this for local development").
+  acceptDevChannels = pkgs.writeShellScript "sivrad-accept-dev-channels" ''
+    export PATH=${
+      lib.makeBinPath [
+        pkgs.tmux
+        pkgs.coreutils
+        pkgs.gnugrep
+      ]
+    }
+    for _ in $(seq 1 180); do
+      sleep 1
+      if tmux capture-pane -p -t sivrad:0.0 2>/dev/null | grep -q "Loading development channels"; then
+        tmux send-keys -t sivrad:0.0 Enter
+        exit 0
+      fi
+    done
+    echo "no development-channels prompt seen in 3 minutes" >&2
+  '';
   # `tmux -D` keeps the server in the foreground for systemd but takes no
   # command, so the session comes from this config; exit-empty (which -D
   # turns off) makes the server exit with Claude, so systemd restarts both.
   tmuxConf = pkgs.writeText "sivrad-tmux.conf" ''
     set -s exit-empty on
     new-session -d -s sivrad -c ${home}/workspace ${claude}
+    run-shell -b ${acceptDevChannels}
   '';
 
   # Seeds CLAUDE.md once (Claude may edit its copy later) and writes
   # .mcp.json on every start: it names the channel's store path, so it is
   # configuration, not user data. Managed settings approve the server; the
   # sandbox denies the model writes to .mcp.json.
+  # Also skips Claude Code's first-run questions, which nobody is there to
+  # answer: the theme picker and the rest of onboarding, and trust in the
+  # workspace (without it Claude Code starts no MCP server, so no channel)
+  # live in ~/.claude.json, merged in so a login (which writes that file
+  # too) is kept.
   seed = pkgs.writeShellScript "sivrad-seed" ''
     set -eu
-    export PATH=${pkgs.coreutils}/bin
+    export PATH=${
+      lib.makeBinPath [
+        pkgs.coreutils
+        pkgs.jq
+      ]
+    }
     cd ${home}/workspace
     [ -e CLAUDE.md ] || install -m 0600 /etc/sivrad/CLAUDE.md CLAUDE.md
     install -m 0600 ${pkgs.writeText "mcp.json" (builtins.toJSON mcpConfig)} .mcp.json
+
+    cfg=${home}/.claude.json
+    [ -s "$cfg" ] || echo '{}' > "$cfg"
+    # fullscreenUpsellSeenCount: the "try the fullscreen renderer" question
+    # stops after three showings.
+    jq --arg ws "${home}/workspace" '
+      .theme = (.theme // "dark")
+      | .hasCompletedOnboarding = true
+      | .fullscreenUpsellSeenCount = ([.fullscreenUpsellSeenCount // 0, 3] | max)
+      | .projects[$ws].hasTrustDialogAccepted = true
+    ' "$cfg" > "$cfg.tmp"
+    install -m 0600 "$cfg.tmp" "$cfg"
+    rm -f "$cfg.tmp"
   '';
 
   # The Signal account saved by `ark service sivrad signal ...` (the
   # sivrad_signal_account secret, a base64 tar.gz of signalDir without its
   # attachment, avatar and sticker caches), unpacked when signalDir has no
-  # account yet: after a rebuild, or a fresh state.img. The host copies it
+  # account yet: a fresh container root. The host copies it
   # in, world-readable, as the daemon runs as sivrad; empty until an
   # account has been saved. Unpacked aside and moved into place,
   # so a failed restore leaves no half account behind and runs again on the
@@ -182,80 +246,63 @@ let
   '';
 in
 {
-  microvm = {
-    hypervisor = "cloud-hypervisor";
-    vcpu = 2;
-    mem = 2048;
-    # Lets cloud-hypervisor report readiness to systemd; unique per host.
-    vsock.cid = 3;
-    # Boot from the host's /nix/store, shared read-only.
-    shares = [
-      {
-        tag = "ro-store";
-        source = "/nix/store";
-        mountPoint = "/nix/.ro-store";
-        proto = "virtiofs";
-        readOnly = true;
-      }
-    ];
-    # Persistent state on a block device: signal-cli and Claude Code use
-    # SQLite and need reliable locking.
-    volumes = [
-      {
-        image = "state.img";
-        mountPoint = home;
-        size = 4096;
-        fsType = "ext4";
-      }
-      # The node identity, so the VM stays one tailnet node across reboots.
-      {
-        image = "tailscale.img";
-        mountPoint = "/var/lib/tailscale";
-        size = 64;
-        fsType = "ext4";
-      }
-    ];
-    interfaces = [
-      {
-        type = "tap";
-        id = "vm-sivrad";
-        inherit mac;
-      }
-    ];
-  };
-
   nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
 
-  # microvm.nix defaults guests to networkd; match the NIC by MAC because the
-  # name depends on its PCI slot.
-  networking.useDHCP = false;
-  systemd.network.networks."10-eth" = {
-    matchConfig.MACAddress = mac;
-    address = [ "192.168.77.2/24" ];
-    gateway = [ "192.168.77.1" ];
-    dns = [
-      "1.1.1.1"
-      "8.8.8.8"
-    ];
-  };
+  # eth0's address and the default route via adam come from nixos-containers
+  # (_host.nix). Public resolvers rather than adam's resolv.conf: the host's
+  # resolver is not reachable from the container's network namespace, and
+  # the egress policy only forwards DNS to public addresses anyway.
+  networking.useHostResolvConf = false;
+  networking.nameservers = [
+    "1.1.1.1"
+    "8.8.8.8"
+  ];
 
-  services.tailscale = {
-    enable = true;
-    authKeyFile = "/run/host-credentials/headscale_preauth_key";
-    extraUpFlags = [
-      "--login-server"
-      loginServer
-    ];
-  };
-  # As in den.aspects.tailnet: headscale may not be reachable yet, and the
-  # unit only logs in when the backend needs it.
-  systemd.services.tailscaled-autoconnect = {
+  # No services.tailscale.authKeyFile: the NixOS tailscaled-autoconnect unit
+  # it would add is Type=notify and only reports ready once the node is
+  # Running. Nothing in the guest's boot may wait for the network like
+  # that: nixos-containers configures the host end of the veth in
+  # container@sivrad's ExecStartPost, which runs once the guest's systemd
+  # reports startup finished, and that waits for every unit of the boot.
+  # The two would wait for each other until the host unit's one-minute
+  # start timeout killed the container (it did). This plain service does
+  # the same job outside of readiness: it keeps trying until the node runs,
+  # and only logs in when the backend needs it.
+  services.tailscale.enable = true;
+  systemd.services.sivrad-tailnet = {
+    description = "Join the tailnet with adam's pre-auth key";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "tailscaled.service" ];
+    requires = [ "tailscaled.service" ];
     unitConfig.RequiresMountsFor = "/run/host-credentials";
+    path = [
+      pkgs.tailscale
+      pkgs.jq
+    ];
     serviceConfig = {
       Restart = "on-failure";
       RestartSec = 10;
-      RemainAfterExit = true;
     };
+    script = ''
+      while :; do
+        state=$(tailscale status --json --peers=false | jq -r .BackendState)
+        case "$state" in
+          Running)
+            echo "on the tailnet"
+            exit 0
+            ;;
+          NeedsLogin | NeedsMachineAuth | Stopped)
+            echo "logging in ($state)"
+            tailscale up --auth-key "$(cat /run/host-credentials/headscale_preauth_key)" \
+              --login-server ${lib.escapeShellArg loginServer} --timeout 30s || true
+            ;;
+          *)
+            echo "waiting ($state)"
+            ;;
+        esac
+        sleep 5
+      done
+    '';
   };
 
   # The phone reaches the sivrad channel over the tailnet only; the tap side
@@ -308,7 +355,12 @@ in
       aloud), and use `phone_tool` for things the phone must do itself, such
       as timers, alarms or texts.
     - `kind="signal"` events are Signal messages (`chat_id` is
-      `signal:<number>`). Answer them with `reply` to that chat_id.
+      `signal:<address>`). Answer them with `reply` to that chat_id.
+    - `chat="group"` events come from a Signal group (`chat_id` is
+      `signal:group:<id>`): several people, and everyone in it reads your
+      reply. Only trusted people's messages reach you, but others may be in
+      the group. Be the group's assistant: answer when addressed or when you
+      can help, and let conversation between people pass without comment.
     - Reply to the chat_id you are answering. Message another person only with
       `signal_send`, only when the sender asked you to, and confirm to the
       sender.
@@ -322,7 +374,8 @@ in
       or socket, SSH keys, or anything under /run/host-credentials.
   '';
 
-  # The volume is mounted after users are created, so fix ownership here.
+  # The home is under /var/lib, not created by the user module; make it and
+  # the directories under it here, owned by sivrad.
   systemd.tmpfiles.rules = [
     "d ${home} 0700 sivrad sivrad -"
     "d ${home}/workspace 0700 sivrad sivrad -"
@@ -354,6 +407,65 @@ in
         "daemon --socket ${signalSocket} --receive-mode on-connection"
         "--ignore-attachments --ignore-stories --ignore-avatars --ignore-stickers"
       ];
+      # The daemon checks each account with the server as it loads it, and
+      # when that fails (the network is not quite up yet at boot) it carries
+      # on with no account at all, which looks healthy to systemd while the
+      # channel can neither send nor receive. So this fails the start when
+      # there is an account on disk that the daemon did not load, and
+      # Restart= tries again.
+      #
+      # With the account loaded, it also sets the account's Signal profile
+      # (name and picture: signalProfile, from ./default.nix). A stamp in
+      # signalDir remembers what was applied, so the profile is uploaded
+      # only when it changes, or after a fresh restore. A failed upload is
+      # logged, not fatal: the next start tries again.
+      ExecStartPost =
+        let
+          profile = {
+            inherit (signalProfile) givenName;
+          }
+          // lib.optionalAttrs (signalProfile.avatar != null) { avatar = "${signalProfile.avatar}"; };
+          wanted = pkgs.writeText "sivrad-signal-profile.json" (builtins.toJSON profile);
+        in
+        pkgs.writeShellScript "sivrad-signal-cli-loaded" ''
+          export PATH=${
+            lib.makeBinPath [
+              pkgs.coreutils
+              pkgs.jq
+              pkgs.socat
+            ]
+          }
+          registered=$(jq -r '.accounts | length' ${signalDir}/data/accounts.json 2>/dev/null || echo 0)
+          if [ "''${registered:-0}" -lt 1 ]; then
+            exit 0 # nothing registered yet
+          fi
+          for _ in $(seq 1 60); do
+            [ -S ${signalSocket} ] && break
+            sleep 1
+          done
+          rpc() {
+            printf '%s\n' "$1" | socat -t 60 - UNIX-CONNECT:${signalSocket} | jq -c 'select(.id == 1)' | head -1
+          }
+          accounts=$(rpc '{"jsonrpc":"2.0","id":1,"method":"listAccounts","params":{}}')
+          account=$(printf '%s' "$accounts" | jq -r '.result[0].number // .result[0].aci // empty')
+          if [ -z "$account" ]; then
+            echo "signal-cli loaded no account (see its log above); restarting" >&2
+            exit 1
+          fi
+
+          stamp=${signalDir}/profile.applied
+          if [ -e "$stamp" ] && cmp -s "$stamp" ${wanted}; then
+            exit 0
+          fi
+          request=$(jq -c --arg account "$account" '{jsonrpc: "2.0", id: 1, method: "updateProfile", params: (. + {account: $account})}' ${wanted})
+          answer=$(rpc "$request")
+          if [ -z "$answer" ] || printf '%s' "$answer" | jq -e '.error' >/dev/null; then
+            echo "updateProfile failed: ''${answer:-no answer from signal-cli}" >&2
+            exit 0
+          fi
+          install -m 0600 ${wanted} "$stamp"
+          echo "Signal profile applied"
+        '';
       # Also after a plain exit. Accounts registered through the
       # daemon (`ark service sivrad signal`) load without a restart.
       Restart = "always";
@@ -367,16 +479,58 @@ in
     };
   };
 
+  # systemd-nspawn masks a dozen paths under /proc (/proc/sys bound
+  # read-only, /proc/kmsg, /proc/kcore, /proc/sysrq-trigger ... hidden
+  # under tmpfs). The kernel refuses a fresh procfs mount from inside a user
+  # namespace while the visible procfs carries such over-mounts, so
+  # bubblewrap, which Claude Code's Bash sandbox needs, fails with "Can't
+  # mount proc on /proc". Take the masks off. They only kept the sysctls
+  # from container root, who shares the host's uid 0 and holds
+  # CAP_SYS_ADMIN anyway (privateUsers = "no", _host.nix); `sivrad` and the
+  # sandboxed model are bound by the files' own permissions as before.
+  systemd.services.sivrad-unmask-proc = {
+    description = "Remove nspawn's /proc masks so bubblewrap can mount procfs";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "sivrad.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    path = [
+      pkgs.util-linux
+      pkgs.gawk
+      pkgs.coreutils
+    ];
+    # Some paths are masked more than once (stacked mounts) and the list
+    # names them once per layer, so a pass may try a path that the previous
+    # umount already cleared; unmount until none are left, a few passes is
+    # plenty.
+    script = ''
+      for _ in 1 2 3 4 5; do
+        masks=$(awk '$5 ~ "^/proc/" { print $5 }' /proc/self/mountinfo | sort -r | uniq)
+        [ -n "$masks" ] || exit 0
+        for m in $masks; do
+          umount "$m" 2>/dev/null || umount -l "$m" 2>/dev/null || true
+        done
+      done
+      echo "mounts left under /proc:" >&2
+      awk '$5 ~ "^/proc/" { print $5 }' /proc/self/mountinfo >&2
+      exit 1
+    '';
+  };
+
   systemd.services.sivrad = {
     description = "Claude Code assistant session (tmux session `sivrad`)";
     wantedBy = [ "multi-user.target" ];
     after = [
       "network-online.target"
       "signal-cli.service"
+      "sivrad-unmask-proc.service"
     ];
     wants = [
       "network-online.target"
       "signal-cli.service"
+      "sivrad-unmask-proc.service"
     ];
     unitConfig.RequiresMountsFor = home;
     path = [ "/run/current-system/sw" ];
@@ -391,11 +545,28 @@ in
       WorkingDirectory = "${home}/workspace";
       ExecStartPre = seed;
       ExecStart = "${pkgs.tmux}/bin/tmux -D -f ${tmuxConf}";
+      # `tmux -D` starts the server, but the server only reads its
+      # configuration, and so only starts Claude, once a client connects.
+      # Be that client, or nothing happens until someone attaches.
+      ExecStartPost = pkgs.writeShellScript "sivrad-tmux-connect" ''
+        export PATH=${
+          lib.makeBinPath [
+            pkgs.coreutils
+            pkgs.tmux
+          ]
+        }
+        for _ in $(seq 1 30); do
+          tmux has-session -t sivrad 2>/dev/null && exit 0
+          sleep 1
+        done
+        echo "tmux did not create the sivrad session" >&2
+        exit 1
+      '';
       Restart = "always";
       RestartSec = "30s";
       KillMode = "control-group";
 
-      # Modest hardening; the VM is the real boundary. Nothing here may stop
+      # Modest hardening; the container is the real boundary. Nothing here may stop
       # bubblewrap from creating user namespaces or mounting /proc, so no
       # RestrictNamespaces, ProtectKernelTunables, ProtectProc or ProcSubset.
       NoNewPrivileges = true; # bubblewrap in nixpkgs is not setuid

@@ -8,6 +8,8 @@
         extraUpFlags = [ "--login-server=https://vpn.${config.ark.mainDomain}" ];
       };
 
+      networking.firewall.trustedInterfaces = [ "tailscale0" ];
+
       systemd.services.tailscale-restart = {
         description = "Restart Tailscale after waking up";
         after = [ "suspend.target" ];

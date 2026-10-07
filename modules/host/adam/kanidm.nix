@@ -21,6 +21,13 @@ in
         }
       ) clients;
 
+      # 1.10 is end-of-life upstream and marked insecure in nixpkgs. Bumping to
+      # 1.11 migrates the server database: run `kanidmd domain upgrade-check`
+      # on adam first, then change the package and drop this allowance.
+      nixpkgs.config.permittedInsecurePackages = [
+        "kanidm-with-secret-provisioning-1.10.5"
+      ];
+
       services.kanidm = {
         package = pkgs.kanidmWithSecretProvisioning_1_10;
         server = {
