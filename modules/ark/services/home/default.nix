@@ -47,6 +47,17 @@ in
                   hosts:
                     - 10.0.0.77
                     - 10.0.0.186
+              # One Adaptive Lighting switch per room. Each points at the
+              # room's light group, which Adaptive Lighting expands, so lights
+              # added to a room's group are picked up without changing this.
+              # The YAML is re-imported on every start and overrides the UI.
+              adaptive_lighting:
+                - name: Living room
+                  lights:
+                    - light.living_room
+                - name: Bedroom
+                  lights:
+                    - light.bedroom_2
             '';
           in
           {
