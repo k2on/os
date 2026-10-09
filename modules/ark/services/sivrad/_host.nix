@@ -23,7 +23,9 @@ let
   # sops of its own. It holds a copy of adam's tailnet pre-auth key
   # (den.aspects.tailnet), root-only, and the saved Signal account
   # signal-account.tar.gz.b64 (sivrad_signal_account, empty until one is
-  # saved), world-readable for signal-cli, which runs as `sivrad`. The
+  # saved), world-readable for signal-cli, which runs as `sivrad`; and the
+  # browser screen's VNC password (sivrad_vnc_password), root-only too: in
+  # the guest systemd hands it to x11vnc alone (./_chrome.nix). The
   # directory is 0711: no listing. The container shares the host's UIDs
   # (privateUsers = "no"), so ownership passes straight through.
   credentialsDir = "/run/sivrad-credentials";
@@ -101,6 +103,7 @@ in
       chown root:root ${credentialsDir}
       install -m 0400 -o root -g root ${config.sops.secrets.headscale_preauth_key.path} ${credentialsDir}/headscale_preauth_key
       install -m 0444 -o root -g root ${config.sops.secrets.sivrad_signal_account.path} ${credentialsDir}/signal-account.tar.gz.b64
+      install -m 0400 -o root -g root ${config.sops.secrets.sivrad_vnc_password.path} ${credentialsDir}/vnc_password
       # The account's files (./_kanidm.nix and the services fill it) must
       # exist for the bind mount below.
       install -d -m 0711 -o root -g root ${bot.tokensDir}

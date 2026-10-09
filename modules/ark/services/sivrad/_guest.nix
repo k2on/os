@@ -23,6 +23,12 @@
 #      sivrad) and accept the development-channel warning.
 #   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
 #      and sign in with Kanidm.
+#   5. Sign the browser's Claude extension in (./_chrome.nix): open
+#      http://sivrad:6080/ from the tailnet, enter the VNC password (the
+#      sivrad_vnc_password secret: `ark sops -d sivrad_vnc_password.yaml`),
+#      click the Claude icon in the toolbar and sign in to claude.ai with
+#      the account of step 1. Then `/chrome` in the session (attach as in
+#      step 3) should say "Status: Enabled" and "Extension: Installed".
 # Only people in people.json get through, from either side.
 #
 # The channel listens on TCP 8788, reachable over tailscale0 only; the phone
@@ -47,6 +53,15 @@
 # Kanidm password and the API tokens each service minted for it, files
 # bind-mounted in read-only under /run/host-tokens (./_host.nix), so it can
 # sign in to those services and, say, read where people are.
+#
+# And a real browser (./_chrome.nix): ungoogled-chromium on a virtual
+# screen with the Claude in Chrome extension, driven through Claude Code's
+# own claude-in-chrome tools (`claude --chrome` below), for the sites that
+# turn the headless one away. People on the tailnet watch it and take it
+# over at http://sivrad:6080/ (noVNC, behind the sivrad_vnc_password
+# secret), to sign in or get past a CAPTCHA for the assistant. Its profile
+# keeps those sign-ins, and the extension's own claude.ai sign-in (step 5
+# above), which is the one part of it that is not configuration.
 #
 # Inside the container, Claude Code is locked down by managed settings
 # (highest precedence, not overridable from ~/.claude): Bash runs in the
@@ -82,6 +97,14 @@ let
   playwrightMcp = pkgs.callPackage ./_browser.nix { };
   # The browser's profile: cookies and sign-ins, kept between sessions.
   browserProfile = "${home}/browser";
+  # The headed browser with the Claude extension (./_chrome.nix): its
+  # profile, holding the extension's claude.ai sign-in and whatever sites
+  # it is signed in to, the screen it runs on, and the noVNC page's port.
+  chrome = {
+    profile = "${home}/.config/chromium";
+    display = ":1";
+    vncPort = 6080;
+  };
   # fontconfig is off in the guest and nixpkgs' Playwright Chromium comes
   # with a fonts.conf naming no font directory, so without this every page
   # would screenshot as boxes.
@@ -132,15 +155,24 @@ let
   # by both of its paths: the model knows people by their usernames, and
   # the channel resolves those to numbers. It is in the world-readable Nix
   # store, so this keeps the numbers out of the model's way, not secret.
-  # And the browser's profile: its cookies are the sessions it signed in
-  # to; the model uses them through the browser, not by reading them.
+  # And both browsers' profiles: their cookies are the sessions they signed
+  # in to; the model uses them through the browsers, not by reading them.
+  # Then what would let a sandboxed command around the browser tools: the
+  # headed browser's screen (Xvfb's socket; taking it over is for people,
+  # through noVNC) and the native host's socket, which talks to the Claude
+  # extension directly. And systemd's credentials, where x11vnc's copy of
+  # the VNC password is (its own user's anyway, ./_chrome.nix).
   secretPaths = [
     "${home}/.claude/.credentials.json"
     signalDir
     browserProfile
+    chrome.profile
     "/run/sivrad"
     "/var/lib/tailscale"
     "/run/host-credentials"
+    "/run/credentials"
+    "/tmp/.X11-unix"
+    "/tmp/claude-mcp-browser-bridge-sivrad"
     "/etc/sivrad/people.json"
     "${peopleJson}"
   ];
@@ -180,17 +212,25 @@ let
         "Read(/${home}/.claude/.credentials.json)"
         "Read(/${signalDir}/**)"
         "Read(/${browserProfile}/**)"
+        "Read(/${chrome.profile}/**)"
         "Read(//run/sivrad/**)"
         "Read(//var/lib/tailscale/**)"
         "Read(//run/host-credentials/**)"
+        "Read(//run/credentials/**)"
         "Read(//etc/sivrad/people.json)"
         "Read(/${peopleJson})"
       ];
     };
   };
 
+  # --chrome: the claude-in-chrome tools, connected to the headed browser
+  # through its native messaging host (./_chrome.nix). The flag rather than
+  # the claudeInChromeDefaultEnabled setting, which lives in ~/.claude.json,
+  # Claude Code's state rather than configuration. It needs the claude.ai
+  # login of `ark service sivrad init` (not an API key or setup-token) and
+  # the extension signed in to that same account.
   claude = pkgs.writeShellScript "sivrad-claude" ''
-    exec claude --dangerously-load-development-channels server:sivrad
+    exec claude --chrome --dangerously-load-development-channels server:sivrad
   '';
   # Claude Code asks about --dangerously-load-development-channels on every
   # start, and nothing in its configuration answers that: the dialog is
@@ -248,11 +288,15 @@ let
     cfg=${home}/.claude.json
     [ -s "$cfg" ] || echo '{}' > "$cfg"
     # fullscreenUpsellSeenCount: the "try the fullscreen renderer" question
-    # stops after three showings.
+    # stops after three showings. The Chrome ones: the introduction --chrome
+    # shows once, and the offer to install the extension, which it never
+    # needs to make (./_chrome.nix installs it).
     jq --arg ws "${home}/workspace" '
       .theme = (.theme // "dark")
       | .hasCompletedOnboarding = true
       | .fullscreenUpsellSeenCount = ([.fullscreenUpsellSeenCount // 0, 3] | max)
+      | .hasCompletedClaudeInChromeOnboarding = true
+      | .chromeInstallUpsellDismissed = true
       | .projects[$ws].hasTrustDialogAccepted = true
     ' "$cfg" > "$cfg.tmp"
     install -m 0600 "$cfg.tmp" "$cfg"
@@ -295,6 +339,13 @@ let
   '';
 in
 {
+  imports = [
+    (import ./_chrome.nix {
+      inherit home;
+      inherit (chrome) profile display vncPort;
+    })
+  ];
+
   nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
 
   # eth0's address and the default route via adam come from nixos-containers
@@ -354,9 +405,13 @@ in
     '';
   };
 
-  # The phone reaches the sivrad channel over the tailnet only; the tap side
-  # (adam) stays SSH-only.
-  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8788 ];
+  # The phone reaches the sivrad channel over the tailnet only, and so do
+  # people the noVNC page of the headed browser (./_chrome.nix); the tap
+  # side (adam) stays SSH-only.
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [
+    8788
+    chrome.vncPort
+  ];
 
   services.openssh = {
     enable = true;
@@ -426,6 +481,23 @@ in
       people. It keeps its profile between sessions, so where you signed in
       once you stay signed in. Files it saves (screenshots, PDFs) land in
       this workspace, under `browser/` unless you name them.
+    - You also have a real browser: Chromium with the Claude extension, on
+      a screen of its own, which you drive with the `claude-in-chrome` tools.
+      It is slower, so keep playwright for everyday lookups and use Chrome
+      when a site blocks or breaks the headless browser (bot checks,
+      "unsupported browser", endless loading), or when a person has to see
+      or do something in it. It has its own sign-ins, kept between sessions,
+      and its downloads land in `downloads/` here.
+    - People can watch and take over that browser at
+      http://sivrad:${toString chrome.vncPort}/ (from the family's tailnet
+      only; the page asks for a password they already have, so never ask
+      for it or send it). When a page needs a person, such as signing in with
+      their own account, a CAPTCHA or a two-factor prompt, leave it open in
+      Chrome, send them that link with what to do there, and carry on once
+      they tell you they are done. Whatever they type there you could see;
+      do not keep it. If the Chrome tools are missing or say the extension
+      is not connected, tell the owner: the extension needs a one-time
+      sign-in through that page.
     - Signal messages carry files both ways. A received file (an image, a
       document, anything) is listed in the event as `[file: <path> (<type>)]`
       and sits in `inbox/` here; look at an image with Read. To send a file

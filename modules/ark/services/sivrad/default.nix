@@ -108,6 +108,15 @@ in
         generate = true;
         restartUnits = [ "sivrad-kanidm-account.service" ];
       };
+      # The password of the headed browser's VNC screen (./_chrome.nix),
+      # which people type into the noVNC page; ./_host.nix hands it to the
+      # container, root-only. Eight characters because VNC's own
+      # authentication uses no more: the rest of a longer one would be
+      # ignored. The page is only on the tailnet.
+      sivrad_vnc_password = {
+        generate = "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 8";
+        restartUnits = [ "sivrad-credentials.service" ];
+      };
     };
 
     nixos =
