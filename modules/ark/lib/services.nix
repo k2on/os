@@ -14,11 +14,15 @@
 #     port = 8123;                 # omit to auto-assign
 #     domain = "home.ark.us";     # defaults to "<name>.<ark.mainDomain>"
 #     aliases = [ "office" ];     # other names that reach this service; bare labels get mainDomain
+#     web = false;                # no HTTP endpoint: no port, domain, nginx vhost or DNS name
 #     oidc = {                    # declaring this gives the service a kanidm client
 #       callbacks = [ "/auth/oidc/callback" ];    # relative to https://<domain>, or absolute
 #       displayName = "Home";     # defaults to the capitalised name
 #       landing = "https://...";  # defaults to https://<domain>
 #       scopes = [ ... ];         # defaults to openid profile email groups
+#       clientId = "home-app";    # the kanidm client's name, when not the service's
+#       public = true;            # a public client (PKCE, no secret), e.g. a phone app
+#       groups.users = [ ... ];   # members of kanidm group <name>_users, besides ark.groups
 #       pkce = true;              # false for clients that cannot do PKCE
 #       legacyCrypto = false;     # true for clients that only accept RS256 tokens
 #       owner = "hass";           # unix user on this host that reads the secret file
@@ -67,12 +71,17 @@ let
         acc // lib.mapAttrs (_: normalize) reg
     ) { } regs;
 
-  # { name -> spec } -> { name -> port }
+  # A service with no web endpoint (web = false) gets no port and no
+  # domain: nothing for nginx or the tailnet's DNS. It still gets its
+  # secrets, its OIDC client and its service-<name> aspect.
+  hasWeb = spec: spec.web or true;
+
+  # { name -> spec } -> { name -> port }; null without a web endpoint.
   assignPorts =
     services:
     let
       autoNames = lib.sort lib.lessThan (
-        lib.attrNames (lib.filterAttrs (_: s: (s.port or null) == null) services)
+        lib.attrNames (lib.filterAttrs (_: s: hasWeb s && (s.port or null) == null) services)
       );
       autoFor =
         name:
@@ -81,14 +90,23 @@ let
           10 * lib.lists.findFirstIndex (n: n == name) (throw "ark: unregistered service '${name}'") autoNames
         );
     in
-    lib.mapAttrs (name: s: if (s.port or null) != null then s.port else autoFor name) services;
+    lib.mapAttrs (
+      name: s:
+      if !hasWeb s then
+        null
+      else if (s.port or null) != null then
+        s.port
+      else
+        autoFor name
+    ) services;
 
-  domainFor = name: spec: spec.domain or "${name}.${config.ark.mainDomain}";
+  domainFor =
+    name: spec: if !hasWeb spec then null else spec.domain or "${name}.${config.ark.mainDomain}";
 
   # Every name a service answers to: its domain plus aliases.
   domainsFor =
     name: spec:
-    [ (domainFor name spec) ]
+    lib.optional (hasWeb spec) (domainFor name spec)
     ++ map (a: if lib.hasInfix "." a then a else "${a}.${config.ark.mainDomain}") (spec.aliases or [ ]);
 
   # Turn a spec into a NixOS module, injecting `service` alongside the
@@ -106,10 +124,12 @@ let
           domain = domainFor name spec;
         }
         // lib.optionalAttrs (oidc != null) {
-          oidc = oidc // {
-            clientSecretFile = args.config.sops.secrets.${oidc.secret}.path;
-            clientSecret = args.config.sops.placeholder.${oidc.secret};
-          };
+          oidc =
+            oidc
+            // lib.optionalAttrs (!oidc.public) {
+              clientSecretFile = args.config.sops.secrets.${oidc.secret}.path;
+              clientSecret = args.config.sops.placeholder.${oidc.secret};
+            };
         };
       m = spec.nixos or { };
     in
@@ -173,7 +193,7 @@ in
             ark-service.${name} = raw;
             secrets =
               (spec.secrets or { })
-              // lib.optionalAttrs (oidc != null) {
+              // lib.optionalAttrs (oidc != null && !oidc.public) {
                 ${oidc.secret} = {
                   generate = true;
                 }
@@ -187,6 +207,7 @@ in
             "port"
             "domain"
             "aliases"
+            "web"
             "oidc"
             "secrets"
             "nixos"

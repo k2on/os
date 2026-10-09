@@ -21,6 +21,11 @@ pub struct Config {
     pub tool_wait: Duration,
     pub people_file: PathBuf,
     pub signal_socket: PathBuf,
+    /// Claude's workspace: the only place files sent over Signal may come
+    /// from, and where received ones go (files.rs).
+    pub workspace: PathBuf,
+    /// Where signal-cli puts the attachments it downloads.
+    pub signal_attachments: PathBuf,
 }
 
 /// The eventual HTTP answer to a held request.
@@ -282,6 +287,8 @@ mod tests {
             tool_wait: Duration::from_millis(timeout_ms),
             people_file: "/nonexistent".into(),
             signal_socket: "/nonexistent.sock".into(),
+            workspace: std::env::temp_dir(),
+            signal_attachments: "/nonexistent".into(),
         };
         Arc::new(State::new(config, Oidc::new(None, None)).0)
     }

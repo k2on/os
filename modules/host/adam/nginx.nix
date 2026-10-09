@@ -13,6 +13,7 @@ in
     let
       services = mergeServices ark-service;
       ports = assignServicePorts services;
+      # Only services with a web endpoint (lib/services.nix).
       serviceVhosts = lib.mapAttrs' (
         name: spec:
         lib.nameValuePair (serviceDomain name spec) {
@@ -29,7 +30,7 @@ in
             proxyWebsockets = true;
           };
         }
-      ) services;
+      ) (lib.filterAttrs (_: s: s.web or true) services);
     in
     {
       services.nginx = {

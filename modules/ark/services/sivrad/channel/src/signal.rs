@@ -1,10 +1,13 @@
 //! Signal, through signal-cli's JSON-RPC daemon on a unix socket
 //! (`signal-cli daemon --socket`, newline-delimited JSON-RPC 2.0).
 //!
-//! Incoming `receive` notifications become channel events only for plain
-//! one-to-one messages from a person in the identity table; everything else
-//! (unknown senders, groups, receipts, typing, sync messages) is dropped and
-//! counted on stderr, never echoing message text. Replies go out with `send`.
+//! Incoming `receive` notifications become channel events only for
+//! messages from a person in the identity table; everything else (unknown
+//! senders, receipts, typing, sync messages) is dropped and counted on
+//! stderr, never echoing message text. Replies go out with `send`.
+//! A message's attachments, which signal-cli has downloaded by the time it
+//! reports the message, are moved into the workspace (files.rs) and listed
+//! in the event; a reply may attach workspace files the same way.
 //! The socket may be absent (signal-cli not running or not yet registered):
 //! we keep reconnecting with backoff and the phone side carries on.
 //!
@@ -33,6 +36,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::files;
 use crate::identity::{People, SignalId};
 use crate::mcp::channel_event;
 use crate::state::State;
@@ -94,9 +98,19 @@ pub struct Inbound {
     pub sender: String,
     /// The sender's number or account id, for the read receipt.
     pub sender_address: String,
+    /// Empty when the message is only attachments.
     pub text: String,
+    pub attachments: Vec<Attachment>,
     /// The message's timestamp, which a read receipt refers to.
     pub timestamp: Option<u64>,
+}
+
+/// An attachment as signal-cli reports it: `id` is the name of the file it
+/// saved in its attachments directory.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Attachment {
+    pub id: String,
+    pub content_type: String,
 }
 
 /// Accepts a `receive` notification's params, or says why it is dropped.
@@ -122,10 +136,28 @@ pub fn classify(
         Value::Null => None,
         info => Some(info["groupId"].as_str().ok_or("group")?),
     };
-    let text = match message["message"].as_str() {
-        Some(t) if !t.trim().is_empty() => t,
-        _ => return Err("empty"),
-    };
+    // Any file: images, documents, voice notes. The id is the name signal-cli
+    // saved it under.
+    let attachments: Vec<Attachment> = message["attachments"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|a| {
+                    Some(Attachment {
+                        id: a["id"].as_str()?.to_owned(),
+                        content_type: a["contentType"]
+                            .as_str()
+                            .unwrap_or("application/octet-stream")
+                            .to_owned(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let text = message["message"].as_str().unwrap_or("").trim();
+    if text.is_empty() && attachments.is_empty() {
+        return Err("empty");
+    }
     let source = envelope["source"].as_str();
     let by_number = envelope["sourceNumber"]
         .as_str()
@@ -150,6 +182,7 @@ pub fn classify(
         sender: sender.to_owned(),
         sender_address: address.to_owned(),
         text: text.to_owned(),
+        attachments,
         timestamp: envelope["timestamp"].as_u64(),
     })
 }
@@ -171,12 +204,24 @@ fn deliver(state: &Arc<State>, m: Inbound) {
         Chat::Direct(_) => "direct",
         Chat::Group(_) => "group",
     };
-    eprintln!("sivrad: Signal message from {} ({chat_kind})", m.sender);
+    eprintln!(
+        "sivrad: Signal message from {} ({chat_kind}, {} files)",
+        m.sender,
+        m.attachments.len()
+    );
     if let Chat::Group(group) = &m.chat {
         state.signal.groups.lock().unwrap().insert(group.clone());
     }
+    // The text, then one line per file now in the inbox.
+    let mut content = m.text.clone();
+    for file in files::receive(&state.config, &m.attachments) {
+        if !content.is_empty() {
+            content.push('\n');
+        }
+        content.push_str(&file.line());
+    }
     state.send(channel_event(
-        &m.text,
+        &content,
         &[
             ("chat_id", &m.chat.id()),
             ("kind", "signal"),
@@ -497,10 +542,14 @@ impl Signal {
         }
     }
 
-    /// Sends to a chat: a number, an account id, or a group.
-    pub async fn send(&self, chat: &Chat, text: &str) -> Result<(), String> {
+    /// Sends to a chat: a number, an account id, or a group. `files` are
+    /// paths signal-cli can read (files::outgoing has checked them).
+    pub async fn send(&self, chat: &Chat, text: &str, files: &[String]) -> Result<(), String> {
         let mut params = target(chat);
         params["message"] = json!(text);
+        if !files.is_empty() {
+            params["attachments"] = json!(files);
+        }
         self.request("send", params).await.map(|_| ())
     }
 }
@@ -544,6 +593,7 @@ mod tests {
                 sender: "alice".into(),
                 sender_address: "+15550000001".into(),
                 text: "hi".into(),
+                attachments: vec![],
                 timestamp: Some(1),
             }
         );
@@ -568,6 +618,7 @@ mod tests {
                 sender: "carol".into(),
                 sender_address: "aci-carol".into(),
                 text: "hi".into(),
+                attachments: vec![],
                 timestamp: Some(1),
             }
         );
@@ -592,6 +643,7 @@ mod tests {
                 sender: "alice".into(),
                 sender_address: "+15550000001".into(),
                 text: "hi all".into(),
+                attachments: vec![],
                 timestamp: Some(1),
             }
         );
@@ -601,6 +653,40 @@ mod tests {
         );
         let no_id = envelope("+15550000001", json!({ "message": "hi", "groupInfo": {} }));
         assert_eq!(classify(&no_id, &p, &n), Err("group"));
+    }
+
+    #[test]
+    fn carries_attachments() {
+        let p = people();
+        let n = none();
+        let data = json!({
+            "message": "look",
+            "attachments": [
+                { "contentType": "image/jpeg", "id": "abc.jpg", "size": 3 },
+                { "contentType": "application/pdf", "id": "def.pdf" },
+                { "contentType": "image/png" }
+            ]
+        });
+        let m = classify(&envelope("+15550000001", data), &p, &n).unwrap();
+        assert_eq!(m.text, "look");
+        assert_eq!(
+            m.attachments,
+            [
+                Attachment {
+                    id: "abc.jpg".into(),
+                    content_type: "image/jpeg".into()
+                },
+                Attachment {
+                    id: "def.pdf".into(),
+                    content_type: "application/pdf".into()
+                }
+            ]
+        );
+        // a file with no text is a message too
+        let only_file = json!({ "message": null, "attachments": [{ "id": "x.bin" }] });
+        let m = classify(&envelope("+15550000001", only_file), &p, &n).unwrap();
+        assert_eq!(m.text, "");
+        assert_eq!(m.attachments[0].content_type, "application/octet-stream");
     }
 
     #[test]
@@ -709,7 +795,7 @@ mod tests {
         *signal.account.lock().unwrap() = Some("+15559999999".into());
         assert_eq!(
             signal
-                .send(&Chat::Direct("+15550000001".into()), "hi")
+                .send(&Chat::Direct("+15550000001".into()), "hi", &[])
                 .await,
             Err("signal-cli is not running".into())
         );

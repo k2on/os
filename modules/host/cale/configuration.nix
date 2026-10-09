@@ -148,6 +148,8 @@
 
         pkgs-unstable.claude-code
 
+        (pkgs.chromium.override { enableWideVine = true; })
+
         gimp
         inkscape
 
@@ -189,7 +191,14 @@
 
       # transparent.nvim (used by neovim) ships no license file, so nixpkgs
       # marks it unfree as of 26.05. Allow just this package.
-      nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "transparent.nvim" ];
+      nixpkgs.config.allowUnfreePredicate =
+        pkg:
+        builtins.elem (lib.getName pkg) [
+          "chromium"
+          "chromium-unwrapped"
+          "widevine-cdm"
+          "transparent.nvim"
+        ];
 
       nix.settings.experimental-features = [
         "nix-command"

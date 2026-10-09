@@ -14,6 +14,9 @@ in
         ...
       }:
       {
+        # Its access token for the sivrad account (../sivrad/_bot.nix).
+        imports = [ ./_tokens.nix ];
+
         virtualisation.oci-containers =
           let
             hass_config = pkgs.writeText "configuration.yaml" ''

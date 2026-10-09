@@ -3,9 +3,10 @@
 # guest itself is described in ./_guest.nix.
 #
 # Policy for traffic from the container (blocked packets are logged with the
-# prefix "sivrad-drop: ", allowed HTTPS with "sivrad-egress: "):
+# prefix "sivrad-drop: ", allowed web connections with "sivrad-egress: "):
 #   - to adam itself: only TCP 443 (nginx) and 8123 (Home Assistant);
-#   - forwarded: DNS and TCP 443 to public addresses, nothing to the LAN,
+#   - forwarded: DNS and the web (TCP 80 and 443, so the model's browser
+#     reaches any public website) to public addresses, nothing to the LAN,
 #     the tailnet, or link-local ranges; no IPv6 at all.
 #   - tailscale: UDP 41641 anywhere, any other UDP to public addresses
 #     (STUN, peers). Once the container is on the tailnet its traffic there
@@ -26,6 +27,7 @@ let
   # directory is 0711: no listing. The container shares the host's UIDs
   # (privateUsers = "no"), so ownership passes straight through.
   credentialsDir = "/run/sivrad-credentials";
+  bot = import ./_bot.nix;
   hostAddress = "192.168.77.1";
   hostPorts = [
     443
@@ -70,6 +72,14 @@ in
       hostPath = credentialsDir;
       isReadOnly = true;
     };
+    # The sivrad account's Kanidm password and the API tokens the services
+    # minted for it (./_bot.nix, <service>/_tokens.nix), for the model to
+    # read as /run/host-tokens/<name>. Unlike the credentials above these
+    # are meant for it, so the guest does not hide them.
+    bindMounts."/run/host-tokens" = {
+      hostPath = bot.tokensDir;
+      isReadOnly = true;
+    };
     # Evaluated as its own NixOS system (nixos-containers only passes the
     # host platform on), so the claude-code unfree allowance stays scoped
     # to the guest (see _guest.nix).
@@ -91,6 +101,9 @@ in
       chown root:root ${credentialsDir}
       install -m 0400 -o root -g root ${config.sops.secrets.headscale_preauth_key.path} ${credentialsDir}/headscale_preauth_key
       install -m 0444 -o root -g root ${config.sops.secrets.sivrad_signal_account.path} ${credentialsDir}/signal-account.tar.gz.b64
+      # The account's files (./_kanidm.nix and the services fill it) must
+      # exist for the bind mount below.
+      install -d -m 0711 -o root -g root ${bot.tokensDir}
     '';
   };
   systemd.services."container@sivrad" = {
@@ -129,8 +142,8 @@ in
     ${lib.concatMapStringsSep "\n" (
       range: "iptables -w -t mangle -A sivrad-fwd -d ${range} -j sivrad-drop"
     ) privateRanges}
-    iptables -w -t mangle -A sivrad-fwd -p tcp --dport 443 -m conntrack --ctstate NEW -m limit --limit 10/min -j LOG --log-prefix "sivrad-egress: "
-    iptables -w -t mangle -A sivrad-fwd -p tcp --dport 443 -j RETURN
+    iptables -w -t mangle -A sivrad-fwd -p tcp -m multiport --dports 80,443 -m conntrack --ctstate NEW -m limit --limit 10/min -j LOG --log-prefix "sivrad-egress: "
+    iptables -w -t mangle -A sivrad-fwd -p tcp -m multiport --dports 80,443 -j RETURN
     iptables -w -t mangle -A sivrad-fwd -p udp -j RETURN
     iptables -w -t mangle -A sivrad-fwd -j sivrad-drop
 

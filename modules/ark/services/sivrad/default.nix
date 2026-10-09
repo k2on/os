@@ -1,9 +1,10 @@
 # sivrad: a NixOS container (systemd-nspawn) on adam running an always-on
 # Claude Code session, named after the owner's phone voice assistant it
-# serves.
-# Not an ark.services entry (no HTTP service behind nginx): it defines the
-# Den aspect den.aspects.sivrad directly. Files starting with `_` carry the
-# underscore so import-tree does not load them as flake modules.
+# serves. An ark.services entry without a web endpoint (web = false: the
+# channel is in the container, on the tailnet, so nothing for nginx): what
+# it takes from the registry is the phone app's OIDC client, its secrets
+# and the service-sivrad aspect adam includes. Files starting with `_`
+# carry the underscore so import-tree does not load them as flake modules.
 #
 # Who may use sivrad: everyone in secrets/ark.nix with a Signal number, or a
 # Signal username for someone who does not share their number,
@@ -12,11 +13,16 @@
 #   ark.persons.bob.signal = "bob.42";
 #
 # (lib/oidc.nix). They make up the Kanidm group sivrad_users, which may sign
-# in to the phone app (./_kanidm.nix), and the channel's people.json, which
-# maps their numbers to their usernames (./_guest.nix). There is no command
-# for it: edit secrets/ark.nix, commit it and deploy adam, then restart the
-# container (`systemctl restart container@sivrad`) for the channel to see
-# the change.
+# in to the phone app (the client below), and the channel's people.json,
+# which maps their numbers to their usernames (./_guest.nix). There is no
+# command for it: edit secrets/ark.nix, commit it and deploy adam, then
+# restart the container (`systemctl restart container@sivrad`) for the
+# channel to see the change.
+#
+# The assistant has an account of its own, `sivrad` (./_bot.nix): a Kanidm
+# person (./_kanidm.nix) in the members groups of the services it may use,
+# each of which mints it an API token (<service>/_tokens.nix). The container
+# gets the password, the TOTP secret and the tokens as files (./_host.nix).
 #
 # The rest is set up from a laptop with `ark service sivrad ...`
 # (./cli/mod.rs), which drives the container over ssh and keeps the Signal
@@ -31,6 +37,8 @@
 let
   ark = config.ark;
   container = import ./_container.nix;
+  # The assistant's own account and the services it may use.
+  bot = import ./_bot.nix;
   # Everyone who may use sivrad: the persons with a Signal number.
   people = lib.filterAttrs (_: p: p.signal != null) ark.persons;
   # E.164, as the channel and signal-cli expect: + and the country code; or
@@ -58,7 +66,26 @@ let
   );
 in
 {
-  config.den.aspects.sivrad = {
+  config.ark.services.sivrad = {
+    web = false;
+
+    # The phone app's sign-in: a public client (PKCE enforced, no client
+    # secret) that redirects to the app's custom scheme. Not named after
+    # the service: Kanidm names are unique across clients and persons, and
+    # `sivrad` is the assistant's account. The channel checks the app's
+    # access token against this client's userinfo endpoint
+    # (./channel/src/oidc.rs).
+    oidc = {
+      clientId = "sivrad-app";
+      public = true;
+      displayName = "Sivrad";
+      callbacks = [ "sivrad://oauth/callback" ];
+      landing = idOrigin;
+      # Who may sign in: the Kanidm group sivrad_users, which is not a group
+      # in secrets/ark.nix but the people above.
+      groups.users = lib.attrNames people;
+    };
+
     secrets = {
       # The container's Signal identity, saved by `ark service sivrad signal
       # ...` after registering, so a rebuilt container comes back as the same
@@ -75,44 +102,69 @@ in
         generate = "printf ''";
         restartUnits = [ "sivrad-credentials.service" ];
       };
-    };
-
-    nixos = {
-      imports = [
-        ./_host.nix
-        (import ./_kanidm.nix {
-          origin = idOrigin;
-          members = lib.attrNames people;
-        })
-      ];
-      assertions = [
-        {
-          assertion = invalid == [ ];
-          message = "ark.persons.<name>.signal must be E.164 (+ and the country code, digits only, e.g. +15551234567) or a Signal username (e.g. alice.42); not so for: ${lib.concatStringsSep ", " invalid}";
-        }
-        {
-          assertion = shared == { };
-          message = "ark.persons: a Signal number or username belongs to one person only; shared by: ${lib.concatStringsSep "; " (map (lib.concatStringsSep ", ") (lib.attrValues shared))}";
-        }
-      ];
-      containers.sivrad.specialArgs = {
-        # Who may use sivrad, for the channel's people.json (./_guest.nix):
-        # { "<username>": { "signal": "+..." } }.
-        people = lib.mapAttrs (_: p: { inherit (p) signal; }) people;
-        # Same login server as den.aspects.tailnet.
-        loginServer = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
-        oidc = {
-          issuer = "${idOrigin}/oauth2/openid/sivrad";
-          clientId = "sivrad";
-        };
-        # The Signal account's profile, applied on start (./_guest.nix): its
-        # name, and ./avatar.png as its picture when that file exists.
-        signalProfile = {
-          givenName = "Sivrad";
-          avatar = if builtins.pathExists ./avatar.png then ./avatar.png else null;
-        };
+      # The account's Kanidm password (./_bot.nix), set in Kanidm and
+      # handed to the container by ./_kanidm.nix.
+      sivrad_password = {
+        generate = true;
+        restartUnits = [ "sivrad-kanidm-account.service" ];
       };
     };
+
+    nixos =
+      { service, ... }:
+      {
+        imports = [
+          ./_host.nix
+          (import ./_kanidm.nix {
+            origin = idOrigin;
+            inherit bot;
+            mail = bot.mail ark.mainDomain;
+            # The members group of each service it may use.
+            groups = map (s: ark.oidc.clients.${s}.groups.members.name) bot.services;
+          })
+        ];
+        assertions = [
+          {
+            assertion = invalid == [ ];
+            message = "ark.persons.<name>.signal must be E.164 (+ and the country code, digits only, e.g. +15551234567) or a Signal username (e.g. alice.42); not so for: ${lib.concatStringsSep ", " invalid}";
+          }
+          {
+            assertion = shared == { };
+            message = "ark.persons: a Signal number or username belongs to one person only; shared by: ${lib.concatStringsSep "; " (map (lib.concatStringsSep ", ") (lib.attrValues shared))}";
+          }
+        ];
+        containers.sivrad.specialArgs = {
+          # Who may use sivrad, for the channel's people.json (./_guest.nix):
+          # { "<username>": { "signal": "+..." } }.
+          people = lib.mapAttrs (_: p: { inherit (p) signal; }) people;
+          # Same login server as den.aspects.tailnet.
+          loginServer = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
+          # The phone app's client, for the channel to check its tokens.
+          oidc = { inherit (service.oidc) issuer clientId; };
+          # The Signal account's profile, applied on start (./_guest.nix): its
+          # name, and ./avatar.png as its picture when that file exists.
+          signalProfile = {
+            givenName = "Sivrad";
+            avatar = if builtins.pathExists ./avatar.png then ./avatar.png else null;
+          };
+          # The assistant's own account (./_bot.nix) as the container sees
+          # it: its Kanidm password and TOTP secret, and each service's URL
+          # and API token, files under /run/host-tokens (adam's tokensDir,
+          # bind-mounted by ./_host.nix; the tokens come from each service's
+          # _tokens.nix).
+          bot = {
+            inherit (bot) name;
+            kanidm = idOrigin;
+            password = "/run/host-tokens/password";
+            totp = "/run/host-tokens/totp";
+            totpAlgo = bot.totp.algo;
+            services = lib.genAttrs bot.services (s: {
+              url = "https://${ark.serviceDomain s ark.services.${s}}";
+              token = "/run/host-tokens/${s}";
+            });
+          };
+        };
+      };
   };
 
   # What `ark service sivrad ...` reads (cli/mod.rs), through `nix eval`.

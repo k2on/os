@@ -13,13 +13,22 @@ in
       # kanidm's own copy of every service's client secret. The service's
       # copy is declared by ark.services (lib/services.nix) on whichever
       # host runs it; both read the same secrets/vars file.
-      ark.secrets = lib.mapAttrs' (
+      # idm_admin's password, so steps after provisioning can sign in as it
+      # (services/sivrad/_kanidm.nix sets the sivrad account's password); the
+      # module recovers the account with it on every start.
+      ark.secrets = {
+        kanidm_idm_admin_password = {
+          generate = true;
+          owner = "kanidm";
+        };
+      }
+      // lib.mapAttrs' (
         _: o:
         lib.nameValuePair "${o.secret}_kanidm" {
           key = o.secret;
           owner = "kanidm";
         }
-      ) clients;
+      ) (lib.filterAttrs (_: o: !o.public) clients);
 
       # 1.10 is end-of-life upstream and marked insecure in nixpkgs. Bumping to
       # 1.11 migrates the server database: run `kanidmd domain upgrade-check`
@@ -52,6 +61,7 @@ in
         # (secrets/ark.nix); clients from each service's `oidc` (lib/oidc.nix).
         provision = {
           enable = true;
+          idmAdminPasswordFile = config.sops.secrets.kanidm_idm_admin_password.path;
 
           persons = lib.mapAttrs (_: p: {
             inherit (p) displayName;
@@ -62,19 +72,25 @@ in
             _: o: lib.mapAttrs' (_: g: lib.nameValuePair g.name { inherit (g) members; }) o.groups
           ) clients;
 
-          systems.oauth2 = lib.mapAttrs (
+          # Keyed by the client id, which is the service name unless the
+          # service says otherwise (lib/oidc.nix).
+          systems.oauth2 = lib.mapAttrs' (
             _: o:
-            {
-              inherit (o) displayName;
-              originUrl = o.callbacks;
-              originLanding = o.landing;
-              basicSecretFile = config.sops.secrets."${o.secret}_kanidm".path;
-              preferShortUsername = true;
-              scopeMaps = lib.mapAttrs' (_: g: lib.nameValuePair g.name o.scopes) o.groups;
-              allowInsecureClientDisablePkce = !o.pkce;
-              enableLegacyCrypto = o.legacyCrypto;
-            }
-            // lib.optionalAttrs (o.icon != null) { imageFile = o.icon; }
+            lib.nameValuePair o.clientId (
+              {
+                inherit (o) displayName public;
+                originUrl = o.callbacks;
+                originLanding = o.landing;
+                preferShortUsername = true;
+                scopeMaps = lib.mapAttrs' (_: g: lib.nameValuePair g.name o.scopes) o.groups;
+                allowInsecureClientDisablePkce = !o.pkce;
+                enableLegacyCrypto = o.legacyCrypto;
+              }
+              // lib.optionalAttrs (!o.public) {
+                basicSecretFile = config.sops.secrets."${o.secret}_kanidm".path;
+              }
+              // lib.optionalAttrs (o.icon != null) { imageFile = o.icon; }
+            )
           ) clients;
         };
       };

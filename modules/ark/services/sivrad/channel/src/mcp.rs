@@ -8,6 +8,7 @@ use serde_json::{json, Map, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+use crate::files;
 use crate::signal;
 use crate::state::{Answer, Outcome, State};
 
@@ -18,7 +19,8 @@ When the request is something the phone itself must do (a timer, an alarm, a tex
 The phone waits about two minutes per step, so reply before starting long work. locked=\"true\" means the phone is locked; tools marked requiresUnlock will prompt the owner to unlock it.
 kind=\"signal\" events are Signal messages; their chat_id is signal:<address> (chat=\"direct\": one person) or signal:group:<id> (chat=\"group\": a group with several people, where everyone reads your reply). Answer them with reply to that chat_id, in plain text.
 In a group, act as the group's assistant: only trusted people's messages reach you, but others may be in the group and read your replies. Reply when addressed or when you can help; let conversation between people pass without comment.
-Message another trusted person only with signal_send, and only when the sender asked for it; then confirm back to the sender with reply.";
+Message another trusted person only with signal_send, and only when the sender asked for it; then confirm back to the sender with reply.
+Files: a Signal message's attachments (images, documents, anything) are listed in the event as [file: <path> (<content type>)] lines; they are in inbox/ in the workspace, and you can look at an image with Read. To send files over Signal (a screenshot from the browser, a document) pass their workspace paths in the files argument of reply or signal_send; the text may then be empty. The phone cannot take files.";
 
 fn tools() -> Value {
     json!([
@@ -29,7 +31,8 @@ fn tools() -> Value {
                 "type": "object",
                 "properties": {
                     "chat_id": { "type": "string", "description": "chat_id of the channel event being answered" },
-                    "text": { "type": "string", "description": "One or two short plain sentences" }
+                    "text": { "type": "string", "description": "One or two short plain sentences; may be empty when files are attached" },
+                    "files": { "type": "array", "items": { "type": "string" }, "description": "Signal chats only: paths of files in the workspace to attach, such as a screenshot" }
                 },
                 "required": ["chat_id", "text"]
             }
@@ -54,7 +57,8 @@ fn tools() -> Value {
                 "type": "object",
                 "properties": {
                     "to": { "type": "string", "description": "The person's username, as in an event's sender" },
-                    "text": { "type": "string", "description": "The message" }
+                    "text": { "type": "string", "description": "The message; may be empty when files are attached" },
+                    "files": { "type": "array", "items": { "type": "string" }, "description": "Paths of files in the workspace to attach" }
                 },
                 "required": ["to", "text"]
             }
@@ -129,13 +133,23 @@ async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
             let Some(text) = args["text"].as_str() else {
                 return Outcome::error("text must be a string");
             };
+            let files = match files_arg(args) {
+                Ok(f) => f,
+                Err(e) => return Outcome::error(e),
+            };
             if let Some(target) = signal::Chat::parse(chat) {
                 if !state.signal.is_trusted(&state.people(), &target) {
                     return Outcome::error(format!(
                         "{chat} is not a trusted person's Signal address or group"
                     ));
                 }
-                return sent(state.signal.send(&target, text).await);
+                return send_signal(state, &target, text, &files).await;
+            }
+            if !files.is_empty() {
+                return Outcome::error("the phone cannot take files; only Signal chats can");
+            }
+            if text.trim().is_empty() {
+                return Outcome::error("text must not be empty");
             }
             if state.answer(chat, Answer::reply(text)) {
                 Outcome::ok("sent")
@@ -171,19 +185,43 @@ async fn signal_send(state: &State, args: &Value) -> Outcome {
     let (Some(to), Some(text)) = (args["to"].as_str(), args["text"].as_str()) else {
         return Outcome::error("to and text must be strings");
     };
+    let files = match files_arg(args) {
+        Ok(f) => f,
+        Err(e) => return Outcome::error(e),
+    };
     match state.signal.address_of(&state.people(), to).await {
-        Ok(address) => sent(
-            state
-                .signal
-                .send(&signal::Chat::Direct(address), text)
-                .await,
-        ),
+        Ok(address) => send_signal(state, &signal::Chat::Direct(address), text, &files).await,
         Err(e) => Outcome::error(e),
     }
 }
 
-fn sent(result: Result<(), String>) -> Outcome {
-    match result {
+/// The optional `files` argument: a list of paths, or nothing.
+fn files_arg(args: &Value) -> Result<Vec<String>, String> {
+    match &args["files"] {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(list) => list
+            .iter()
+            .map(|f| {
+                f.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| "files must be a list of paths".to_owned())
+            })
+            .collect(),
+        _ => Err("files must be a list of paths".into()),
+    }
+}
+
+/// A Signal message with its files checked (files.rs); something has to
+/// be in it.
+async fn send_signal(state: &State, chat: &signal::Chat, text: &str, files: &[String]) -> Outcome {
+    if text.trim().is_empty() && files.is_empty() {
+        return Outcome::error("nothing to send: give text or files");
+    }
+    let files = match files::outgoing(&state.config, files) {
+        Ok(f) => f,
+        Err(e) => return Outcome::error(e),
+    };
+    match state.signal.send(chat, text, &files).await {
         Ok(()) => Outcome::ok("sent"),
         Err(e) => Outcome::error(format!("Signal: {e}")),
     }
@@ -240,6 +278,8 @@ mod tests {
             tool_wait: Duration::from_millis(50),
             people_file: "/nonexistent".into(),
             signal_socket: "/nonexistent.sock".into(),
+            workspace: std::env::temp_dir(),
+            signal_attachments: "/nonexistent".into(),
         };
         Arc::new(State::new(config, Oidc::new(None, None)).0)
     }
@@ -362,6 +402,9 @@ mod tests {
     }
 
     fn with_people() -> Arc<State> {
+        let workspace =
+            std::env::temp_dir().join(format!("sivrad-ws-{}", crate::state::random_id()));
+        std::fs::create_dir_all(&workspace).unwrap();
         let path =
             std::env::temp_dir().join(format!("sivrad-people-{}.json", crate::state::random_id()));
         std::fs::write(&path, r#"{ "alice": { "signal": "+15550000001" }, "bob": { "signal": "+15550000002" }, "carol": {} }"#).unwrap();
@@ -370,6 +413,9 @@ mod tests {
             tool_wait: Duration::from_millis(50),
             people_file: path,
             signal_socket: "/nonexistent.sock".into(),
+            // its own directory: the tests tell workspace files from others
+            workspace: workspace.clone(),
+            signal_attachments: "/nonexistent".into(),
         };
         Arc::new(State::new(config, Oidc::new(None, None)).0)
     }
@@ -421,6 +467,77 @@ mod tests {
         assert_eq!(r["content"][0]["text"], "unknown person; known: alice, bob");
         let r = tool(&s, "signal_send", json!({ "to": "carol", "text": "hi" })).await;
         assert_eq!(r["content"][0]["text"], "unknown person; known: alice, bob");
+        std::fs::remove_dir_all(&s.config.workspace).unwrap();
+        std::fs::remove_file(&s.config.people_file).unwrap();
+    }
+
+    #[tokio::test]
+    async fn files_go_to_signal_only_from_the_workspace() {
+        let s = with_people();
+        let shot = s
+            .config
+            .workspace
+            .join(format!("sivrad-shot-{}.png", crate::state::random_id()));
+        std::fs::write(&shot, b"png").unwrap();
+        let shot = shot.to_string_lossy().into_owned();
+        // the phone cannot take files
+        s.hold("c1");
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "c1", "text": "", "files": [shot] }),
+        )
+        .await;
+        assert_eq!(
+            r["content"][0]["text"],
+            "the phone cannot take files; only Signal chats can"
+        );
+        // a workspace file goes to signal-cli (not running here)
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "signal:+15550000001", "text": "", "files": [shot] }),
+        )
+        .await;
+        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
+        let r = tool(
+            &s,
+            "signal_send",
+            json!({ "to": "bob", "text": "", "files": [shot] }),
+        )
+        .await;
+        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
+        // anything else is refused before reaching it: the people file is
+        // beside the workspace, not in it
+        let outside = s.config.people_file.to_string_lossy().into_owned();
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "signal:+15550000001", "text": "", "files": [outside] }),
+        )
+        .await;
+        assert!(r["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("only files in the workspace"));
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "signal:+15550000001", "text": "", "files": [] }),
+        )
+        .await;
+        assert_eq!(
+            r["content"][0]["text"],
+            "nothing to send: give text or files"
+        );
+        let r = tool(
+            &s,
+            "reply",
+            json!({ "chat_id": "signal:+15550000001", "text": "x", "files": "nope" }),
+        )
+        .await;
+        assert_eq!(r["content"][0]["text"], "files must be a list of paths");
+        std::fs::remove_dir_all(&s.config.workspace).unwrap();
         std::fs::remove_file(&s.config.people_file).unwrap();
     }
 

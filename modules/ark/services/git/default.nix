@@ -1,6 +1,7 @@
 { self, config, ... }:
 let
   ark = config.ark;
+  bot = import ../sivrad/_bot.nix;
 in
 {
   ark.services.git = {
@@ -62,6 +63,9 @@ in
         };
       in
       {
+        # Its access token for the sivrad account (../sivrad/_bot.nix).
+        imports = [ (import ./_tokens.nix { mail = bot.mail ark.mainDomain; }) ];
+
         sops.templates."gitea-runner.env" = {
           content = ''
             TOKEN=${config.sops.placeholder.git_runner_token}

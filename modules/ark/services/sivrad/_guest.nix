@@ -27,7 +27,9 @@
 #
 # The channel listens on TCP 8788, reachable over tailscale0 only; the phone
 # long-polls it (./channel/src/http.rs). Signal goes through signal-cli's
-# JSON-RPC daemon on /run/sivrad/signal.sock (./channel/src/signal.rs).
+# JSON-RPC daemon on /run/sivrad/signal.sock (./channel/src/signal.rs), files
+# included: received attachments end up in workspace/inbox, and the model
+# may attach workspace files to what it sends (./channel/src/files.rs).
 #
 # The container is a tailnet node of its own, `sivrad` under headscale's
 # `ark` user, joining with adam's pre-auth key (see _host.nix for how the
@@ -38,13 +40,21 @@
 # The development-channel warning appears on every start, so after a
 # container or service restart someone has to attach and accept it.
 #
+# Claude Code also gets a headless browser: the Playwright MCP server from
+# ./_browser.nix, started from the same .mcp.json as the channel. It keeps
+# a profile under the home (sign-ins survive restarts) and writes
+# screenshots to the workspace. And its own account (./_bot.nix): the
+# Kanidm password and the API tokens each service minted for it, files
+# bind-mounted in read-only under /run/host-tokens (./_host.nix), so it can
+# sign in to those services and, say, read where people are.
+#
 # Inside the container, Claude Code is locked down by managed settings
 # (highest precedence, not overridable from ~/.claude): Bash runs in the
-# bubblewrap sandbox with a strict network allowlist and no unsandboxed
-# retry, bypass mode is disabled, and the OAuth token, the Signal account
-# and its socket are hidden from both the file tools and sandboxed commands.
-# The channel server runs outside that sandbox; the container and adam's
-# egress policy bound it.
+# bubblewrap sandbox with no unsandboxed retry, bypass mode is disabled,
+# and the OAuth token, the Signal account and its socket are hidden from
+# both the file tools and sandboxed commands. The sandbox does not limit
+# the network: the container and adam's egress policy bound everything in
+# it, sandboxed commands, the channel server and the browser alike.
 #
 # State (the Claude login, signal-cli's account, the tailnet node identity)
 # lives on the host under /var/lib/nixos-containers/sivrad, the container's
@@ -56,6 +66,7 @@
   oidc,
   people,
   signalProfile,
+  bot,
   ...
 }:
 let
@@ -68,15 +79,50 @@ let
   peopleJson = pkgs.writeText "sivrad-people.json" (builtins.toJSON people);
 
   channel = pkgs.callPackage ../../_rust.nix { pname = "sivrad-channel"; };
-  # Claude Code starts the channel server from the workspace's .mcp.json.
-  mcpConfig.mcpServers.sivrad = {
-    command = "${channel}/bin/sivrad-channel";
-    env = {
-      SIVRAD_LISTEN = "0.0.0.0:8788";
-      SIVRAD_OIDC_ISSUER = oidc.issuer;
-      SIVRAD_OIDC_CLIENT = oidc.clientId;
-      SIVRAD_PEOPLE_FILE = "/etc/sivrad/people.json";
-      SIVRAD_SIGNAL_SOCKET = signalSocket;
+  playwrightMcp = pkgs.callPackage ./_browser.nix { };
+  # The browser's profile: cookies and sign-ins, kept between sessions.
+  browserProfile = "${home}/browser";
+  # fontconfig is off in the guest and nixpkgs' Playwright Chromium comes
+  # with a fonts.conf naming no font directory, so without this every page
+  # would screenshot as boxes.
+  browserFonts = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+
+  # Claude Code starts both servers from the workspace's .mcp.json.
+  mcpConfig.mcpServers = {
+    sivrad = {
+      command = "${channel}/bin/sivrad-channel";
+      env = {
+        SIVRAD_LISTEN = "0.0.0.0:8788";
+        SIVRAD_OIDC_ISSUER = oidc.issuer;
+        SIVRAD_OIDC_CLIENT = oidc.clientId;
+        SIVRAD_PEOPLE_FILE = "/etc/sivrad/people.json";
+        SIVRAD_SIGNAL_SOCKET = signalSocket;
+        # Files over Signal: received attachments (signal-cli saves them
+        # under signalDir, which the model may not read) are moved to
+        # workspace/inbox; only workspace files may be sent.
+        SIVRAD_WORKSPACE = "${home}/workspace";
+        SIVRAD_SIGNAL_ATTACHMENTS = "${signalDir}/attachments";
+      };
+    };
+    # The headless browser (./_browser.nix). Like the channel it runs
+    # outside the Bash sandbox, so what it may reach is the container's
+    # egress policy (_host.nix: DNS, HTTP and HTTPS to public addresses,
+    # adam's nginx, nothing on the LAN) and the tailnet ACL. The
+    # profile goes through the environment rather than --user-data-dir:
+    # nixpkgs' wrapper turns on --isolated (no profile on disk) whenever
+    # PLAYWRIGHT_MCP_USER_DATA_DIR is unset. Screenshots and saved pages
+    # land in the workspace, where the model may read them.
+    playwright = {
+      command = "${playwrightMcp}/bin/playwright-mcp";
+      args = [
+        "--headless"
+        "--output-dir"
+        "${home}/workspace/browser"
+      ];
+      env = {
+        PLAYWRIGHT_MCP_USER_DATA_DIR = browserProfile;
+        FONTCONFIG_FILE = "${browserFonts}";
+      };
     };
   };
 
@@ -86,9 +132,12 @@ let
   # by both of its paths: the model knows people by their usernames, and
   # the channel resolves those to numbers. It is in the world-readable Nix
   # store, so this keeps the numbers out of the model's way, not secret.
+  # And the browser's profile: its cookies are the sessions it signed in
+  # to; the model uses them through the browser, not by reading them.
   secretPaths = [
     "${home}/.claude/.credentials.json"
     signalDir
+    browserProfile
     "/run/sivrad"
     "/var/lib/tailscale"
     "/run/host-credentials"
@@ -97,9 +146,12 @@ let
   ];
 
   managedSettings = {
-    # Pre-approves the workspace's .mcp.json server, which Claude Code would
-    # otherwise ask about once.
-    enabledMcpjsonServers = [ "sivrad" ];
+    # Pre-approves the workspace's .mcp.json servers, which Claude Code
+    # would otherwise ask about once.
+    enabledMcpjsonServers = [
+      "sivrad"
+      "playwright"
+    ];
     # The latest Opus, with fast mode (faster output, same model) on.
     model = "opus";
     fastMode = true;
@@ -107,7 +159,7 @@ let
     # on every start (only an organisation policy that blocks channels, and
     # with them their messages, skips it); acceptDevChannels below answers
     # it. The plugin allowlist is empty: sivrad is a plain MCP server from
-    # .mcp.json, not a channel plugin.
+    # .mcp.json, not a channel plugin, and so is the browser.
     channelsEnabled = true;
     allowedChannelPlugins = [ ];
     sandbox = {
@@ -115,14 +167,10 @@ let
       autoAllowBashIfSandboxed = true;
       allowUnsandboxedCommands = false;
       failIfUnavailable = true;
-      network = {
-        allowedDomains = [
-          "api.anthropic.com"
-          "claude.ai"
-          "platform.claude.com"
-        ];
-        strictAllowlist = true;
-      };
+      # Any host, any port: sandboxed commands (curl and the like) reach
+      # whatever the container's egress policy lets through, same as the
+      # browser. A bare `*` needs Claude Code 2.1.186 or later.
+      network.allowedDomains = [ "*" ];
       filesystem.denyRead = secretPaths;
     };
     permissions = {
@@ -131,6 +179,7 @@ let
       deny = [
         "Read(/${home}/.claude/.credentials.json)"
         "Read(/${signalDir}/**)"
+        "Read(/${browserProfile}/**)"
         "Read(//run/sivrad/**)"
         "Read(//var/lib/tailscale/**)"
         "Read(//run/host-credentials/**)"
@@ -338,6 +387,8 @@ in
     ripgrep
     jq
     curl
+    # One-time codes for the account's Kanidm sign-in (CLAUDE.md below).
+    oath-toolkit
   ];
 
   environment.etc."claude-code/managed-settings.json".text = builtins.toJSON managedSettings;
@@ -370,8 +421,41 @@ in
       background subagent and tell the sender you are on it.
     - Keep durable notes (preferences, ongoing tasks, reminders) in files in this
       workspace and read them when they are relevant.
+    - You have a headless browser: the `playwright` tools. Use it to look
+      things up, read pages and get things done on any public website for
+      people. It keeps its profile between sessions, so where you signed in
+      once you stay signed in. Files it saves (screenshots, PDFs) land in
+      this workspace, under `browser/` unless you name them.
+    - Signal messages carry files both ways. A received file (an image, a
+      document, anything) is listed in the event as `[file: <path> (<type>)]`
+      and sits in `inbox/` here; look at an image with Read. To send a file
+      (a screenshot of a page, say) pass its workspace path in the `files`
+      argument of `reply` or `signal_send`. The phone cannot take files.
+    - You have your own account, `${bot.name}`, in the family's identity
+      provider (Kanidm, ${bot.kanidm}). Its password is in `${bot.password}`,
+      and the one-time code it asks for next comes from
+
+          oathtool --totp=${bot.totpAlgo} -b "$(cat ${bot.totp})"
+
+      Sign in with them where the services below offer "sign in with" Kanidm,
+      and nowhere else. Each of them also gave you an API token, a file next
+      to the password:
+      - Home Assistant runs the house. REST API at `${bot.services.home.url}/api`,
+        token `${bot.services.home.token}`:
+
+            curl -sS -H "Authorization: Bearer $(cat ${bot.services.home.token})" ${bot.services.home.url}/api/states
+
+        To know where someone is, read their `person.<name>` entity: its
+        state is `home`, `not_home` or a zone name, and its attributes carry
+        the coordinates and when they were last seen. Lights, media players
+        and the rest are entities too, and `POST /api/services/<domain>/<service>`
+        acts on them.
+      - Gitea holds the family's git repositories. REST API at
+        `${bot.services.git.url}/api/v1`, token `${bot.services.git.token}`,
+        sent as `Authorization: token $(cat ${bot.services.git.token})`.
     - Never try to read credentials: the Claude login, signal-cli's account data
-      or socket, SSH keys, or anything under /run/host-credentials.
+      or socket, SSH keys, or anything under /run/host-credentials. The
+      password and tokens under /run/host-tokens are yours to use.
   '';
 
   # The home is under /var/lib, not created by the user module; make it and
@@ -380,13 +464,15 @@ in
     "d ${home} 0700 sivrad sivrad -"
     "d ${home}/workspace 0700 sivrad sivrad -"
     "d ${signalDir} 0700 sivrad sivrad -"
+    "d ${browserProfile} 0700 sivrad sivrad -"
   ];
 
   # Signal for the channel: signal-cli's JSON-RPC daemon, multi-account
   # mode (no -a), on a socket only `sivrad` can reach. It starts receiving
   # when the channel connects, so messages wait on Signal's servers until
-  # then. Attachments, stories and the like are not fetched: the channel
-  # only passes on text.
+  # then. Attachments are downloaded into signalDir/attachments, from where
+  # the channel moves them into the workspace's inbox for the model;
+  # stories, avatars and stickers are not fetched.
   systemd.services.signal-cli = {
     description = "signal-cli JSON-RPC daemon for sivrad";
     wantedBy = [ "multi-user.target" ];
@@ -405,7 +491,7 @@ in
       ExecStart = lib.concatStringsSep " " [
         "${pkgs.signal-cli}/bin/signal-cli --config ${signalDir}"
         "daemon --socket ${signalSocket} --receive-mode on-connection"
-        "--ignore-attachments --ignore-stories --ignore-avatars --ignore-stickers"
+        "--ignore-stories --ignore-avatars --ignore-stickers"
       ];
       # The daemon checks each account with the server as it loads it, and
       # when that fails (the network is not quite up yet at boot) it carries

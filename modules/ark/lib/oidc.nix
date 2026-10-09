@@ -5,7 +5,9 @@
 # per-service group memberships live in the secrets repo (secrets/ark.nix),
 # and every group listed there becomes the kanidm group <service>_<group>.
 # `service.oidc.groups.<group>.claim` is the value clients see in the
-# `groups` claim, for modules that map roles or restrict logins.
+# `groups` claim, for modules that map roles or restrict logins. A service
+# may add groups of its own with `oidc.groups.<group> = [ persons ]` (for
+# memberships it derives rather than reads from the secrets repo).
 #
 # The client's icon is modules/ark/services/<service>/icon.svg when present.
 { lib, config, ... }:
@@ -17,13 +19,15 @@ let
     let
       o = spec.oidc;
       domain = config.ark.serviceDomain name spec;
-      issuer = "https://id.${mainDomain}/oauth2/openid/${name}";
+      # Kanidm names are unique across clients, groups and persons, so a
+      # service may call its client something else.
+      clientId = o.clientId or name;
+      issuer = "https://id.${mainDomain}/oauth2/openid/${clientId}";
       icon = ../services/${name}/icon.svg;
     in
     {
-      inherit domain issuer;
+      inherit domain issuer clientId;
       inherit (config.ark.oidc) name;
-      clientId = name;
       discovery = "${issuer}/.well-known/openid-configuration";
       secret = "${name}_oidc_client_secret";
       icon = if builtins.pathExists icon then icon else null;
@@ -37,6 +41,8 @@ let
           "email"
           "groups"
         ];
+      # A public client (a phone app, say): PKCE, no client secret.
+      public = o.public or false;
       pkce = o.pkce or true;
       # kanidm signs tokens with ES256; clients that only verify RS256 need this.
       legacyCrypto = o.legacyCrypto or false;
@@ -44,7 +50,7 @@ let
         inherit members;
         name = "${name}_${g}";
         claim = "${name}_${g}@id.${mainDomain}";
-      }) (config.ark.groups.${name} or { });
+      }) ((config.ark.groups.${name} or { }) // (o.groups or { }));
     };
 in
 {

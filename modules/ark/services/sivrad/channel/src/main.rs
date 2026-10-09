@@ -15,15 +15,22 @@
 //!
 //! The same people reach it over Signal (signal.rs): signal-cli's JSON-RPC
 //! daemon delivers their messages, and `reply` / `signal_send` answer.
+//! Signal messages carry files both ways (files.rs): received ones land in
+//! the workspace's inbox/, and the tools attach files from the workspace.
 //!
 //! Environment:
 //!   SIVRAD_LISTEN        HTTP address (default 0.0.0.0:8788)
 //!   SIVRAD_TIMEOUT_MS    how long a request is held (default 120000)
-//!   SIVRAD_OIDC_ISSUER   e.g. https://id.example.org/oauth2/openid/sivrad
-//!   SIVRAD_OIDC_CLIENT   the phone's OAuth2 client id (sivrad)
+//!   SIVRAD_OIDC_ISSUER   e.g. https://id.example.org/oauth2/openid/sivrad-app
+//!   SIVRAD_OIDC_CLIENT   the phone's OAuth2 client id (sivrad-app)
 //!   SIVRAD_PEOPLE_FILE   identity table (default /etc/sivrad/people.json)
 //!   SIVRAD_SIGNAL_SOCKET signal-cli's JSON-RPC socket (default /run/sivrad/signal.sock)
+//!   SIVRAD_WORKSPACE     Claude's workspace (default: the working directory)
+//!   SIVRAD_SIGNAL_ATTACHMENTS
+//!                        where signal-cli saves attachments
+//!                        (default /var/lib/sivrad/signal-cli/attachments)
 
+mod files;
 mod http;
 mod identity;
 mod mcp;
@@ -31,6 +38,7 @@ mod oidc;
 mod signal;
 mod state;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -54,6 +62,13 @@ async fn main() {
             .into(),
         signal_socket: env("SIVRAD_SIGNAL_SOCKET")
             .unwrap_or_else(|| "/run/sivrad/signal.sock".into())
+            .into(),
+        workspace: env("SIVRAD_WORKSPACE")
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| ".".into()),
+        signal_attachments: env("SIVRAD_SIGNAL_ATTACHMENTS")
+            .unwrap_or_else(|| "/var/lib/sivrad/signal-cli/attachments".into())
             .into(),
     };
     let issuer = env("SIVRAD_OIDC_ISSUER");
