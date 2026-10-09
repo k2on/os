@@ -23,6 +23,12 @@
 #      sivrad) and accept the development-channel warning.
 #   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
 #      and sign in with Kanidm.
+#   5. Sign the browser's Claude extension in (./_chrome.nix): open
+#      https://sivrad.<mainDomain>/browser, sign in with Kanidm (as Max or
+#      Heather, the only ones let in), click the Claude icon in the toolbar
+#      and sign in to claude.ai with the account of step 1. Then `/chrome`
+#      in the session (attach as in step 3) should say "Status: Enabled"
+#      and "Extension: Installed".
 # Only people in people.json get through, from either side.
 #
 # The channel listens on TCP 8788, reachable over tailscale0 only; the phone
@@ -48,6 +54,16 @@
 # bind-mounted in read-only under /run/host-tokens (./_host.nix), so it can
 # sign in to those services and, say, read where people are.
 #
+# And a real browser (./_chrome.nix): ungoogled-chromium on a virtual
+# screen with the Claude in Chrome extension, driven through Claude Code's
+# own claude-in-chrome tools (`claude --chrome` below), for the sites that
+# turn the headless one away. Max and Heather watch it and take it over at
+# https://sivrad.<mainDomain>/browser (noVNC, public, behind a Kanidm
+# sign-in: sivrad-browser in ./default.nix), to sign in or get past a
+# CAPTCHA for the assistant. Its profile keeps those sign-ins, and the
+# extension's own claude.ai sign-in (step 5 above), which is the one part
+# of it that is not configuration.
+#
 # Inside the container, Claude Code is locked down by managed settings
 # (highest precedence, not overridable from ~/.claude): Bash runs in the
 # bubblewrap sandbox with no unsandboxed retry, bypass mode is disabled,
@@ -67,10 +83,18 @@
   people,
   signalProfile,
   bot,
+  browserPage,
   ...
 }:
 let
-  inherit (import ./_container.nix) home signalDir signalSocket;
+  inherit (import ./_container.nix)
+    home
+    signalDir
+    signalSocket
+    hostAddress
+    novncPort
+    novncPrefix
+    ;
 
   # Who may talk to sivrad, keyed by Kanidm username:
   #   { "alice": { "signal": "+15551234567" } }
@@ -82,10 +106,33 @@ let
   playwrightMcp = pkgs.callPackage ./_browser.nix { };
   # The browser's profile: cookies and sign-ins, kept between sessions.
   browserProfile = "${home}/browser";
+  # The headed browser with the Claude extension (./_chrome.nix): its
+  # profile, holding the extension's claude.ai sign-in and whatever sites
+  # it is signed in to, and the screen it runs on.
+  chrome = {
+    profile = "${home}/.config/chromium";
+    display = ":1";
+  };
   # fontconfig is off in the guest and nixpkgs' Playwright Chromium comes
   # with a fonts.conf naming no font directory, so without this every page
   # would screenshot as boxes.
   browserFonts = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+
+  # One command per service the account may use: `home-api /states`, as
+  # curl with the token from the file in the right header. The model's
+  # commands then carry no token, which also keeps Claude Code's permission
+  # classifier (auto mode) from reading them as credential theft; the
+  # allow rules in managedSettings below make them pass outright.
+  apiTools = lib.mapAttrsToList (
+    name: s:
+    pkgs.writeShellScriptBin "${name}-api" ''
+      # ${name}'s REST API as the ${bot.name} account:
+      #   ${name}-api <path> [curl options]      e.g. ${name}-api /user
+      path=''${1:?usage: ${name}-api <path> [curl options]}
+      shift
+      exec ${pkgs.curl}/bin/curl -sS -H "${s.header} $(cat ${s.token})" "$@" "${s.url}${s.path}$path"
+    ''
+  ) bot.services;
 
   # Claude Code starts both servers from the workspace's .mcp.json.
   mcpConfig.mcpServers = {
@@ -132,15 +179,23 @@ let
   # by both of its paths: the model knows people by their usernames, and
   # the channel resolves those to numbers. It is in the world-readable Nix
   # store, so this keeps the numbers out of the model's way, not secret.
-  # And the browser's profile: its cookies are the sessions it signed in
-  # to; the model uses them through the browser, not by reading them.
+  # And both browsers' profiles: their cookies are the sessions they signed
+  # in to; the model uses them through the browsers, not by reading them.
+  # Then what would let a sandboxed command around the browser tools: the
+  # headed browser's screen (Xvfb's socket; taking it over is for people,
+  # through noVNC) and the native host's socket, which talks to the Claude
+  # extension directly. (x11vnc and the noVNC page listen on ports, which
+  # the guest's firewall closes to it instead, ./_chrome.nix.)
   secretPaths = [
     "${home}/.claude/.credentials.json"
     signalDir
     browserProfile
+    chrome.profile
     "/run/sivrad"
     "/var/lib/tailscale"
     "/run/host-credentials"
+    "/tmp/.X11-unix"
+    "/tmp/claude-mcp-browser-bridge-sivrad"
     "/etc/sivrad/people.json"
     "${peopleJson}"
   ];
@@ -175,11 +230,28 @@ let
     };
     permissions = {
       disableBypassPermissionsMode = "disable";
+      # Nobody is there to answer a prompt, so nothing may raise one. Reads
+      # outside the workspace (a clone under /tmp, say) prompt even in auto
+      # mode unless this is off, and reads anywhere are allowed outright;
+      # the deny rules below still win (deny, ask, allow is the order). The
+      # account's files get their own rules, since Claude Code's permission
+      # classifier (auto mode) would otherwise refuse every read of them as
+      # credential theft, whatever CLAUDE.md says. `//` marks an absolute
+      # path in permission rules.
+      blockReadsOutsideWorkingDirectories = false;
+      allow = [
+        "Read(//**)"
+        "Read(//run/host-tokens/**)"
+        "Bash(cat /run/host-tokens/*)"
+        "Bash(oathtool:*)"
+      ]
+      ++ map (name: "Bash(${name}-api:*)") (lib.attrNames bot.services);
       # `//` marks an absolute path in permission rules.
       deny = [
         "Read(/${home}/.claude/.credentials.json)"
         "Read(/${signalDir}/**)"
         "Read(/${browserProfile}/**)"
+        "Read(/${chrome.profile}/**)"
         "Read(//run/sivrad/**)"
         "Read(//var/lib/tailscale/**)"
         "Read(//run/host-credentials/**)"
@@ -189,8 +261,14 @@ let
     };
   };
 
+  # --chrome: the claude-in-chrome tools, connected to the headed browser
+  # through its native messaging host (./_chrome.nix). The flag rather than
+  # the claudeInChromeDefaultEnabled setting, which lives in ~/.claude.json,
+  # Claude Code's state rather than configuration. It needs the claude.ai
+  # login of `ark service sivrad init` (not an API key or setup-token) and
+  # the extension signed in to that same account.
   claude = pkgs.writeShellScript "sivrad-claude" ''
-    exec claude --dangerously-load-development-channels server:sivrad
+    exec claude --chrome --dangerously-load-development-channels server:sivrad
   '';
   # Claude Code asks about --dangerously-load-development-channels on every
   # start, and nothing in its configuration answers that: the dialog is
@@ -248,11 +326,15 @@ let
     cfg=${home}/.claude.json
     [ -s "$cfg" ] || echo '{}' > "$cfg"
     # fullscreenUpsellSeenCount: the "try the fullscreen renderer" question
-    # stops after three showings.
+    # stops after three showings. The Chrome ones: the introduction --chrome
+    # shows once, and the offer to install the extension, which it never
+    # needs to make (./_chrome.nix installs it).
     jq --arg ws "${home}/workspace" '
       .theme = (.theme // "dark")
       | .hasCompletedOnboarding = true
       | .fullscreenUpsellSeenCount = ([.fullscreenUpsellSeenCount // 0, 3] | max)
+      | .hasCompletedClaudeInChromeOnboarding = true
+      | .chromeInstallUpsellDismissed = true
       | .projects[$ws].hasTrustDialogAccepted = true
     ' "$cfg" > "$cfg.tmp"
     install -m 0600 "$cfg.tmp" "$cfg"
@@ -295,6 +377,14 @@ let
   '';
 in
 {
+  imports = [
+    (import ./_chrome.nix {
+      inherit home;
+      inherit (chrome) profile display;
+      inherit novncPort novncPrefix hostAddress;
+    })
+  ];
+
   nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
 
   # eth0's address and the default route via adam come from nixos-containers
@@ -354,8 +444,9 @@ in
     '';
   };
 
-  # The phone reaches the sivrad channel over the tailnet only; the tap side
-  # (adam) stays SSH-only.
+  # The phone reaches the sivrad channel over the tailnet only. The veth
+  # side (adam) gets SSH and, from adam's own address, the noVNC page of
+  # the headed browser, which people reach through adam (./_chrome.nix).
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8788 ];
 
   services.openssh = {
@@ -376,20 +467,23 @@ in
   };
   users.groups.sivrad.gid = 1000;
 
-  environment.systemPackages = with pkgs; [
-    claude-code
-    tmux
-    signal-cli
-    git
-    # Claude Code's Bash sandbox on Linux needs bubblewrap and socat.
-    bubblewrap
-    socat
-    ripgrep
-    jq
-    curl
-    # One-time codes for the account's Kanidm sign-in (CLAUDE.md below).
-    oath-toolkit
-  ];
+  environment.systemPackages =
+    with pkgs;
+    [
+      claude-code
+      tmux
+      signal-cli
+      git
+      # Claude Code's Bash sandbox on Linux needs bubblewrap and socat.
+      bubblewrap
+      socat
+      ripgrep
+      jq
+      curl
+      # One-time codes for the account's Kanidm sign-in (CLAUDE.md below).
+      oath-toolkit
+    ]
+    ++ apiTools;
 
   environment.etc."claude-code/managed-settings.json".text = builtins.toJSON managedSettings;
   environment.etc."sivrad/people.json".source = peopleJson;
@@ -426,6 +520,23 @@ in
       people. It keeps its profile between sessions, so where you signed in
       once you stay signed in. Files it saves (screenshots, PDFs) land in
       this workspace, under `browser/` unless you name them.
+    - You also have a real browser: Chromium with the Claude extension, on
+      a screen of its own, which you drive with the `claude-in-chrome` tools.
+      It is slower, so keep playwright for everyday lookups and use Chrome
+      when a site blocks or breaks the headless browser (bot checks,
+      "unsupported browser", endless loading), or when a person has to see
+      or do something in it. It has its own sign-ins, kept between sessions,
+      and its downloads land in `downloads/` here.
+    - People can watch and take over that browser at ${browserPage.url}
+      (from anywhere; it asks them to sign in with their Kanidm account,
+      and only ${lib.concatStringsSep " and " browserPage.people} are let
+      in, so send that link only to them). When a page needs one of them,
+      such as signing in with their own account, a CAPTCHA or a two-factor
+      prompt, leave it open in Chrome, send them that link with what to do
+      there, and carry on once they tell you they are done. Whatever they
+      type there you could see; do not keep it. If the Chrome tools are
+      missing or say the extension is not connected, tell the owner: the
+      extension needs a one-time sign-in through that page.
     - Signal messages carry files both ways. A received file (an image, a
       document, anything) is listed in the event as `[file: <path> (<type>)]`
       and sits in `inbox/` here; look at an image with Read. To send a file
@@ -438,21 +549,20 @@ in
           oathtool --totp=${bot.totpAlgo} -b "$(cat ${bot.totp})"
 
       Sign in with them where the services below offer "sign in with" Kanidm,
-      and nowhere else. Each of them also gave you an API token, a file next
-      to the password:
-      - Home Assistant runs the house. REST API at `${bot.services.home.url}/api`,
-        token `${bot.services.home.token}`:
-
-            curl -sS -H "Authorization: Bearer $(cat ${bot.services.home.token})" ${bot.services.home.url}/api/states
-
-        To know where someone is, read their `person.<name>` entity: its
-        state is `home`, `not_home` or a zone name, and its attributes carry
-        the coordinates and when they were last seen. Lights, media players
-        and the rest are entities too, and `POST /api/services/<domain>/<service>`
-        acts on them.
-      - Gitea holds the family's git repositories. REST API at
-        `${bot.services.git.url}/api/v1`, token `${bot.services.git.token}`,
-        sent as `Authorization: token $(cat ${bot.services.git.token})`.
+      and nowhere else. Each of them also gave you an API token (a file next
+      to the password) and a command that calls its REST API with it:
+      `<service>-api <path> [curl options]`.
+      - Home Assistant runs the house: `home-api /states` (the API at
+        `${bot.services.home.url}${bot.services.home.path}`, token
+        `${bot.services.home.token}`). To know where someone is, read their
+        `person.<name>` entity: `home-api /states/person.max`. Its state is
+        `home`, `not_home` or a zone name, and its attributes carry the
+        coordinates and when they were last seen. Lights, media players and
+        the rest are entities too, and `POST /services/<domain>/<service>`
+        acts on them: `home-api /services/light/turn_on -X POST -d '{"entity_id": "light.kitchen"}'`.
+      - Gitea holds the family's git repositories: `git-api /user` (the API at
+        `${bot.services.git.url}${bot.services.git.path}`, token
+        `${bot.services.git.token}`).
     - Never try to read credentials: the Claude login, signal-cli's account data
       or socket, SSH keys, or anything under /run/host-credentials. The
       password and tokens under /run/host-tokens are yours to use.

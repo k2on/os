@@ -3,7 +3,9 @@
 # serves. An ark.services entry without a web endpoint (web = false: the
 # channel is in the container, on the tailnet, so nothing for nginx): what
 # it takes from the registry is the phone app's OIDC client, its secrets
-# and the service-sivrad aspect adam includes. Files starting with `_`
+# and the service-sivrad aspect adam includes. A second entry,
+# sivrad-browser (below), is the web side: the headed browser's page,
+# behind a Kanidm sign-in, with service-sivrad-browser. Files starting with `_`
 # carry the underscore so import-tree does not load them as flake modules.
 #
 # Who may use sivrad: everyone in secrets/ark.nix with a Signal number, or a
@@ -54,6 +56,17 @@ let
   );
   # Kanidm's per-client issuer, as in lib/oidc.nix.
   idOrigin = "https://id.${ark.mainDomain}";
+  # Who may open the headed browser's page (sivrad-browser below): Kanidm
+  # usernames, Max's decision rather than a list in secrets/ark.nix.
+  browserPeople = [
+    "max"
+    "heather"
+  ];
+  unknownBrowserPeople = lib.filter (p: !(ark.persons ? ${p})) browserPeople;
+  browserPage = {
+    url = "https://${ark.serviceDomain "sivrad-browser" ark.services.sivrad-browser}${container.novncPrefix}";
+    people = browserPeople;
+  };
 
   # The container's MagicDNS name: headscale's base_domain, read off the host that
   # runs headscale, the way lib/services.nix derives the arkHosts ssh targets.
@@ -141,6 +154,9 @@ in
           loginServer = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
           # The phone app's client, for the channel to check its tokens.
           oidc = { inherit (service.oidc) issuer clientId; };
+          # The headed browser's page and who may open it, for the
+          # assistant's CLAUDE.md (./_guest.nix).
+          inherit browserPage;
           # The Signal account's profile, applied on start (./_guest.nix): its
           # name, and ./avatar.png as its picture when that file exists.
           signalProfile = {
@@ -158,10 +174,147 @@ in
             password = "/run/host-tokens/password";
             totp = "/run/host-tokens/totp";
             totpAlgo = bot.totp.algo;
-            services = lib.genAttrs bot.services (s: {
-              url = "https://${ark.serviceDomain s ark.services.${s}}";
-              token = "/run/host-tokens/${s}";
-            });
+            # Each service's REST API: where it is, and how it takes the
+            # token (the service's own _api.nix: the API's path and the
+            # Authorization header). The guest wraps each in a
+            # <service>-api command, so the model never has to put the
+            # token in a command line (./_guest.nix).
+            services = lib.genAttrs bot.services (
+              s:
+              {
+                url = "https://${ark.serviceDomain s ark.services.${s}}";
+                token = "/run/host-tokens/${s}";
+              }
+              // import ../${s}/_api.nix
+            );
+          };
+        };
+      };
+  };
+
+  # The headed browser's noVNC page (./_chrome.nix), where people watch the
+  # browser and take it over: public at https://sivrad.<mainDomain>/browser,
+  # for Max and Heather only, who sign in with Kanidm first. A service of
+  # its own because it needs what sivrad has not got: a web endpoint (port,
+  # nginx vhost, DNS name) and a second, confidential OIDC client, while
+  # sivrad's one `oidc` is the phone app's public client. It takes the name
+  # sivrad.<mainDomain>, which nothing else answers to (sivrad has no web
+  # endpoint; the container's own tailnet name is under headscale's
+  # base_domain), and serves only the /browser path there
+  # (container.novncPrefix), so the rest of the name stays free for sivrad.
+  # Its Kanidm client is `sivrad-browser` and its group
+  # `sivrad-browser_users`, which is browserPeople above (derived, like
+  # sivrad_users, not from secrets/ark.nix; so the sivrad account, which is
+  # in the members groups of the services it uses, is never in it).
+  #
+  # nginx (the generic vhost, lib/services.nix and host/adam/nginx.nix)
+  # terminates TLS and passes everything, WebSockets included, to
+  # oauth2-proxy on service.port, which signs people in with Kanidm (its own
+  # pages under /browser/oauth2), admits only that group's claim, and
+  # proxies /browser/ to websockify in the container over the veth
+  # (./_container.nix, ./_host.nix), the path unchanged. Kanidm only hands
+  # this client's tokens to members of the group in the first place (its
+  # scope map, host/adam/kanidm.nix); oauth2-proxy checks again.
+  #
+  # Public: the vps passes sivrad.* through to ark's nginx (lib/public.nix);
+  # on the tailnet the name resolves to ark directly, as every service's
+  # does. The wildcard certificate covers it.
+  config.ark.public.sivrad = 443;
+
+  config.ark.services.sivrad-browser = {
+    domain = "sivrad.${ark.mainDomain}";
+
+    oidc = {
+      displayName = "Sivrad's browser";
+      callbacks = [ "${container.novncPrefix}/oauth2/callback" ];
+      landing = "https://sivrad.${ark.mainDomain}${container.novncPrefix}/";
+      groups.users = browserPeople;
+    };
+
+    # oauth2-proxy's cookie secret: 32 characters, as AES wants 16, 24 or
+    # 32 bytes (the default 48 would not do).
+    secrets.sivrad-browser_cookie_secret = {
+      generate = "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32";
+      restartUnits = [ "oauth2-proxy.service" ];
+    };
+
+    nixos =
+      {
+        service,
+        config,
+        lib,
+        ...
+      }:
+      {
+        assertions = [
+          {
+            assertion = unknownBrowserPeople == [ ];
+            message = "sivrad-browser: not in ark.persons (secrets/ark.nix): ${lib.concatStringsSep ", " unknownBrowserPeople}";
+          }
+        ];
+
+        # Both secret files are root's; the module hands them to the
+        # service with LoadCredential.
+        services.oauth2-proxy = {
+          enable = true;
+          provider = "oidc";
+          clientID = service.oidc.clientId;
+          clientSecretFile = service.oidc.clientSecretFile;
+          oidcIssuerUrl = service.oidc.issuer;
+          # Its own pages (sign-in, callback) under the prefix too.
+          proxyPrefix = "${container.novncPrefix}/oauth2";
+          redirectURL = "https://${service.domain}${container.novncPrefix}/oauth2/callback";
+          scope = lib.concatStringsSep " " service.oidc.scopes;
+          # No consent screen on every sign-in.
+          approvalPrompt = "auto";
+          # Who gets in is the group below, not the address.
+          email.domains = [ "*" ];
+          cookie.secretFile = config.sops.secrets.sivrad-browser_cookie_secret.path;
+          httpAddress = "http://127.0.0.1:${toString service.port}";
+          # Only the prefix, passed on with the path unchanged: websockify
+          # serves the page under it (./_chrome.nix).
+          upstream = [
+            "http://${container.localAddress}:${toString container.novncPort}${container.novncPrefix}/"
+          ];
+          # Behind nginx on the same host, which sets X-Forwarded-*.
+          reverseProxy = true;
+          trustedProxyIP = [ "127.0.0.1" ];
+          # websockify needs nobody's name or credentials.
+          passBasicAuth = false;
+          extraConfig = {
+            allowed-group = service.oidc.groups.users.claim;
+            # Kanidm enforces PKCE.
+            code-challenge-method = "S256";
+            # Straight to Kanidm, without oauth2-proxy's own "sign in" page.
+            skip-provider-button = true;
+            # The session cookie only for the page.
+            cookie-path = "${container.novncPrefix}/";
+          };
+        };
+        # It reads Kanidm's discovery document on start and exits when it
+        # cannot; keep trying slowly rather than hitting the start limit.
+        systemd.services.oauth2-proxy = {
+          after = [ "kanidm.service" ];
+          serviceConfig.RestartSec = "5s";
+        };
+
+        # Only the page's path is this service's: the generic vhost's
+        # catch-all "/" (host/adam/nginx.nix) gives way to the prefix, bare
+        # https://sivrad.<mainDomain>/ leads there, and the rest is a 404
+        # without a detour through the sign-in. The VNC session is one long
+        # WebSocket, which may sit quiet while nothing on the screen
+        # changes: no 60-second read timeout on it.
+        services.nginx.virtualHosts.${service.domain}.locations = {
+          "/" = lib.mkForce { return = "404"; };
+          "= /".return = "302 ${container.novncPrefix}/";
+          "= ${container.novncPrefix}".return = "301 ${container.novncPrefix}/";
+          "${container.novncPrefix}/" = {
+            proxyPass = "http://127.0.0.1:${toString service.port}";
+            proxyWebsockets = true;
+            extraConfig = ''
+              proxy_read_timeout 1d;
+              proxy_send_timeout 1d;
+            '';
           };
         };
       };
@@ -178,5 +331,7 @@ in
     };
     # Who may use sivrad (ark.persons with a Signal number), for `init`.
     people = lib.attrNames people;
+    # The headed browser's page and who may open it, for `init`.
+    browser = browserPage;
   };
 }

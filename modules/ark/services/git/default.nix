@@ -118,6 +118,9 @@ in
               SSH_PORT = 2222;
               START_SSH_SERVER = true;
             };
+            # For repositories made from now on; an existing one keeps its own
+            # switch (Settings > Pull Requests).
+            "repository.pull-request".DEFAULT_DELETE_BRANCH_AFTER_MERGE = true;
             oauth2_client = {
               ACCOUNT_LINKING = "auto";
               ENABLE_AUTO_REGISTRATION = true;
