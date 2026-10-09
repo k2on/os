@@ -58,6 +58,7 @@ in
                 "${hass_config}:/config/configuration.yaml"
                 "${config.sops.templates."hass-secrets.yaml".path}:/config/secrets.yaml"
                 "${pkgs.home-assistant-custom-components.auth_oidc}/custom_components/auth_oidc:/config/custom_components/auth_oidc:ro"
+                "${pkgs.home-assistant-custom-components.adaptive_lighting}/custom_components/adaptive_lighting:/config/custom_components/adaptive_lighting:ro"
               ];
               environment.TZ = "America/Chicago";
               image = "ghcr.io/home-assistant/home-assistant:stable"; # Warning: if the tag does not change, the image will not be updated
