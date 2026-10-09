@@ -10,7 +10,6 @@
 #
 #   ark.public.id = 8443;      # id.<mainDomain>    -> ark:8443 (kanidm itself)
 #   ark.public.share = 443;    # share.<mainDomain> -> ark:443  (its nginx)
-#   ark.public."browser.sivrad" = 443;   # a label may be several deep
 #
 # The host running headscale consumes this (services/headscale): one DNS
 # record and one stream-map entry per label.

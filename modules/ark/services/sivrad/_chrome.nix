@@ -4,7 +4,7 @@
 # --chrome`, ./_guest.nix). Sites that turn the headless browser away
 # usually let this one in, and a person can watch it and take over (sign
 # in, solve a CAPTCHA) from a web page: noVNC, at
-# https://browser.sivrad.<mainDomain> behind a Kanidm sign-in.
+# https://sivrad.<mainDomain>/browser behind a Kanidm sign-in.
 #   imports = [ (import ./_chrome.nix { inherit home profile ...; }) ];
 #
 # The pieces, each a systemd service in the guest:
@@ -19,7 +19,7 @@
 #     on novncPort, which the guest's firewall opens to adam alone, on the
 #     veth.
 # On adam, the sivrad-browser service (./default.nix) serves that page at
-# https://browser.sivrad.<mainDomain>: nginx with the wildcard's
+# https://sivrad.<mainDomain>/browser: nginx with the wildcard's
 # certificate, then oauth2-proxy, which lets through only those who sign in
 # with Kanidm and are in its group (Max and Heather), websockets included.
 # That sign-in is the page's only lock, so nothing inside the container may
@@ -57,10 +57,11 @@
   home,
   # The browser's profile directory, kept between restarts.
   profile,
-  # The X display the browser runs on, the port of the noVNC page, and the
-  # only address it answers: adam's end of the veth.
+  # The X display the browser runs on, the noVNC page's port and path,
+  # and the only address it answers: adam's end of the veth.
   display,
   novncPort,
+  novncPrefix,
   hostAddress,
 }:
 { lib, pkgs, ... }:
@@ -135,16 +136,19 @@ let
     ];
   };
 
-  # noVNC's page, and an index that opens it connected and scaled to the
-  # window, so the URL to hand out is just https://browser.sivrad.<domain>/.
-  # noVNC takes the WebSocket's address from the page's (wss://, same host,
-  # path /websockify), so it goes through the same proxy and sign-in.
+  # noVNC's page under novncPrefix (/browser), as people reach it at
+  # https://sivrad.<mainDomain>/browser/: oauth2-proxy passes the path on
+  # unchanged, so websockify serves the files from that directory. Its
+  # index opens the client connected and scaled to the window, with the
+  # WebSocket at <prefix>/websockify (noVNC's `path`, relative to the
+  # host): wss:// on the same host, through the same proxy and sign-in.
+  # websockify takes the WebSocket on any path.
   novncWeb = pkgs.runCommand "sivrad-novnc-web" { } ''
-    mkdir $out
-    ln -s ${pkgs.novnc}/share/webapps/novnc/* $out/
-    cat > $out/index.html <<'EOF'
+    mkdir -p $out${novncPrefix}
+    ln -s ${pkgs.novnc}/share/webapps/novnc/* $out${novncPrefix}/
+    cat > $out${novncPrefix}/index.html <<'EOF'
     <!doctype html>
-    <meta http-equiv="refresh" content="0; url=vnc.html?autoconnect=true&resize=scale&reconnect=true">
+    <meta http-equiv="refresh" content="0; url=vnc.html?autoconnect=true&resize=scale&reconnect=true&path=${lib.removePrefix "/" novncPrefix}/websockify">
     EOF
   '';
 

@@ -24,7 +24,7 @@
 #   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
 #      and sign in with Kanidm.
 #   5. Sign the browser's Claude extension in (./_chrome.nix): open
-#      https://browser.sivrad.<mainDomain>, sign in with Kanidm (as Max or
+#      https://sivrad.<mainDomain>/browser, sign in with Kanidm (as Max or
 #      Heather, the only ones let in), click the Claude icon in the toolbar
 #      and sign in to claude.ai with the account of step 1. Then `/chrome`
 #      in the session (attach as in step 3) should say "Status: Enabled"
@@ -58,7 +58,7 @@
 # screen with the Claude in Chrome extension, driven through Claude Code's
 # own claude-in-chrome tools (`claude --chrome` below), for the sites that
 # turn the headless one away. Max and Heather watch it and take it over at
-# https://browser.sivrad.<mainDomain> (noVNC, public, behind a Kanidm
+# https://sivrad.<mainDomain>/browser (noVNC, public, behind a Kanidm
 # sign-in: sivrad-browser in ./default.nix), to sign in or get past a
 # CAPTCHA for the assistant. Its profile keeps those sign-ins, and the
 # extension's own claude.ai sign-in (step 5 above), which is the one part
@@ -87,7 +87,14 @@
   ...
 }:
 let
-  inherit (import ./_container.nix) home signalDir signalSocket hostAddress novncPort;
+  inherit (import ./_container.nix)
+    home
+    signalDir
+    signalSocket
+    hostAddress
+    novncPort
+    novncPrefix
+    ;
 
   # Who may talk to sivrad, keyed by Kanidm username:
   #   { "alice": { "signal": "+15551234567" } }
@@ -342,7 +349,7 @@ in
     (import ./_chrome.nix {
       inherit home;
       inherit (chrome) profile display;
-      inherit novncPort hostAddress;
+      inherit novncPort novncPrefix hostAddress;
     })
   ];
 

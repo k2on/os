@@ -21,6 +21,8 @@ rec {
   localAddress = "192.168.77.2";
   # The noVNC page of the headed browser (./_chrome.nix). Only adam reaches
   # it, over the veth: sivrad-browser there serves it to people behind a
-  # Kanidm sign-in (./default.nix).
+  # Kanidm sign-in (./default.nix), at https://sivrad.<mainDomain> under
+  # this path, which websockify serves it under too.
   novncPort = 6080;
+  novncPrefix = "/browser";
 }
