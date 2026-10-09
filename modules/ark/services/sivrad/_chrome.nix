@@ -3,7 +3,8 @@
 # which Claude Code drives through its claude-in-chrome tools (`claude
 # --chrome`, ./_guest.nix). Sites that turn the headless browser away
 # usually let this one in, and a person can watch it and take over (sign
-# in, solve a CAPTCHA) from a web page: noVNC on the tailnet.
+# in, solve a CAPTCHA) from a web page: noVNC, at
+# https://browser.sivrad.<mainDomain> behind a Kanidm sign-in.
 #   imports = [ (import ./_chrome.nix { inherit home profile ...; }) ];
 #
 # The pieces, each a systemd service in the guest:
@@ -12,10 +13,17 @@
 #     decorations, as a kiosk does;
 #   - sivrad-chromium: the browser on that screen, as `sivrad`, with its
 #     profile (sign-ins) under the home;
-#   - sivrad-vnc: x11vnc, which shares the screen on localhost:5900 behind a
-#     VNC password (the sivrad_vnc_password secret, ./default.nix);
+#   - sivrad-vnc: x11vnc, which shares the screen on localhost:5900, with no
+#     password of its own;
 #   - sivrad-novnc: websockify serving noVNC, the VNC client as a web page,
-#     on port 6080, which the guest's firewall opens on tailscale0 only.
+#     on novncPort, which the guest's firewall opens to adam alone, on the
+#     veth.
+# On adam, the sivrad-browser service (./default.nix) serves that page at
+# https://browser.sivrad.<mainDomain>: nginx with the wildcard's
+# certificate, then oauth2-proxy, which lets through only those who sign in
+# with Kanidm and are in its group (Max and Heather), websockets included.
+# That sign-in is the page's only lock, so nothing inside the container may
+# reach x11vnc or the page either; see the firewall at the bottom.
 #
 # How Claude Code reaches the browser: the extension asks Chromium for the
 # native messaging host com.anthropic.claude_code_browser_extension, whose
@@ -49,9 +57,11 @@
   home,
   # The browser's profile directory, kept between restarts.
   profile,
-  # The X display the browser runs on, and the port of the noVNC page.
+  # The X display the browser runs on, the port of the noVNC page, and the
+  # only address it answers: adam's end of the veth.
   display,
-  vncPort,
+  novncPort,
+  hostAddress,
 }:
 { lib, pkgs, ... }:
 let
@@ -126,7 +136,9 @@ let
   };
 
   # noVNC's page, and an index that opens it connected and scaled to the
-  # window, so the URL to hand out is just http://sivrad:<port>/.
+  # window, so the URL to hand out is just https://browser.sivrad.<domain>/.
+  # noVNC takes the WebSocket's address from the page's (wss://, same host,
+  # path /websockify), so it goes through the same proxy and sign-in.
   novncWeb = pkgs.runCommand "sivrad-novnc-web" { } ''
     mkdir $out
     ln -s ${pkgs.novnc}/share/webapps/novnc/* $out/
@@ -321,52 +333,86 @@ in
     };
   };
 
-  # The screen over VNC, on localhost only, behind the password. As a
-  # dynamic user of its own, not as sivrad: the password (a copy of
-  # /run/host-credentials/vnc_password, which only root may read, handed in
-  # by systemd as a credential) then belongs to that user alone, out of
-  # reach of anything running as sivrad, the model included. A dynamic user
-  # gets a private /tmp, so the X socket is bound into it. -noshm: X shared
-  # memory between two users is refused; plain requests do on localhost.
+  # The screen over VNC, on localhost only, with no VNC password: whoever
+  # reaches x11vnc controls the screen. What keeps everyone else out is the
+  # Kanidm sign-in in front of the page on adam, and in here the firewall
+  # below, which lets only websockify connect to x11vnc. As a dynamic user
+  # of its own, not as sivrad. A dynamic user gets a private /tmp, so the X
+  # socket is bound into it. -noshm: X shared memory between two users is
+  # refused; plain requests do on localhost. -nopw: no warning about the
+  # missing password, which is deliberate.
   systemd.services.sivrad-vnc = lib.recursiveUpdate onScreen {
     description = "VNC server for sivrad's browser screen";
-    unitConfig.RequiresMountsFor = "/run/host-credentials";
     serviceConfig = {
       DynamicUser = true;
       BindPaths = [ "/tmp/.X11-unix" ];
-      LoadCredential = [ "vnc-password:/run/host-credentials/vnc_password" ];
-      # %d: the credentials directory.
       ExecStart = lib.concatStringsSep " " [
         "${pkgs.x11vnc}/bin/x11vnc"
         "-display ${display}"
         "-localhost -rfbport 5900"
-        "-passwdfile %d/vnc-password"
-        "-forever -shared -noshm -norc -quiet"
+        "-nopw -forever -shared -noshm -norc -quiet"
       ];
     };
   };
 
-  # noVNC: websockify serves the page and relays its WebSocket to x11vnc. It
-  # listens everywhere; the guest's firewall opens the port on tailscale0
-  # only (./_guest.nix), so the page is for the tailnet. Plain HTTP: the
-  # tailnet is WireGuard, and the page asks for VNC's own password.
+  # noVNC: websockify serves the page and relays its WebSocket to x11vnc.
+  # It listens everywhere; the firewall below opens the port to adam's end
+  # of the veth alone, where oauth2-proxy (sivrad-browser, ./default.nix) is
+  # the one client. Plain HTTP over the veth: TLS ends at adam's nginx. A
+  # fixed system user rather than a dynamic one, so the firewall can tell
+  # its connections to x11vnc apart.
+  users.users.sivrad-novnc = {
+    isSystemUser = true;
+    group = "sivrad-novnc";
+  };
+  users.groups.sivrad-novnc = { };
   systemd.services.sivrad-novnc = {
     description = "noVNC page for sivrad's browser screen";
     wantedBy = [ "multi-user.target" ];
     after = [ "sivrad-vnc.service" ];
     serviceConfig = {
-      DynamicUser = true;
+      User = "sivrad-novnc";
+      Group = "sivrad-novnc";
       ExecStart = lib.concatStringsSep " " [
         "${pkgs.python3Packages.websockify}/bin/websockify"
         "--web ${novncWeb} --file-only"
-        "0.0.0.0:${toString vncPort} localhost:5900"
+        "0.0.0.0:${toString novncPort} 127.0.0.1:5900"
       ];
       Restart = "always";
       RestartSec = "5s";
       NoNewPrivileges = true;
       ProtectSystem = "strict";
       ProtectHome = true;
+      PrivateTmp = true;
       UMask = "0077";
     };
   };
+
+  # Who reaches the screen. In: the noVNC page from adam's end of the veth
+  # only (eth0, hostAddress), not from the tailnet or anywhere else. Out,
+  # from inside the container itself: x11vnc for websockify alone, and the
+  # page for nobody. Neither has a password, and the model's sandboxed
+  # commands may connect anywhere the container can (./_guest.nix), so
+  # without these the model could reach the screen it is kept from
+  # (/tmp/.X11-unix) through a port. Local connections leave through lo,
+  # whichever of the container's addresses they name; the owner match
+  # (xt_owner, which ./_host.nix loads on adam) tells websockify from the
+  # rest, Claude Code's sandbox proxy and Chromium included (both sivrad).
+  networking.firewall.extraCommands = ''
+    iptables -w -A nixos-fw -i eth0 -s ${hostAddress} -p tcp --dport ${toString novncPort} -j nixos-fw-accept
+
+    ip46tables -D OUTPUT -o lo -j sivrad-screen 2>/dev/null || true
+    ip46tables -F sivrad-screen 2>/dev/null || true
+    ip46tables -X sivrad-screen 2>/dev/null || true
+    ip46tables -N sivrad-screen
+    ip46tables -A sivrad-screen -p tcp --dport 5900 -m owner --uid-owner sivrad-novnc -j RETURN
+    ip46tables -A sivrad-screen -p tcp --dport 5900 -j DROP
+    ip46tables -A sivrad-screen -p tcp --dport ${toString novncPort} -j DROP
+    ip46tables -I OUTPUT 1 -o lo -j sivrad-screen
+  '';
+  networking.firewall.extraStopCommands = ''
+    ip46tables -D OUTPUT -o lo -j sivrad-screen 2>/dev/null || true
+    ip46tables -F sivrad-screen 2>/dev/null || true
+    ip46tables -X sivrad-screen 2>/dev/null || true
+  '';
 }

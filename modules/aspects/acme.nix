@@ -1,6 +1,13 @@
-{ config, ... }:
+{ lib, config, ... }:
 let
   ark = config.ark;
+  # Names two or more labels under mainDomain (browser.sivrad.<mainDomain>),
+  # which the wildcard does not cover: they go on the certificate by name.
+  # The DNS challenge works for them all the same, in mainDomain's zone.
+  under = lib.removeSuffix ".${ark.mainDomain}";
+  deepNames = lib.filter (d: d != under d && lib.hasInfix "." (under d)) (
+    lib.concatLists (lib.attrValues ark.serviceDomains) ++ lib.attrNames ark.publicDomains
+  );
 in
 {
   flake.nixosModules.acme =
@@ -16,7 +23,7 @@ in
 
         certs."${ark.mainDomain}" = {
           domain = "*.${ark.mainDomain}";
-          extraDomainNames = [ ark.mainDomain ];
+          extraDomainNames = [ ark.mainDomain ] ++ lib.unique deepNames;
 
           dnsProvider = "cloudflare";
           environmentFile = config.sops.templates."cloudflare-acme.env".path;

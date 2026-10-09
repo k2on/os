@@ -24,11 +24,11 @@
 #   4. In the sivrad app on the phone, enter http://sivrad:8788 (MagicDNS)
 #      and sign in with Kanidm.
 #   5. Sign the browser's Claude extension in (./_chrome.nix): open
-#      http://sivrad:6080/ from the tailnet, enter the VNC password (the
-#      sivrad_vnc_password secret: `ark sops -d sivrad_vnc_password.yaml`),
-#      click the Claude icon in the toolbar and sign in to claude.ai with
-#      the account of step 1. Then `/chrome` in the session (attach as in
-#      step 3) should say "Status: Enabled" and "Extension: Installed".
+#      https://browser.sivrad.<mainDomain>, sign in with Kanidm (as Max or
+#      Heather, the only ones let in), click the Claude icon in the toolbar
+#      and sign in to claude.ai with the account of step 1. Then `/chrome`
+#      in the session (attach as in step 3) should say "Status: Enabled"
+#      and "Extension: Installed".
 # Only people in people.json get through, from either side.
 #
 # The channel listens on TCP 8788, reachable over tailscale0 only; the phone
@@ -57,11 +57,12 @@
 # And a real browser (./_chrome.nix): ungoogled-chromium on a virtual
 # screen with the Claude in Chrome extension, driven through Claude Code's
 # own claude-in-chrome tools (`claude --chrome` below), for the sites that
-# turn the headless one away. People on the tailnet watch it and take it
-# over at http://sivrad:6080/ (noVNC, behind the sivrad_vnc_password
-# secret), to sign in or get past a CAPTCHA for the assistant. Its profile
-# keeps those sign-ins, and the extension's own claude.ai sign-in (step 5
-# above), which is the one part of it that is not configuration.
+# turn the headless one away. Max and Heather watch it and take it over at
+# https://browser.sivrad.<mainDomain> (noVNC, public, behind a Kanidm
+# sign-in: sivrad-browser in ./default.nix), to sign in or get past a
+# CAPTCHA for the assistant. Its profile keeps those sign-ins, and the
+# extension's own claude.ai sign-in (step 5 above), which is the one part
+# of it that is not configuration.
 #
 # Inside the container, Claude Code is locked down by managed settings
 # (highest precedence, not overridable from ~/.claude): Bash runs in the
@@ -82,10 +83,11 @@
   people,
   signalProfile,
   bot,
+  browserPage,
   ...
 }:
 let
-  inherit (import ./_container.nix) home signalDir signalSocket;
+  inherit (import ./_container.nix) home signalDir signalSocket hostAddress novncPort;
 
   # Who may talk to sivrad, keyed by Kanidm username:
   #   { "alice": { "signal": "+15551234567" } }
@@ -99,11 +101,10 @@ let
   browserProfile = "${home}/browser";
   # The headed browser with the Claude extension (./_chrome.nix): its
   # profile, holding the extension's claude.ai sign-in and whatever sites
-  # it is signed in to, the screen it runs on, and the noVNC page's port.
+  # it is signed in to, and the screen it runs on.
   chrome = {
     profile = "${home}/.config/chromium";
     display = ":1";
-    vncPort = 6080;
   };
   # fontconfig is off in the guest and nixpkgs' Playwright Chromium comes
   # with a fonts.conf naming no font directory, so without this every page
@@ -160,8 +161,8 @@ let
   # Then what would let a sandboxed command around the browser tools: the
   # headed browser's screen (Xvfb's socket; taking it over is for people,
   # through noVNC) and the native host's socket, which talks to the Claude
-  # extension directly. And systemd's credentials, where x11vnc's copy of
-  # the VNC password is (its own user's anyway, ./_chrome.nix).
+  # extension directly. (x11vnc and the noVNC page listen on ports, which
+  # the guest's firewall closes to it instead, ./_chrome.nix.)
   secretPaths = [
     "${home}/.claude/.credentials.json"
     signalDir
@@ -170,7 +171,6 @@ let
     "/run/sivrad"
     "/var/lib/tailscale"
     "/run/host-credentials"
-    "/run/credentials"
     "/tmp/.X11-unix"
     "/tmp/claude-mcp-browser-bridge-sivrad"
     "/etc/sivrad/people.json"
@@ -216,7 +216,6 @@ let
         "Read(//run/sivrad/**)"
         "Read(//var/lib/tailscale/**)"
         "Read(//run/host-credentials/**)"
-        "Read(//run/credentials/**)"
         "Read(//etc/sivrad/people.json)"
         "Read(/${peopleJson})"
       ];
@@ -342,7 +341,8 @@ in
   imports = [
     (import ./_chrome.nix {
       inherit home;
-      inherit (chrome) profile display vncPort;
+      inherit (chrome) profile display;
+      inherit novncPort hostAddress;
     })
   ];
 
@@ -405,13 +405,10 @@ in
     '';
   };
 
-  # The phone reaches the sivrad channel over the tailnet only, and so do
-  # people the noVNC page of the headed browser (./_chrome.nix); the tap
-  # side (adam) stays SSH-only.
-  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [
-    8788
-    chrome.vncPort
-  ];
+  # The phone reaches the sivrad channel over the tailnet only. The veth
+  # side (adam) gets SSH and, from adam's own address, the noVNC page of
+  # the headed browser, which people reach through adam (./_chrome.nix).
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8788 ];
 
   services.openssh = {
     enable = true;
@@ -488,16 +485,16 @@ in
       "unsupported browser", endless loading), or when a person has to see
       or do something in it. It has its own sign-ins, kept between sessions,
       and its downloads land in `downloads/` here.
-    - People can watch and take over that browser at
-      http://sivrad:${toString chrome.vncPort}/ (from the family's tailnet
-      only; the page asks for a password they already have, so never ask
-      for it or send it). When a page needs a person, such as signing in with
-      their own account, a CAPTCHA or a two-factor prompt, leave it open in
-      Chrome, send them that link with what to do there, and carry on once
-      they tell you they are done. Whatever they type there you could see;
-      do not keep it. If the Chrome tools are missing or say the extension
-      is not connected, tell the owner: the extension needs a one-time
-      sign-in through that page.
+    - People can watch and take over that browser at ${browserPage.url}
+      (from anywhere; it asks them to sign in with their Kanidm account,
+      and only ${lib.concatStringsSep " and " browserPage.people} are let
+      in, so send that link only to them). When a page needs one of them,
+      such as signing in with their own account, a CAPTCHA or a two-factor
+      prompt, leave it open in Chrome, send them that link with what to do
+      there, and carry on once they tell you they are done. Whatever they
+      type there you could see; do not keep it. If the Chrome tools are
+      missing or say the extension is not connected, tell the owner: the
+      extension needs a one-time sign-in through that page.
     - Signal messages carry files both ways. A received file (an image, a
       document, anything) is listed in the event as `[file: <path> (<type>)]`
       and sits in `inbox/` here; look at an image with Read. To send a file

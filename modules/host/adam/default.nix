@@ -22,6 +22,7 @@
       service-waka
       ark-nginx
       service-sivrad
+      service-sivrad-browser
       tailnet
     ];
 

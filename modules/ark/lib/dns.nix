@@ -18,7 +18,9 @@ let
         fn:
         builtins.listToAttrs (
           map (r: {
-            name = if r.name == "" then "apex" else r.name;
+            # A Terraform resource name: no dots, so browser.sivrad (a name
+            # two labels deep) becomes browser_sivrad.
+            name = if r.name == "" then "apex" else lib.replaceStrings [ "." ] [ "_" ] r.name;
             value = fn r;
           }) records
         );

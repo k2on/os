@@ -65,6 +65,15 @@ pub struct Config {
     /// Who may use sivrad: the Kanidm usernames in ark.persons with a Signal
     /// number.
     people: Vec<String>,
+    browser: BrowserConfig,
+}
+
+/// The headed browser's page (sivrad-browser), behind a Kanidm sign-in.
+#[derive(Deserialize)]
+pub struct BrowserConfig {
+    url: String,
+    /// The Kanidm usernames it lets in.
+    people: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -195,9 +204,11 @@ fn init(ctx: &Ctx) -> Result<()> {
         "\nLeft to do by hand: attach to the session once and accept the development-channel warning \
          (it comes back after every restart of the session):\n\n  ssh -t {vm} tmux attach -t sivrad\n\n\
          (detach with Ctrl-b d). Then, in the sivrad app, enter http://sivrad:8788 and sign in. \
-         And once, sign the browser's Claude extension in: open http://sivrad:6080/ (the password: \
-         ark sops -d sivrad_vnc_password.yaml), click the Claude icon and sign in to claude.ai with \
-         the account you just logged in with."
+         And once, sign the browser's Claude extension in: open {browser}, sign in with Kanidm \
+         (as one of: {browser_people}), click the Claude icon and sign in to claude.ai with the \
+         account you just logged in with.",
+        browser = cfg.browser.url,
+        browser_people = cfg.browser.people.join(", "),
     );
     Ok(())
 }

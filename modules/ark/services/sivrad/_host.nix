@@ -12,6 +12,11 @@
 #     (STUN, peers). Once the container is on the tailnet its traffic there
 #     is WireGuard, so what it may reach on the tailnet is up to headscale's
 #     ACL, not to this chain.
+# Traffic from adam to the container is not filtered here: oauth2-proxy
+# (sivrad-browser, ./default.nix) connects to the browser's noVNC page on
+# localAddress, and the container's answers pass sivrad-in as ESTABLISHED.
+# The guest's own firewall lets only adam's address in on that port
+# (./_chrome.nix).
 # The rules live in the mangle table because tailscaled inserts its own
 # ts-forward chain (which ACCEPTs everything leaving via tailscale0) at the
 # top of filter/FORWARD after the NixOS firewall has started.
@@ -23,14 +28,12 @@ let
   # sops of its own. It holds a copy of adam's tailnet pre-auth key
   # (den.aspects.tailnet), root-only, and the saved Signal account
   # signal-account.tar.gz.b64 (sivrad_signal_account, empty until one is
-  # saved), world-readable for signal-cli, which runs as `sivrad`; and the
-  # browser screen's VNC password (sivrad_vnc_password), root-only too: in
-  # the guest systemd hands it to x11vnc alone (./_chrome.nix). The
+  # saved), world-readable for signal-cli, which runs as `sivrad`. The
   # directory is 0711: no listing. The container shares the host's UIDs
   # (privateUsers = "no"), so ownership passes straight through.
   credentialsDir = "/run/sivrad-credentials";
   bot = import ./_bot.nix;
-  hostAddress = "192.168.77.1";
+  container = import ./_container.nix;
   hostPorts = [
     443
     8123
@@ -66,8 +69,7 @@ in
     # Its own network namespace, on a veth to adam; addresses and the
     # default route are set by nixos-containers on both ends.
     privateNetwork = true;
-    inherit hostAddress;
-    localAddress = "192.168.77.2";
+    inherit (container) hostAddress localAddress;
     # tailscaled in the guest needs /dev/net/tun and CAP_NET_ADMIN.
     enableTun = true;
     bindMounts."/run/host-credentials" = {
@@ -103,7 +105,6 @@ in
       chown root:root ${credentialsDir}
       install -m 0400 -o root -g root ${config.sops.secrets.headscale_preauth_key.path} ${credentialsDir}/headscale_preauth_key
       install -m 0444 -o root -g root ${config.sops.secrets.sivrad_signal_account.path} ${credentialsDir}/signal-account.tar.gz.b64
-      install -m 0400 -o root -g root ${config.sops.secrets.sivrad_vnc_password.path} ${credentialsDir}/vnc_password
       # The account's files (./_kanidm.nix and the services fill it) must
       # exist for the bind mount below.
       install -d -m 0711 -o root -g root ${bot.tokensDir}
@@ -113,6 +114,10 @@ in
     requires = [ "sivrad-credentials.service" ];
     after = [ "sivrad-credentials.service" ];
   };
+
+  # The guest's firewall tells local connections apart by user (`-m owner`,
+  # ./_chrome.nix), and a container cannot load kernel modules itself.
+  boot.kernelModules = [ "xt_owner" ];
 
   # No externalInterface: masquerade on whichever interface the route picks.
   networking.nat = {
