@@ -47,6 +47,17 @@ in
                   hosts:
                     - 10.0.0.77
                     - 10.0.0.186
+              # One Adaptive Lighting switch per room. Each points at the
+              # room's light group, which Adaptive Lighting expands, so lights
+              # added to a room's group are picked up without changing this.
+              # The YAML is re-imported on every start and overrides the UI.
+              adaptive_lighting:
+                - name: Living room
+                  lights:
+                    - light.living_room
+                - name: Bedroom
+                  lights:
+                    - light.bedroom_2
             '';
           in
           {
@@ -58,6 +69,7 @@ in
                 "${hass_config}:/config/configuration.yaml"
                 "${config.sops.templates."hass-secrets.yaml".path}:/config/secrets.yaml"
                 "${pkgs.home-assistant-custom-components.auth_oidc}/custom_components/auth_oidc:/config/custom_components/auth_oidc:ro"
+                "${pkgs.home-assistant-custom-components.adaptive_lighting}/custom_components/adaptive_lighting:/config/custom_components/adaptive_lighting:ro"
               ];
               environment.TZ = "America/Chicago";
               image = "ghcr.io/home-assistant/home-assistant:stable"; # Warning: if the tag does not change, the image will not be updated
