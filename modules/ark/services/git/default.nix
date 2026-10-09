@@ -29,7 +29,10 @@ in
       }:
       let
         cfg = config.services.gitea;
-        themeVersion = "1.27.2";
+        # Its templates are made for one Gitea version: keep this at the
+        # release matching pkgs.gitea (the theme numbers its releases after
+        # Gitea's), or pages fail to render.
+        themeVersion = "28.0.0";
         giteaGithubTheme = pkgs.stdenvNoCC.mkDerivation {
           pname = "gitea-github-theme";
           version = themeVersion;
@@ -37,17 +40,17 @@ in
           srcs = [
             (pkgs.fetchurl {
               url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-base.tar.gz";
-              hash = "sha256-L0nzSXWz1fYV5Ia7Qc2H0D2pBBNu5dXrDp42mWi0Aqc=";
+              hash = "sha256-zs682zLrLgHCV0EJ6ZW3gfN2lN3CoKUVtjtuyFIzGyA=";
             })
             # optional: GitHub-like layout templates (version-sensitive!)
             (pkgs.fetchurl {
               url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-templates.tar.gz";
-              hash = "sha256-5Okapwq6t2dZydb1hOHIf7zlOBVRi15rgE/F2NIzuis=";
+              hash = "sha256-GalvJBj5PsWt8LCvMfxeTL+sUALk1bKIxRf1UmlRBZk=";
             })
             # optional: translations for the templates
             (pkgs.fetchurl {
               url = "https://github.com/lutinglt/gitea-github-theme/releases/download/v${themeVersion}/theme-github-translations.tar.gz";
-              hash = "sha256-2dWoSeVljfddBBbbR5Yyz6lzYjkZQJpTVDgyjH4vqfk=";
+              hash = "sha256-qEbHzbC0dJ8OCf8eXtwi2jUNFemEhWgNSUohIz1qFko=";
             })
           ];
 
