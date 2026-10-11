@@ -26,11 +26,14 @@ let
   veth = "ve-sivrad";
   # Directory bind-mounted read-only into the guest, so the guest needs no
   # sops of its own. It holds a copy of adam's tailnet pre-auth key
-  # (den.aspects.tailnet), root-only, and the saved Signal account
-  # signal-account.tar.gz.b64 (sivrad_signal_account, empty until one is
-  # saved), world-readable for signal-cli, which runs as `sivrad`. The
-  # directory is 0711: no listing. The container shares the host's UIDs
-  # (privateUsers = "no"), so ownership passes straight through.
+  # (den.aspects.tailnet), root-only; the model's key (tinfoil_api_key,
+  # _llm.nix), root-only, which the guest's systemd hands to the one service
+  # that needs it; and
+  # the saved Signal account signal-account.tar.gz.b64
+  # (sivrad_signal_account, empty until one is saved), world-readable for
+  # signal-cli, which runs as `sivrad-channel`. The directory is 0711: no
+  # listing. The container shares the host's UIDs (privateUsers = "no"), so
+  # ownership passes straight through.
   credentialsDir = "/run/sivrad-credentials";
   bot = import ./_bot.nix;
   container = import ./_container.nix;
@@ -62,9 +65,9 @@ in
   containers.sivrad = {
     autoStart = true;
     # A rebuild of adam restarts the container when its configuration
-    # changed, so a deploy is the whole upgrade. That ends the running
-    # Claude session; its workspace, login and the Signal account persist,
-    # so a conversation only loses what was in flight.
+    # changed, so a deploy is the whole upgrade. That ends any run in
+    # flight; the agent's memory and sessions, the workspace and the Signal
+    # account persist.
     restartIfChanged = true;
     # Its own network namespace, on a veth to adam; addresses and the
     # default route are set by nixos-containers on both ends.
@@ -77,22 +80,20 @@ in
       isReadOnly = true;
     };
     # The sivrad account's Kanidm password and the API tokens the services
-    # minted for it (./_bot.nix, <service>/_tokens.nix), for the model to
+    # minted for it (./_bot.nix, <service>/_tokens.nix), for the agent to
     # read as /run/host-tokens/<name>. Unlike the credentials above these
-    # are meant for it, so the guest does not hide them.
+    # are meant for it.
     bindMounts."/run/host-tokens" = {
       hostPath = bot.tokensDir;
       isReadOnly = true;
     };
     # Evaluated as its own NixOS system (nixos-containers only passes the
-    # host platform on), so the claude-code unfree allowance stays scoped
-    # to the guest (see _guest.nix).
+    # host platform on).
     config.imports = [ ./_guest.nix ];
   };
 
   # Refresh the guest's copies before the container starts. In the guest
-  # the key is root:root 0400 and invisible to the `sivrad` user. Managed
-  # settings keep the model away from all of /run/host-credentials.
+  # the root-only files are invisible to every account but root.
   systemd.services.sivrad-credentials = {
     description = "Credentials for the sivrad container";
     serviceConfig = {
@@ -100,11 +101,15 @@ in
       RemainAfterExit = true;
     };
     script = ''
+      umask 077
       install -d -m 0711 -o root -g root ${credentialsDir}
       chmod 0711 ${credentialsDir}
       chown root:root ${credentialsDir}
       install -m 0400 -o root -g root ${config.sops.secrets.headscale_preauth_key.path} ${credentialsDir}/headscale_preauth_key
       install -m 0444 -o root -g root ${config.sops.secrets.sivrad_signal_account.path} ${credentialsDir}/signal-account.tar.gz.b64
+      # The model's key (_llm.nix), which only sivrad-llm gets, as a
+      # systemd credential.
+      install -m 0400 -o root -g root ${config.sops.secrets.sivrad_tinfoil_api_key.path} ${credentialsDir}/tinfoil_api_key
       # The account's files (./_kanidm.nix and the services fill it) must
       # exist for the bind mount below.
       install -d -m 0711 -o root -g root ${bot.tokensDir}
@@ -117,6 +122,8 @@ in
 
   # The guest's firewall tells local connections apart by user (`-m owner`,
   # ./_chrome.nix), and a container cannot load kernel modules itself.
+  # (Tinfoil's proxy, _llm.nix, reaches the internet over HTTPS like
+  # everything else here: no rule of its own.)
   boot.kernelModules = [ "xt_owner" ];
 
   # No externalInterface: masquerade on whichever interface the route picks.

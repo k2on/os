@@ -81,9 +81,25 @@ in
             RestartSec = 5;
           };
           script = ''
-            users() { headscale users list -o json; }
-            users | jq -e '.[] | select(.name == "${tailnetUser}")' >/dev/null || headscale users create ${tailnetUser}
-            uid=$(users | jq -r '.[] | select(.name == "${tailnetUser}") | .id')
+            # headscale.service is up before its socket answers; asking too
+            # early looked like "no users" once and made this create the
+            # user a second time. Wait for an answer, and fail without one.
+            users=
+            for _ in $(seq 1 30); do
+              if users=$(headscale users list -o json 2>/dev/null); then
+                break
+              fi
+              sleep 1
+            done
+            if [ -z "$users" ]; then
+              echo "headscale did not answer in 30 seconds" >&2
+              exit 1
+            fi
+            if ! printf '%s' "$users" | jq -e '.[] | select(.name == "${tailnetUser}")' >/dev/null; then
+              headscale users create ${tailnetUser}
+              users=$(headscale users list -o json)
+            fi
+            uid=$(printf '%s' "$users" | jq -r '.[] | select(.name == "${tailnetUser}") | .id')
             key=$(cat ${config.sops.secrets."${preauthKey}_headscale".path})
             db=${config.services.headscale.settings.database.sqlite.path}
             if [ -z "$(sqlite3 "$db" "select id from pre_auth_keys where key = '$key'")" ]; then

@@ -1,5 +1,6 @@
 # sivrad: a NixOS container (systemd-nspawn) on adam running an always-on
-# Claude Code session, named after the owner's phone voice assistant it
+# assistant (Codex, ./_codex.nix, on a model behind sivrad-llm, ./_llm.nix),
+# named after the owner's phone voice assistant it
 # serves. An ark.services entry without a web endpoint (web = false: the
 # channel is in the container, on the tailnet, so nothing for nginx): what
 # it takes from the registry is the phone app's OIDC client, its secrets
@@ -30,8 +31,8 @@
 # (./cli/mod.rs), which drives the container over ssh and keeps the Signal
 # account in the secrets repo:
 #
-#   ark service sivrad init                  # the Claude login, and what is
-#                                            # still missing
+#   ark secrets                              # the Tinfoil API key, by hand
+#   ark service sivrad init                  # what is up, and what is missing
 #   ark service sivrad signal register +15557654321
 #
 # then commit secrets/ and deploy adam.
@@ -121,6 +122,10 @@ in
         generate = true;
         restartUnits = [ "sivrad-kanidm-account.service" ];
       };
+      # The model's key (./_llm.nix): Tinfoil's API key, the one secret
+      # entered by hand (`ark secrets` asks; it comes from the Tinfoil
+      # dashboard). It reaches the container through ./_host.nix.
+      sivrad_tinfoil_api_key.restartUnits = [ "sivrad-credentials.service" ];
     };
 
     nixos =
@@ -155,7 +160,7 @@ in
           # The phone app's client, for the channel to check its tokens.
           oidc = { inherit (service.oidc) issuer clientId; };
           # The headed browser's page and who may open it, for the
-          # assistant's CLAUDE.md (./_guest.nix).
+          # assistant's AGENTS.md (./_codex.nix).
           inherit browserPage;
           # The Signal account's profile, applied on start (./_guest.nix): its
           # name, and ./avatar.png as its picture when that file exists.
@@ -177,7 +182,7 @@ in
             # Each service's REST API: where it is, and how it takes the
             # token (the service's own _api.nix: the API's path and the
             # Authorization header). The guest wraps each in a
-            # <service>-api command, so the model never has to put the
+            # <service>-api command, so the agent never has to put the
             # token in a command line (./_guest.nix).
             services = lib.genAttrs bot.services (
               s:
@@ -311,20 +316,44 @@ in
           "${container.novncPrefix}/" = {
             proxyPass = "http://127.0.0.1:${toString service.port}";
             proxyWebsockets = true;
+            # oauth2-proxy's session cookie outgrew 4 KB (Kanidm's tokens)
+            # and comes back from the sign-in callback as several Set-Cookie
+            # headers, more than nginx's default buffer holds for one
+            # response's headers: a 502 right after signing in. Room for
+            # them.
             extraConfig = ''
               proxy_read_timeout 1d;
               proxy_send_timeout 1d;
+              proxy_buffer_size 32k;
+              proxy_buffers 8 32k;
+              proxy_busy_buffers_size 64k;
             '';
           };
         };
       };
   };
 
+  # The channel and the model proxy as packages to build, and the channel's
+  # check to run: `nix build .#sivrad-channel`, `nix flake check`. The check
+  # (./channel/_check.nix) runs it against a stand-in for the agent.
+  config.perSystem =
+    { pkgs, ... }:
+    let
+      sivrad-channel = pkgs.callPackage ../../_rust.nix { pname = "sivrad-channel"; };
+      sivrad-llm = pkgs.callPackage ../../_rust.nix { pname = "sivrad-llm"; };
+    in
+    {
+      packages = { inherit sivrad-channel sivrad-llm; };
+      checks.sivrad-channel = pkgs.callPackage ./channel/_check.nix { inherit sivrad-channel; };
+    };
+
   # What `ark service sivrad ...` reads (cli/mod.rs), through `nix eval`.
   config.flake.arkServiceConfig.sivrad = {
     # ssh target: the container's own tailnet node; null without headscale.
     host = if tailnetDomain == null then null else "${container.name}.${tailnetDomain}";
-    inherit (container) user;
+    # The account to log in as: the channel's, which owns the Signal
+    # account.
+    user = container.sshUser;
     signal = {
       configDir = container.signalDir;
       socket = container.signalSocket;

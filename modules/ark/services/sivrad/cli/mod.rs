@@ -1,10 +1,11 @@
 //! `ark service sivrad ...`: set up the sivrad container from a laptop. Commands
-//! drive the container over ssh (as `sivrad`, at its tailnet name) and keep what
-//! has to survive a rebuild in the secrets repo: the Signal account. The
-//! Claude Code login lives on the container's state directory.
+//! drive the container over ssh (as `sivrad-channel`, at its tailnet name) and
+//! keep what has to survive a rebuild in the secrets repo: the Signal account.
 //!
 //! Who may use sivrad is not a command: it is everyone with a Signal number
 //! in secrets/ark.nix (`ark.persons.<username>.signal`, see ../default.nix).
+//! Nor is the model: the Tinfoil API key is a secret like any other (`ark
+//! secrets` asks for it), and the rest is configuration (../_llm.nix).
 //!
 //! This file is found by ../../../cli/build.rs and compiled as a module of
 //! the `ark` crate, like money's.
@@ -15,7 +16,6 @@ use std::process::{Command, Output, Stdio};
 use anyhow::{bail, Context, Result};
 use clap::{ArgMatches, Command as Clap};
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::secrets::Manifest;
 use crate::service::{Ctx, Service};
@@ -23,10 +23,25 @@ use crate::util;
 
 pub static SERVICE: Service = Service {
     name: "sivrad",
-    about: "The sivrad assistant container: the Claude login and Signal",
+    about: "The sivrad assistant container: its services and Signal",
     command,
     run,
 };
+
+/// The secret entered by hand: Tinfoil's API key (../default.nix).
+const TINFOIL_KEY: &str = "sivrad_tinfoil_api_key";
+
+/// The container's services, in the order they depend on each other
+/// (../_guest.nix, ../_llm.nix, ../_codex.nix, ../_chrome.nix). The agent
+/// itself is a socket: an app-server starts when the channel connects.
+const UNITS: &[&str] = &[
+    "sivrad-tinfoil",
+    "sivrad-llm",
+    "sivrad.socket",
+    "signal-cli",
+    "sivrad-channel",
+    "sivrad-chromium",
+];
 
 fn command() -> Clap {
     Clap::new("sivrad")
@@ -38,9 +53,8 @@ fn command() -> Clap {
                 .long_about(
                     "First-time setup; run it again any time, it skips what is already done. Says who \
                      may use sivrad (the people in secrets/ark.nix with a Signal number or username), makes sure the \
-                     Signal secrets exist, logs Claude Code in inside the container over ssh (the browser flow), \
-                     and says what is left: the Signal account and accepting the development-channel \
-                     warning.",
+                     secrets exist (the Tinfoil API key is entered by hand with `ark secrets`), checks the \
+                     container's services over ssh, and says what is left: the Signal account.",
                 ),
         )
         .subcommand(signal::command())
@@ -55,11 +69,13 @@ fn run(ctx: &Ctx, m: &ArgMatches) -> Result<()> {
 }
 
 /// What the nix side exports for us: the `arkServiceConfig.sivrad` flake
-/// output, defined in ../default.nix from ../_vm.nix.
+/// output, defined in ../default.nix from ../_container.nix.
 #[derive(Deserialize)]
 pub struct Config {
     /// The container's tailnet name; null when no host runs headscale.
     host: Option<String>,
+    /// The account to log in as: the channel's, which owns the Signal
+    /// account.
     user: String,
     signal: SignalConfig,
     /// Who may use sivrad: the Kanidm usernames in ark.persons with a Signal
@@ -146,17 +162,15 @@ impl std::fmt::Display for Vm {
     }
 }
 
-/// What `claude auth status --json` says (claude-code 2.1).
-fn logged_in(status: &str) -> Option<bool> {
-    serde_json::from_str::<Value>(status.trim())
-        .ok()?
-        .get("loggedIn")?
-        .as_bool()
+/// `systemctl is-active a b c` prints one state per line, in order, and
+/// exits non-zero when any is not active; pairs them up.
+fn unit_states<'a>(units: &[&'a str], output: &str) -> Vec<(&'a str, String)> {
+    let mut lines = output.lines();
+    units
+        .iter()
+        .map(|u| (*u, lines.next().unwrap_or("unknown").trim().to_owned()))
+        .collect()
 }
-
-/// Claude Code in the container runs from the sivrad service's environment; these
-/// match it for commands run over ssh.
-const CLAUDE_ENV: &str = "DISABLE_AUTOUPDATER=1";
 
 /// `ark service sivrad init`.
 fn init(ctx: &Ctx) -> Result<()> {
@@ -166,11 +180,18 @@ fn init(ctx: &Ctx) -> Result<()> {
     println!("1. People and secrets");
     print_people(&cfg);
     let created = init_secrets(ctx, &manifest)?;
+    if !manifest.present(ctx, TINFOIL_KEY) {
+        println!(
+            "   {TINFOIL_KEY} is missing: the model's API key, from the Tinfoil dashboard \
+             (https://tinfoil.sh). Run `ark secrets`, which asks for it, then commit secrets/ and \
+             deploy adam."
+        );
+    }
     if created {
         println!("   Commit secrets/ and deploy adam so the container gets them.");
     }
 
-    println!("2. Claude Code in the container");
+    println!("2. The container");
     let vm = cfg.vm()?;
     let reach = vm.probe("true")?;
     if !reach.status.success() {
@@ -180,7 +201,21 @@ fn init(ctx: &Ctx) -> Result<()> {
             String::from_utf8_lossy(&reach.stderr).trim()
         );
     }
-    init_claude(&vm)?;
+    let status = vm.probe(&format!("systemctl is-active {}", UNITS.join(" ")))?;
+    let mut down = Vec::new();
+    for (unit, state) in unit_states(UNITS, &String::from_utf8_lossy(&status.stdout)) {
+        println!("   {unit:16} {state}");
+        if state != "active" {
+            down.push(unit);
+        }
+    }
+    if !down.is_empty() {
+        println!(
+            "   Not running: {}. See why with\n     ssh {vm} journalctl -u {} -n 50",
+            down.join(", "),
+            down[0]
+        );
+    }
 
     println!("3. Signal");
     match signal::accounts(&cfg, &vm) {
@@ -201,12 +236,9 @@ fn init(ctx: &Ctx) -> Result<()> {
     }
 
     println!(
-        "\nLeft to do by hand: attach to the session once and accept the development-channel warning \
-         (it comes back after every restart of the session):\n\n  ssh -t {vm} tmux attach -t sivrad\n\n\
-         (detach with Ctrl-b d). Then, in the sivrad app, enter http://sivrad:8788 and sign in. \
-         And once, sign the browser's Claude extension in: open {browser}, sign in with Kanidm \
-         (as one of: {browser_people}), click the Claude icon and sign in to claude.ai with the \
-         account you just logged in with.",
+        "\nThen, in the sivrad app, enter http://sivrad:8788 and sign in. People watch and take \
+         over the assistant's browser at {browser} (sign in with Kanidm as one of: \
+         {browser_people}); nothing to set up there.",
         browser = cfg.browser.url,
         browser_people = cfg.browser.people.join(", "),
     );
@@ -243,55 +275,6 @@ fn init_secrets(ctx: &Ctx, manifest: &Manifest) -> Result<bool> {
     Ok(true)
 }
 
-/// Logs Claude Code in if it is not, then restarts the session so it picks
-/// the login up.
-fn init_claude(vm: &Vm) -> Result<()> {
-    let status = vm.probe(&format!("{CLAUDE_ENV} claude auth status --json"))?;
-    let has_auth = match logged_in(&String::from_utf8_lossy(&status.stdout)) {
-        Some(true) => {
-            println!("   logged in");
-            return Ok(());
-        }
-        Some(false) => true,
-        // An older claude without `claude auth`: look for the login itself.
-        None => {
-            if vm
-                .probe("test -s ~/.claude/.credentials.json")?
-                .status
-                .success()
-            {
-                println!("   logged in");
-                return Ok(());
-            }
-            false
-        }
-    };
-
-    if !has_auth {
-        println!(
-            "   Not logged in, and this claude has no `claude auth login`. Attach to the session and log \
-             in there (/login), then detach with Ctrl-b d:\n\n     ssh -t {vm} tmux attach -t sivrad\n"
-        );
-        return Ok(());
-    }
-
-    println!(
-        "   Not logged in. Logging in inside the container: open the link it prints, sign in, and paste the code \
-         back here."
-    );
-    vm.interactive(&format!("{CLAUDE_ENV} claude auth login"))
-        .context("claude auth login in the container")?;
-    let status = vm.probe(&format!("{CLAUDE_ENV} claude auth status --json"))?;
-    if logged_in(&String::from_utf8_lossy(&status.stdout)) != Some(true) {
-        bail!("Claude Code in the container still is not logged in; run `ark service sivrad init` again");
-    }
-    // The running session started logged out; ending it makes systemd start a
-    // fresh one (tmux exits with its last session) that has the login.
-    vm.output("tmux kill-session -t sivrad 2>/dev/null || true")?;
-    println!("   logged in; restarted the session, which is back in about 30 seconds");
-    Ok(())
-}
-
 /// Whether the Signal account backup holds something, without decrypting:
 /// sops leaves empty strings unencrypted, so the placeholder reads `""`.
 fn signal_backed_up(ctx: &Ctx, manifest: &Manifest) -> bool {
@@ -312,13 +295,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_auth_status() {
+    fn unit_states_pair_up() {
+        let states = unit_states(&["a", "b", "c"], "active\nfailed\n");
         assert_eq!(
-            logged_in(r#"{ "loggedIn": true, "authMethod": "claude.ai" }"#),
-            Some(true)
+            states,
+            [
+                ("a", "active".to_owned()),
+                ("b", "failed".to_owned()),
+                ("c", "unknown".to_owned())
+            ]
         );
-        assert_eq!(logged_in("{\n  \"loggedIn\": false\n}\n"), Some(false));
-        assert_eq!(logged_in("error: unknown command 'auth'"), None);
-        assert_eq!(logged_in(""), None);
     }
 }

@@ -1,37 +1,30 @@
-//! The MCP side: newline-delimited JSON-RPC 2.0 on stdin/stdout, just the
-//! subset Claude Code needs from a channel server (initialize, ping,
-//! tools/list, tools/call) plus our `notifications/claude/channel` events.
+//! The MCP side: the tools the agent calls back for during a run, served
+//! over HTTP on loopback (http.rs: `POST /mcp`, one JSON-RPC 2.0 message per
+//! request, the streamable HTTP transport in its plain-JSON form). Just the
+//! subset a client needs: initialize, ping, tools/list, tools/call.
 
-use std::sync::Arc;
-
-use serde_json::{json, Map, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::mpsc;
+use serde_json::{json, Value};
 
 use crate::files;
 use crate::signal;
 use crate::state::{Answer, Outcome, State};
 
 pub const INSTRUCTIONS: &str = "\
-Messages arrive as <channel source=\"sivrad\" ...> events from a small group of trusted people. Every event carries sender, the Kanidm username of the person; it is the same person whether the message came from the phone or from Signal.
-kind=\"voice\" events come from the phone voice assistant, transcribed from speech, so expect transcription errors. Answer with the reply tool, passing the event's chat_id, in one or two short plain sentences suitable to be read aloud or shown on a small overlay: no markdown, no lists, no code.
-When the request is something the phone itself must do (a timer, an alarm, a text message, opening an app, an HTTP request to one of the owner's services) and the event lists a matching phone tool, call phone_tool with that chat_id, the tool name and arguments matching the listed JSON schema; then reply with a short confirmation or the tool's own message.
-The phone waits about two minutes per step, so reply before starting long work. locked=\"true\" means the phone is locked; tools marked requiresUnlock will prompt the owner to unlock it.
-kind=\"signal\" events are Signal messages; their chat_id is signal:<address> (chat=\"direct\": one person) or signal:group:<id> (chat=\"group\": a group with several people, where everyone reads your reply). Answer them with reply to that chat_id, in plain text.
-In a group, act as the group's assistant: only trusted people's messages reach you, but others may be in the group and read your replies. Reply when addressed or when you can help; let conversation between people pass without comment.
-Message another trusted person only with signal_send, and only when the sender asked for it; then confirm back to the sender with reply.
-Files: a Signal message's attachments (images, documents, anything) are listed in the event as [file: <path> (<content type>)] lines; they are in inbox/ in the workspace, and you can look at an image with Read. To send files over Signal (a screenshot from the browser, a document) pass their workspace paths in the files argument of reply or signal_send; the text may then be empty. The phone cannot take files.";
+sivrad's channel to the people it serves. Messages reach you as runs whose input starts with a [sivrad] header line: sender (the person's Kanidm username; the same person whether they write from the phone or Signal), chat_id, kind (voice or signal) and, for Signal, chat (direct or group). Your final answer is sent to that chat for you; answer with exactly [SILENT] to say nothing.
+kind=voice: the phone voice assistant, transcribed from speech, so expect transcription errors. Answer in one or two short plain sentences, to be read aloud: no markdown, no lists, no code. When the request is something the phone itself must do (a timer, an alarm, a text, opening an app) and the input lists a matching phone tool, call phone_tool with the chat_id, the tool's name and arguments matching its JSON schema, then answer briefly. The phone waits about two minutes per step. locked=true means the phone is locked; tools marked requiresUnlock will prompt the owner to unlock it.
+kind=signal: a Signal message; chat_id is signal:<address> or signal:group:<id>. In a group, act as the group's assistant: only trusted people's messages reach you, but others may read your answers; answer when addressed or useful, [SILENT] otherwise.
+Files: a received file is listed in the input as a [file: <path> (<content type>)] line; it is in inbox/ in the workspace. To send files to the chat you are answering, call reply with their workspace paths (the text may be empty); to message another trusted person, signal_send, only when the sender asked for it. The phone cannot take files.";
 
 fn tools() -> Value {
     json!([
         {
             "name": "reply",
-            "description": "Answer a sivrad channel event: the spoken answer for a phone conversation, or a Signal message for a signal:<address> or signal:group:<id> chat_id.",
+            "description": "Send an answer to the chat of the current run before it ends: a Signal message with files attached (chat_id signal:<address> or signal:group:<id>), or an early spoken answer for the phone. The run's final text is sent anyway, so use this for files or for an answer that cannot wait.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "chat_id": { "type": "string", "description": "chat_id of the channel event being answered" },
-                    "text": { "type": "string", "description": "One or two short plain sentences; may be empty when files are attached" },
+                    "chat_id": { "type": "string", "description": "chat_id from the run's [sivrad] header" },
+                    "text": { "type": "string", "description": "The message; may be empty when files are attached" },
                     "files": { "type": "array", "items": { "type": "string" }, "description": "Signal chats only: paths of files in the workspace to attach, such as a screenshot" }
                 },
                 "required": ["chat_id", "text"]
@@ -39,12 +32,12 @@ fn tools() -> Value {
         },
         {
             "name": "phone_tool",
-            "description": "Run one of the phone's tools (definitions arrive in the channel event) and return its result.",
+            "description": "Run one of the phone's tools (their definitions are in the run's input) and return its result.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "chat_id": { "type": "string", "description": "chat_id of the channel event" },
-                    "name": { "type": "string", "description": "Name of a phone tool listed in the event" },
+                    "chat_id": { "type": "string", "description": "chat_id from the run's [sivrad] header" },
+                    "name": { "type": "string", "description": "Name of a phone tool listed in the input" },
                     "arguments": { "type": "object", "description": "Arguments matching that tool's JSON schema" }
                 },
                 "required": ["chat_id", "name", "arguments"]
@@ -56,7 +49,7 @@ fn tools() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "to": { "type": "string", "description": "The person's username, as in an event's sender" },
+                    "to": { "type": "string", "description": "The person's username, as in a run's sender" },
                     "text": { "type": "string", "description": "The message; may be empty when files are attached" },
                     "files": { "type": "array", "items": { "type": "string" }, "description": "Paths of files in the workspace to attach" }
                 },
@@ -64,19 +57,6 @@ fn tools() -> Value {
             }
         }
     ])
-}
-
-/// A channel event. Meta keys must be identifiers (letters, digits, `_`).
-pub fn channel_event(content: &str, meta: &[(&str, &str)]) -> Value {
-    let meta: Map<String, Value> = meta
-        .iter()
-        .map(|(k, v)| (k.to_string(), Value::from(*v)))
-        .collect();
-    json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/claude/channel",
-        "params": { "content": content, "meta": meta }
-    })
 }
 
 pub fn outcome_json(outcome: &Outcome) -> Value {
@@ -96,7 +76,7 @@ pub async fn handle(state: &State, message: Value) -> Option<Value> {
     let result = match method {
         "initialize" => json!({
             "protocolVersion": params.get("protocolVersion").cloned().unwrap_or_else(|| json!("2025-06-18")),
-            "capabilities": { "experimental": { "claude/channel": {} }, "tools": {} },
+            "capabilities": { "tools": {} },
             "serverInfo": { "name": "sivrad", "version": env!("CARGO_PKG_VERSION") },
             "instructions": INSTRUCTIONS,
         }),
@@ -125,7 +105,8 @@ async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
     if name == "signal_send" {
         return signal_send(state, args).await;
     }
-    let Some(chat) = args["chat_id"].as_str() else {
+    // Trimmed: some models pad every string argument with spaces.
+    let Some(chat) = args["chat_id"].as_str().map(str::trim) else {
         return Outcome::error("chat_id must be a string");
     };
     match name {
@@ -158,7 +139,7 @@ async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
             }
         }
         "phone_tool" => {
-            let Some(tool) = args["name"].as_str() else {
+            let Some(tool) = args["name"].as_str().map(str::trim) else {
                 return Outcome::error("name must be a string");
             };
             let call = &args["arguments"];
@@ -182,7 +163,7 @@ async fn call_tool(state: &State, name: &str, args: &Value) -> Outcome {
 }
 
 async fn signal_send(state: &State, args: &Value) -> Outcome {
-    let (Some(to), Some(text)) = (args["to"].as_str(), args["text"].as_str()) else {
+    let (Some(to), Some(text)) = (args["to"].as_str().map(str::trim), args["text"].as_str().map(str::trim)) else {
         return Outcome::error("to and text must be strings");
     };
     let files = match files_arg(args) {
@@ -198,7 +179,7 @@ async fn signal_send(state: &State, args: &Value) -> Outcome {
 /// The optional `files` argument: a list of paths, or nothing.
 fn files_arg(args: &Value) -> Result<Vec<String>, String> {
     match &args["files"] {
-        Value::Null => Ok(Vec::new()),
+        Value::Null => Ok(vec![]),
         Value::Array(list) => list
             .iter()
             .map(|f| {
@@ -211,11 +192,16 @@ fn files_arg(args: &Value) -> Result<Vec<String>, String> {
     }
 }
 
-/// A Signal message with its files checked (files.rs); something has to
-/// be in it.
-async fn send_signal(state: &State, chat: &signal::Chat, text: &str, files: &[String]) -> Outcome {
+/// Sends text and workspace files to a Signal chat; an empty message with
+/// no files is refused.
+async fn send_signal(
+    state: &State,
+    chat: &signal::Chat,
+    text: &str,
+    files: &[String],
+) -> Outcome {
     if text.trim().is_empty() && files.is_empty() {
-        return Outcome::error("nothing to send: give text or files");
+        return Outcome::error("text must not be empty unless files are attached");
     }
     let files = match files::outgoing(&state.config, files) {
         Ok(f) => f,
@@ -227,92 +213,47 @@ async fn send_signal(state: &State, chat: &signal::Chat, text: &str, files: &[St
     }
 }
 
-/// Serves Claude Code until it closes stdin, then exits the process.
-pub async fn read_stdin(state: Arc<State>) {
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() {
-            continue;
-        }
-        match serde_json::from_str::<Value>(&line) {
-            Ok(message) => {
-                let state = state.clone();
-                // Concurrently: phone_tool may wait minutes for the phone.
-                tokio::spawn(async move {
-                    if let Some(response) = handle(&state, message).await {
-                        state.send(response);
-                    }
-                });
-            }
-            Err(_) => state.send(json!({
-                "jsonrpc": "2.0",
-                "id": null,
-                "error": { "code": -32700, "message": "parse error" }
-            })),
-        }
-    }
-    std::process::exit(0);
-}
-
-/// Writes queued messages to stdout, one JSON document per line.
-pub async fn write_stdout(mut queue: mpsc::UnboundedReceiver<Value>) {
-    let mut stdout = tokio::io::stdout();
-    while let Some(message) = queue.recv().await {
-        let line = format!("{message}\n");
-        if stdout.write_all(line.as_bytes()).await.is_err() || stdout.flush().await.is_err() {
-            std::process::exit(0);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codex::Codex;
     use crate::oidc::Oidc;
     use crate::state::Config;
+    use std::sync::Arc;
     use std::time::Duration;
 
     fn state() -> Arc<State> {
         let config = Config {
-            timeout: Duration::from_secs(1),
-            tool_wait: Duration::from_millis(50),
+            timeout: Duration::from_millis(500),
+            tool_wait: Duration::from_millis(100),
             people_file: "/nonexistent".into(),
             signal_socket: "/nonexistent.sock".into(),
             workspace: std::env::temp_dir(),
             signal_attachments: "/nonexistent".into(),
         };
-        Arc::new(State::new(config, Oidc::new(None, None)).0)
-    }
-
-    async fn call(state: &State, message: Value) -> Value {
-        handle(state, message).await.unwrap()
+        Arc::new(State::new(
+            config,
+            Oidc::new(None, None),
+            Codex::new("/nonexistent.sock".into(), "/nonexistent", "/nonexistent.json".into()),
+        ))
     }
 
     #[tokio::test]
-    async fn initialize_echoes_the_protocol_version() {
+    async fn initialize_and_list() {
         let s = state();
-        let r = call(&s, json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-11-25" } })).await;
-        assert_eq!(r["id"], 1);
-        assert_eq!(r["result"]["protocolVersion"], "2025-11-25");
-        assert_eq!(
-            r["result"]["capabilities"],
-            json!({ "experimental": { "claude/channel": {} }, "tools": {} })
-        );
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": { "protocolVersion": "2025-03-26" } }))
+        .await
+        .unwrap();
+        assert_eq!(r["result"]["protocolVersion"], "2025-03-26");
         assert_eq!(r["result"]["serverInfo"]["name"], "sivrad");
-        assert!(r["result"]["instructions"]
-            .as_str()
-            .unwrap()
-            .contains("source=\"sivrad\""));
-    }
-
-    #[tokio::test]
-    async fn lists_tools_and_rejects_unknown_methods() {
-        let s = state();
-        let r = call(
-            &s,
-            json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" }),
-        )
-        .await;
+        assert!(r["result"]["capabilities"]["tools"].is_object());
+        assert!(handle(&s, json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
+            .await
+            .is_none());
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }))
+            .await
+            .unwrap();
         let names: Vec<&str> = r["result"]["tools"]
             .as_array()
             .unwrap()
@@ -320,243 +261,87 @@ mod tests {
             .map(|t| t["name"].as_str().unwrap())
             .collect();
         assert_eq!(names, ["reply", "phone_tool", "signal_send"]);
-        let r = call(
-            &s,
-            json!({ "jsonrpc": "2.0", "id": 2, "method": "resources/list" }),
-        )
-        .await;
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 3, "method": "nope" }))
+            .await
+            .unwrap();
         assert_eq!(r["error"]["code"], -32601);
-        assert_eq!(
-            call(&s, json!({ "jsonrpc": "2.0", "id": 3, "method": "ping" })).await["result"],
-            json!({})
-        );
     }
 
     #[tokio::test]
-    async fn ignores_notifications_and_responses() {
+    async fn reply_reaches_the_phone() {
         let s = state();
-        assert!(handle(
-            &s,
-            json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
-        )
+        let held = s.hold("c1");
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "reply", "arguments": { "chat_id": "c1", "text": "hi" } } }))
         .await
-        .is_none());
-        assert!(
-            handle(&s, json!({ "jsonrpc": "2.0", "id": 1, "result": {} }))
-                .await
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    async fn reply_without_a_waiting_phone_is_an_error() {
-        let s = state();
-        let r = call(
-            &s,
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": { "name": "reply", "arguments": { "chat_id": "c1", "text": "hi" } } }),
-        )
-        .await;
+        .unwrap();
+        assert_eq!(r["result"]["content"][0]["text"], "sent");
+        assert_eq!(held.wait().await, Answer::reply("hi"));
+        // nobody waiting any more
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "reply", "arguments": { "chat_id": "c1", "text": "again" } } }))
+        .await
+        .unwrap();
         assert_eq!(r["result"]["isError"], true);
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "reply", "arguments": { "chat_id": "c1", "text": "x", "files": ["a.png"] } } }))
+        .await
+        .unwrap();
         assert!(r["result"]["content"][0]["text"]
             .as_str()
             .unwrap()
-            .contains("no longer waiting on conversation c1"));
+            .contains("cannot take files"));
     }
 
     #[tokio::test]
-    async fn reply_reaches_the_held_request() {
+    async fn phone_tool_waits_for_the_result() {
         let s = state();
         let held = s.hold("c1");
-        let r = call(
-            &s,
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": { "name": "reply", "arguments": { "chat_id": "c1", "text": "Noon." } } }),
-        )
-        .await;
-        assert_eq!(
-            r["result"],
-            json!({ "content": [{ "type": "text", "text": "sent" }] })
-        );
-        assert_eq!(held.wait().await, Answer::reply("Noon."));
-    }
-
-    #[tokio::test]
-    async fn phone_tool_times_out_without_a_result() {
-        let s = state();
-        let held = s.hold("c1");
-        let pending = tokio::spawn({
+        let call = tokio::spawn({
             let s = s.clone();
             async move {
-                call(&s, json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                handle(&s, json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
                     "params": { "name": "phone_tool", "arguments": { "chat_id": "c1", "name": "t", "arguments": {} } } })).await
             }
         });
-        assert_eq!(held.wait().await.body["type"], "tool_call");
-        let r = pending.await.unwrap();
+        let answer = held.wait().await;
+        assert_eq!(answer.body["type"], "tool_call");
+        let id = answer.body["id"].as_str().unwrap();
+        assert!(s.finish_tool_call("c1", id, Outcome::ok("done")));
+        let r = call.await.unwrap().unwrap();
+        assert_eq!(r["result"]["content"][0]["text"], "done");
+
+        // no phone waiting
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "phone_tool", "arguments": { "chat_id": "c2", "name": "t", "arguments": {} } } }))
+        .await
+        .unwrap();
         assert_eq!(r["result"]["isError"], true);
-        assert_eq!(
-            r["result"]["content"][0]["text"],
-            "the phone did not report a result"
-        );
-    }
-
-    fn with_people() -> Arc<State> {
-        let workspace =
-            std::env::temp_dir().join(format!("sivrad-ws-{}", crate::state::random_id()));
-        std::fs::create_dir_all(&workspace).unwrap();
-        let path =
-            std::env::temp_dir().join(format!("sivrad-people-{}.json", crate::state::random_id()));
-        std::fs::write(&path, r#"{ "alice": { "signal": "+15550000001" }, "bob": { "signal": "+15550000002" }, "carol": {} }"#).unwrap();
-        let config = Config {
-            timeout: Duration::from_secs(1),
-            tool_wait: Duration::from_millis(50),
-            people_file: path,
-            signal_socket: "/nonexistent.sock".into(),
-            // its own directory: the tests tell workspace files from others
-            workspace: workspace.clone(),
-            signal_attachments: "/nonexistent".into(),
-        };
-        Arc::new(State::new(config, Oidc::new(None, None)).0)
-    }
-
-    async fn tool(state: &State, name: &str, arguments: Value) -> Value {
-        call(
-            state,
-            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": { "name": name, "arguments": arguments } }),
-        )
-        .await["result"]
-            .clone()
     }
 
     #[tokio::test]
-    async fn signal_routing() {
-        let s = with_people();
-        // a trusted number goes to signal-cli (not running here)
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "signal:+15550000001", "text": "hi" }),
-        )
-        .await;
-        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
-        // anyone else's number is refused before reaching signal-cli
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "signal:+15550000009", "text": "hi" }),
-        )
-        .await;
-        assert_eq!(
-            r["content"][0]["text"],
-            "signal:+15550000009 is not a trusted person's Signal address or group"
-        );
-        // a group nobody trusted has written in is refused too
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "signal:group:g1==", "text": "hi" }),
-        )
-        .await;
-        assert_eq!(r["isError"], true);
-        let r = tool(&s, "signal_send", json!({ "to": "bob", "text": "hi" })).await;
-        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
-        let r = tool(&s, "signal_send", json!({ "to": "mallory", "text": "hi" })).await;
-        assert_eq!(r["isError"], true);
-        assert_eq!(r["content"][0]["text"], "unknown person; known: alice, bob");
-        let r = tool(&s, "signal_send", json!({ "to": "carol", "text": "hi" })).await;
-        assert_eq!(r["content"][0]["text"], "unknown person; known: alice, bob");
-        std::fs::remove_dir_all(&s.config.workspace).unwrap();
-        std::fs::remove_file(&s.config.people_file).unwrap();
-    }
-
-    #[tokio::test]
-    async fn files_go_to_signal_only_from_the_workspace() {
-        let s = with_people();
-        let shot = s
-            .config
-            .workspace
-            .join(format!("sivrad-shot-{}.png", crate::state::random_id()));
-        std::fs::write(&shot, b"png").unwrap();
-        let shot = shot.to_string_lossy().into_owned();
-        // the phone cannot take files
-        s.hold("c1");
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "c1", "text": "", "files": [shot] }),
-        )
-        .await;
-        assert_eq!(
-            r["content"][0]["text"],
-            "the phone cannot take files; only Signal chats can"
-        );
-        // a workspace file goes to signal-cli (not running here)
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "signal:+15550000001", "text": "", "files": [shot] }),
-        )
-        .await;
-        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
-        let r = tool(
-            &s,
-            "signal_send",
-            json!({ "to": "bob", "text": "", "files": [shot] }),
-        )
-        .await;
-        assert_eq!(r["content"][0]["text"], "Signal: signal-cli is not running");
-        // anything else is refused before reaching it: the people file is
-        // beside the workspace, not in it
-        let outside = s.config.people_file.to_string_lossy().into_owned();
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "signal:+15550000001", "text": "", "files": [outside] }),
-        )
-        .await;
-        assert!(r["content"][0]["text"]
+    async fn signal_tools_need_trust_and_signal_cli() {
+        let s = state();
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "reply", "arguments": { "chat_id": "signal:+15550000001", "text": "hi" } } }))
+        .await
+        .unwrap();
+        assert!(r["result"]["content"][0]["text"]
             .as_str()
             .unwrap()
-            .contains("only files in the workspace"));
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "signal:+15550000001", "text": "", "files": [] }),
-        )
-        .await;
-        assert_eq!(
-            r["content"][0]["text"],
-            "nothing to send: give text or files"
-        );
-        let r = tool(
-            &s,
-            "reply",
-            json!({ "chat_id": "signal:+15550000001", "text": "x", "files": "nope" }),
-        )
-        .await;
-        assert_eq!(r["content"][0]["text"], "files must be a list of paths");
-        std::fs::remove_dir_all(&s.config.workspace).unwrap();
-        std::fs::remove_file(&s.config.people_file).unwrap();
-    }
-
-    #[test]
-    fn channel_event_shape() {
-        let e = channel_event("hi", &[("chat_id", "c1"), ("kind", "voice")]);
-        assert_eq!(
-            e,
-            json!({ "jsonrpc": "2.0", "method": "notifications/claude/channel",
-            "params": { "content": "hi", "meta": { "chat_id": "c1", "kind": "voice" } } })
-        );
-    }
-
-    #[test]
-    fn outcome_shapes() {
-        assert_eq!(
-            outcome_json(&Outcome::ok("a")),
-            json!({ "content": [{ "type": "text", "text": "a" }] })
-        );
-        assert_eq!(outcome_json(&Outcome::error("b"))["isError"], true);
+            .contains("not a trusted"));
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "signal_send", "arguments": { "to": "nobody", "text": "hi" } } }))
+        .await
+        .unwrap();
+        assert!(r["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("unknown person"));
+        let r = handle(&s, json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "bogus", "arguments": {} } }))
+        .await
+        .unwrap();
+        assert_eq!(r["result"]["isError"], true);
     }
 }

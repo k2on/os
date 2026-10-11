@@ -9,6 +9,7 @@ members = [
   "cli",
   "services/money/sync",
   "services/sivrad/channel",
+  "services/sivrad/llm",
 ]
 
 [workspace.package]
@@ -21,6 +22,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+# sivrad-llm: the client side of hyper, to forward requests upstream
 # the CLI only
 anyhow = "1"
 # unstable-ext: Arg::add, for clap_complete's per-argument value candidates
@@ -28,10 +30,10 @@ clap = { version = "4", default-features = false, features = ["std", "help", "us
 # unstable-dynamic: `COMPLETE=zsh ark` prints a shell shim that asks the binary itself for completions
 clap_complete = { version = "4", default-features = false, features = ["unstable-dynamic"] }
 rpassword = "7"
-# sivrad-channel only: async stdio, a long-polling HTTP server, SHA-256 and
+# sivrad-channel and sivrad-llm: async sockets, HTTP both ways, SHA-256 and
 # random ids (ring is already here through ureq's rustls)
 tokio = { version = "1", features = ["rt-multi-thread", "io-std", "io-util", "net", "time", "macros", "sync"] }
-hyper = { version = "1", features = ["server", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+hyper = { version = "1", features = ["server", "client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "client", "client-legacy", "http1"] }
 http-body-util = "0.1"
 ring = "0.17"

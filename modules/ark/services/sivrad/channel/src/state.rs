@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
+use crate::codex::Codex;
 use crate::identity::People;
 use crate::oidc::Oidc;
 use crate::signal::Signal;
@@ -21,8 +22,8 @@ pub struct Config {
     pub tool_wait: Duration,
     pub people_file: PathBuf,
     pub signal_socket: PathBuf,
-    /// Claude's workspace: the only place files sent over Signal may come
-    /// from, and where received ones go (files.rs).
+    /// The agent's workspace: the only place files sent over Signal may
+    /// come from, and where received ones go (files.rs).
     pub workspace: PathBuf,
     /// Where signal-cli puts the attachments it downloads.
     pub signal_attachments: PathBuf,
@@ -53,7 +54,7 @@ impl Answer {
     }
 }
 
-/// What an MCP tool call returns to Claude.
+/// What an MCP tool call returns to the agent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Outcome {
     pub text: String,
@@ -95,31 +96,23 @@ pub struct State {
     pub config: Config,
     pub oidc: Oidc,
     pub signal: Signal,
-    out: mpsc::UnboundedSender<Value>,
+    pub codex: Codex,
     seq: AtomicU64,
     waiting: Mutex<HashMap<String, Waiter>>,
     tool_calls: Mutex<HashMap<String, ToolCall>>,
 }
 
 impl State {
-    /// The state and the receiving end of everything bound for stdout.
-    pub fn new(config: Config, oidc: Oidc) -> (Self, mpsc::UnboundedReceiver<Value>) {
-        let (out, rx) = mpsc::unbounded_channel();
-        let state = State {
+    pub fn new(config: Config, oidc: Oidc, codex: Codex) -> Self {
+        State {
             signal: Signal::new(config.signal_socket.clone()),
             config,
             oidc,
-            out,
+            codex,
             seq: AtomicU64::new(0),
             waiting: Mutex::new(HashMap::new()),
             tool_calls: Mutex::new(HashMap::new()),
-        };
-        (state, rx)
-    }
-
-    /// Queues a JSON-RPC message for Claude Code.
-    pub fn send(&self, message: Value) {
-        let _ = self.out.send(message);
+        }
     }
 
     /// The identity table, read afresh so a changed file applies at once.
@@ -290,7 +283,11 @@ mod tests {
             workspace: std::env::temp_dir(),
             signal_attachments: "/nonexistent".into(),
         };
-        Arc::new(State::new(config, Oidc::new(None, None)).0)
+        Arc::new(State::new(
+            config,
+            Oidc::new(None, None),
+            Codex::new("/nonexistent.sock".into(), "/nonexistent", "/nonexistent.json".into()),
+        ))
     }
 
     #[tokio::test]

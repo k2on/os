@@ -1,4 +1,6 @@
-//! The phone's side, JSON over HTTP/1.1:
+//! Two HTTP/1.1 servers, JSON both ways.
+//!
+//! The phone's (serve_phone, on the tailnet):
 //!
 //!   GET  /health -> { ok: true, oidc: { issuer, client_id } }   (no auth)
 //!   POST /ask { conversation, text, tools?, locked? }
@@ -6,12 +8,17 @@
 //!
 //! Both POSTs need `Authorization: Bearer <Kanidm access token>` of a person
 //! in the identity table (401 / 403), take at most 64 KiB (413), and are held
-//! until Claude answers: 200 { type: "reply", text } or
+//! until the agent answers: 200 { type: "reply", text } or
 //! 200 { type: "tool_call", id, name, arguments } (the phone runs the tool and
 //! posts its result to /tool_result), 504 after SIVRAD_TIMEOUT_MS, or 409
 //! when a newer request for the same conversation replaces it.
+//!
+//! The agent's (serve_mcp, on loopback): `POST /mcp` with one JSON-RPC
+//! message, answered with its JSON-RPC response, or 202 for a notification
+//! (mcp.rs). No server-to-client stream: `GET /mcp` is 405.
 
 use std::convert::Infallible;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,16 +31,22 @@ use hyper_util::rt::TokioIo;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 
-use crate::mcp::channel_event;
+use crate::codex::{self, Event, Source};
+use crate::mcp;
 use crate::oidc::{bearer, AuthError};
 use crate::state::{Answer, Outcome, State};
 
 const MAX_BODY: usize = 64 * 1024;
 const MAX_TEXT: usize = 8000;
 
-pub async fn serve(state: Arc<State>, listen: &str) -> std::io::Result<()> {
+/// Serves `handler` on `listen`, one task per connection, for good.
+async fn serve<H, F>(listen: &str, what: &str, handler: H) -> std::io::Result<()>
+where
+    H: Fn(Request<Incoming>) -> F + Clone + Send + Sync + 'static,
+    F: Future<Output = Answer> + Send,
+{
     let listener = TcpListener::bind(listen).await?;
-    eprintln!("sivrad: listening on {}", listener.local_addr()?);
+    eprintln!("sivrad: {what} on {}", listener.local_addr()?);
     loop {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
@@ -43,13 +56,13 @@ pub async fn serve(state: Arc<State>, listen: &str) -> std::io::Result<()> {
                 continue;
             }
         };
-        let state = state.clone();
+        let handler = handler.clone();
         tokio::spawn(async move {
             let service = service_fn(move |req| {
-                let state = state.clone();
-                async move { Ok::<_, Infallible>(respond(route(&state, req).await)) }
+                let handler = handler.clone();
+                async move { Ok::<_, Infallible>(respond(handler(req).await)) }
             });
-            // Errors here are the phone hanging up; nothing to do about them.
+            // Errors here are the client hanging up; nothing to do about them.
             let _ = http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service)
                 .await;
@@ -57,8 +70,29 @@ pub async fn serve(state: Arc<State>, listen: &str) -> std::io::Result<()> {
     }
 }
 
+pub async fn serve_phone(state: Arc<State>, listen: &str) -> std::io::Result<()> {
+    serve(listen, "listening for the phone", move |req| {
+        let state = state.clone();
+        async move { route(&state, req).await }
+    })
+    .await
+}
+
+pub async fn serve_mcp(state: Arc<State>, listen: &str) -> std::io::Result<()> {
+    serve(listen, "serving MCP to the agent", move |req| {
+        let state = state.clone();
+        async move { route_mcp(&state, req).await }
+    })
+    .await
+}
+
 fn respond(answer: Answer) -> Response<Full<Bytes>> {
-    let mut response = Response::new(Full::new(Bytes::from(answer.body.to_string())));
+    let body = if answer.body.is_null() {
+        Bytes::new()
+    } else {
+        Bytes::from(answer.body.to_string())
+    };
+    let mut response = Response::new(Full::new(body));
     *response.status_mut() =
         StatusCode::from_u16(answer.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     response.headers_mut().insert(
@@ -107,6 +141,27 @@ async fn route(state: &Arc<State>, req: Request<Incoming>) -> Answer {
         ask(state, &user, &body).await
     } else {
         tool_result(state, &body).await
+    }
+}
+
+/// One JSON-RPC message per POST; a notification gets 202 and no body.
+async fn route_mcp(state: &Arc<State>, req: Request<Incoming>) -> Answer {
+    match (req.method(), req.uri().path()) {
+        (&Method::POST, "/mcp") => {}
+        (&Method::GET, "/mcp") => return Answer::error(405, "no server stream"),
+        (&Method::DELETE, "/mcp") => return Answer { status: 200, body: Value::Null },
+        _ => return Answer::error(404, "not found"),
+    }
+    let message = match read_json(req.into_body()).await {
+        Ok(message) => message,
+        Err(answer) => return answer,
+    };
+    match mcp::handle(state, message).await {
+        Some(response) => Answer::ok(response),
+        None => Answer {
+            status: 202,
+            body: Value::Null,
+        },
     }
 }
 
@@ -196,15 +251,6 @@ pub fn parse_tool_result(body: &Value) -> Result<ToolResult, String> {
     }
 }
 
-/// What Claude reads: the transcript, then the phone's tool definitions.
-pub fn channel_content(text: &str, tools: &[Value]) -> String {
-    if tools.is_empty() {
-        return text.to_owned();
-    }
-    let schemas = serde_json::to_string_pretty(tools).unwrap_or_default();
-    format!("{text}\n\nPhone tools available for phone_tool (JSON schemas):\n{schemas}")
-}
-
 async fn ask(state: &Arc<State>, user: &str, body: &Value) -> Answer {
     let ask = match parse_ask(body) {
         Ok(ask) => ask,
@@ -218,15 +264,18 @@ async fn ask(state: &Arc<State>, user: &str, body: &Value) -> Answer {
         ask.text.chars().count(),
         ask.tools.len()
     );
-    state.send(channel_event(
-        &channel_content(&ask.text, &ask.tools),
-        &[
-            ("chat_id", &ask.conversation),
-            ("kind", "voice"),
-            ("locked", if ask.locked { "true" } else { "false" }),
-            ("sender", user),
-        ],
-    ));
+    codex::run(
+        state.clone(),
+        Event {
+            chat_id: ask.conversation,
+            sender: user.to_owned(),
+            source: Source::Voice {
+                tools: ask.tools,
+                locked: ask.locked,
+            },
+            content: ask.text,
+        },
+    );
     held.wait().await
 }
 
@@ -238,7 +287,7 @@ async fn tool_result(state: &Arc<State>, body: &Value) -> Answer {
     if !state.has_tool_call(&r.conversation, &r.id) {
         return Answer::error(404, "unknown tool call");
     }
-    // Hold before handing Claude the result, so a quick reply finds us.
+    // Hold before handing the agent the result, so a quick answer finds us.
     let held = state.hold(&r.conversation);
     let outcome = if r.ok {
         Outcome::ok(r.result)
@@ -296,16 +345,5 @@ mod tests {
             &json!({ "conversation": "c", "id": "x", "ok": "true", "result": "" })
         )
         .is_err());
-    }
-
-    #[test]
-    fn content_lists_phone_tools() {
-        assert_eq!(channel_content("hi", &[]), "hi");
-        let tools = [json!({ "type": "function", "function": { "name": "set_timer" } })];
-        let content = channel_content("set a timer", &tools);
-        assert!(content.starts_with(
-            "set a timer\n\nPhone tools available for phone_tool (JSON schemas):\n[\n  {"
-        ));
-        assert!(content.contains("\"name\": \"set_timer\""));
     }
 }

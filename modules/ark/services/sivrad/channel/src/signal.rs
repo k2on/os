@@ -1,8 +1,8 @@
 //! Signal, through signal-cli's JSON-RPC daemon on a unix socket
 //! (`signal-cli daemon --socket`, newline-delimited JSON-RPC 2.0).
 //!
-//! Incoming `receive` notifications become channel events only for
-//! messages from a person in the identity table; everything else (unknown
+//! Incoming `receive` notifications become turns of the agent (codex.rs)
+//! only for messages from a person in the identity table; everything else (unknown
 //! senders, receipts, typing, sync messages) is dropped and counted on
 //! stderr, never echoing message text. Replies go out with `send`.
 //! A message's attachments, which signal-cli has downloaded by the time it
@@ -37,8 +37,8 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::files;
+use crate::codex::{self, Event, Source};
 use crate::identity::{People, SignalId};
-use crate::mcp::channel_event;
 use crate::state::State;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -195,7 +195,7 @@ fn target(chat: &Chat) -> Value {
     }
 }
 
-/// Hands the message to Claude Code, and shows the sender it was read and
+/// Hands the message to the agent, and shows the sender it was read and
 /// is being answered (a read receipt and a typing indicator, which the
 /// reply itself ends); whether their phone shows those is up to its own
 /// settings.
@@ -220,15 +220,17 @@ fn deliver(state: &Arc<State>, m: Inbound) {
         }
         content.push_str(&file.line());
     }
-    state.send(channel_event(
-        &content,
-        &[
-            ("chat_id", &m.chat.id()),
-            ("kind", "signal"),
-            ("chat", chat_kind),
-            ("sender", &m.sender),
-        ],
-    ));
+    codex::run(
+        state.clone(),
+        Event {
+            chat_id: m.chat.id(),
+            sender: m.sender.clone(),
+            source: Source::Signal {
+                chat: m.chat.clone(),
+            },
+            content,
+        },
+    );
     let state = state.clone();
     tokio::spawn(async move {
         let signal = &state.signal;

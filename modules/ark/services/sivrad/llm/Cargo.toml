@@ -1,0 +1,13 @@
+[package]
+name = "sivrad-llm"
+description = "The model behind sivrad: a loopback proxy that names the upstream and holds its key"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+tokio.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true

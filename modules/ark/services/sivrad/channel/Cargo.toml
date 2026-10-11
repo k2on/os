@@ -1,6 +1,6 @@
 [package]
 name = "sivrad-channel"
-description = "Claude Code channel for the sivrad phone voice assistant"
+description = "The sivrad assistant's channel: the phone, Signal, and the agent behind them"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
