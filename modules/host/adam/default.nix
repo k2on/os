@@ -17,6 +17,7 @@
       service-harken
       service-home
       service-money
+      service-pass
       service-photos
       service-radicale
       service-waka

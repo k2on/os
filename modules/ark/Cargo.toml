@@ -11,6 +11,7 @@ members = [
   "services/sivrad/channel",
   "llm-proxy",
   "services/sivrad/browser",
+  "services/pass/vaults",
 ]
 
 [workspace.package]

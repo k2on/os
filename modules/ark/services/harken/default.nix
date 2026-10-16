@@ -23,7 +23,7 @@ in
           # default and the apps monorepo leaves to the host: the server
           # build, which signs in against this server (`harken-web` is the
           # seeded demo GitHub Pages publishes).
-          web = self.inputs.harken.packages.${pkgs.stdenv.hostPlatform.system}.harken-web-server;
+          web = self.inputs.koon-apps.packages.${pkgs.stdenv.hostPlatform.system}.harken-web-server;
           port = service.port;
 
           # The house's speakers fetch their own bytes, and a Sonos is a

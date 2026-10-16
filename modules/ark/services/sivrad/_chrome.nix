@@ -20,7 +20,7 @@
 # On adam, the sivrad-browser service (./default.nix) serves that page at
 # https://sivrad.<mainDomain>/browser: nginx with the wildcard's
 # certificate, then oauth2-proxy, which lets through only those who sign in
-# with Kanidm and are in its group (Max and Heather), websockets included.
+# with Kanidm and are in its group (browserPeople, ./default.nix), websockets included.
 # That sign-in is the page's only lock, so nothing inside the container may
 # reach x11vnc or the page either; see the firewall at the bottom.
 #

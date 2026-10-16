@@ -57,12 +57,9 @@ let
   );
   # Kanidm's per-client issuer, as in lib/oidc.nix.
   idOrigin = "https://id.${ark.mainDomain}";
-  # Who may open the headed browser's page (sivrad-browser below): Kanidm
-  # usernames, Max's decision rather than a list in secrets/ark.nix.
-  browserPeople = [
-    "max"
-    "heather"
-  ];
+  # Who may open the headed browser's page (sivrad-browser below): the
+  # group `users` of sivrad-browser in secrets/ark.nix, like any service's.
+  browserPeople = ark.groups.sivrad-browser.users or [ ];
   unknownBrowserPeople = lib.filter (p: !(ark.persons ? ${p})) browserPeople;
   browserPage = {
     url = "https://${ark.serviceDomain "sivrad-browser" ark.services.sivrad-browser}${container.novncPrefix}";
@@ -199,7 +196,7 @@ in
 
   # The headed browser's noVNC page (./_chrome.nix), where people watch the
   # browser and take it over: public at https://sivrad.<mainDomain>/browser,
-  # for Max and Heather only, who sign in with Kanidm first. A service of
+  # for browserPeople only, who sign in with Kanidm first. A service of
   # its own because it needs what sivrad has not got: a web endpoint (port,
   # nginx vhost, DNS name) and a second, confidential OIDC client, while
   # sivrad's one `oidc` is the phone app's public client. It takes the name
@@ -208,9 +205,9 @@ in
   # base_domain), and serves only the /browser path there
   # (container.novncPrefix), so the rest of the name stays free for sivrad.
   # Its Kanidm client is `sivrad-browser` and its group
-  # `sivrad-browser_users`, which is browserPeople above (derived, like
-  # sivrad_users, not from secrets/ark.nix; so the sivrad account, which is
-  # in the members groups of the services it uses, is never in it).
+  # `sivrad-browser_users`, which is browserPeople above (from
+  # secrets/ark.nix; the sivrad account is never in it, since it only joins
+  # the members groups of the services it uses).
   #
   # nginx (the generic vhost, lib/services.nix and host/adam/nginx.nix)
   # terminates TLS and passes everything, WebSockets included, to
@@ -233,6 +230,7 @@ in
       displayName = "Sivrad's browser";
       callbacks = [ "${container.novncPrefix}/oauth2/callback" ];
       landing = "https://sivrad.${ark.mainDomain}${container.novncPrefix}/";
+      # Defined even when secrets/ark.nix names nobody: oauth2-proxy checks its claim.
       groups.users = browserPeople;
     };
 

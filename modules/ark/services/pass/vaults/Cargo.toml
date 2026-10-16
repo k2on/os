@@ -1,0 +1,20 @@
+[package]
+name = "pass-vaults"
+description = "Vaultwarden organizations (shared vaults) from configuration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+ring.workspace = true
+# Bitwarden's encryption, which the server never does itself: AES-256-CBC
+# for the organization's own fields, RSA-OAEP (SHA-1) to hand its key to
+# each member, and the base64 every key and cipher string travels in.
+rsa = { version = "0.9", default-features = false, features = ["std", "u64_digit", "getrandom"] }
+sha1 = "0.10"
+aes = "0.8"
+cbc = { version = "0.1", features = ["std"] }
+base64 = "0.22"

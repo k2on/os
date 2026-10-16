@@ -127,10 +127,10 @@
                 isEssential = true;
                 position = 1;
               };
-              "YNAB" = {
+              "Money" = {
                 id = "10cb5609-fcd5-4ed6-a48d-24eb22f2d624";
                 container = containers.Personal.id;
-                url = "https://app.ynab.com";
+                url = "https://money.koon.us";
                 isEssential = true;
                 position = 3;
               };
@@ -146,7 +146,7 @@
             # https://nur.nix-community.org/repos/rycee/
             extensions.packages = with self.inputs.firefox-addons.packages.${pkgs.stdenv.hostPlatform.system}; [
               ublock-origin
-              proton-pass
+              bitwarden
               istilldontcareaboutcookies
               darkreader
             ];

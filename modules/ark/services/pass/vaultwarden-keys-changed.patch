@@ -1,0 +1,48 @@
+diff -ru a/src/api/core/accounts.rs b/src/api/core/accounts.rs
+--- a/src/api/core/accounts.rs
++++ b/src/api/core/accounts.rs
+@@ -421,6 +421,7 @@
+     }
+ 
+     user.save(&conn).await?;
++    crate::util::notify_keys_changed();
+ 
+     // accept any open emergency access invitations
+     if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
+@@ -491,6 +492,7 @@
+         .await;
+ 
+     user.save(&conn).await?;
++    crate::util::notify_keys_changed();
+ 
+     Ok(Json(json!({
+       "object": "set-password",
+@@ -583,6 +585,7 @@
+     user.public_key = Some(data.public_key);
+ 
+     user.save(&conn).await?;
++    crate::util::notify_keys_changed();
+ 
+     Ok(Json(json!({
+         "privateKey": user.private_key,
+diff -ru a/src/util.rs b/src/util.rs
+--- a/src/util.rs
++++ b/src/util.rs
+@@ -398,6 +398,17 @@
+ //
+ // String util methods
+ //
++/// ark: once a user's key pair is stored, write $KEYS_CHANGED_FILE (when set),
++/// so what confirms people into organizations can run right then (a systemd
++/// path unit watches the file).
++pub fn notify_keys_changed() {
++    if let Ok(path) = env::var("KEYS_CHANGED_FILE") {
++        if let Err(e) = std::fs::write(&path, get_uuid()) {
++            warn!("Could not write KEYS_CHANGED_FILE {path}: {e}");
++        }
++    }
++}
++
+ #[inline]
+ pub fn upcase_first(s: &str) -> String {
+     let mut c = s.chars();
