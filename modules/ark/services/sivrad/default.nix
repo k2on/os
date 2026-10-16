@@ -340,10 +340,10 @@ in
     { pkgs, ... }:
     let
       sivrad-channel = pkgs.callPackage ../../_rust.nix { pname = "sivrad-channel"; };
-      sivrad-llm = pkgs.callPackage ../../_rust.nix { pname = "sivrad-llm"; };
+      sivrad-browser = pkgs.callPackage ../../_rust.nix { pname = "sivrad-browser"; };
     in
     {
-      packages = { inherit sivrad-channel sivrad-llm; };
+      packages = { inherit sivrad-channel sivrad-browser; };
       checks.sivrad-channel = pkgs.callPackage ./channel/_check.nix { inherit sivrad-channel; };
     };
 

@@ -116,7 +116,7 @@ impl Proxy {
                 }
                 let bytes = read_whatever_arrives(body, 1024 * 1024).await;
                 eprintln!(
-                    "sivrad-llm: upstream {}: {}",
+                    "llm-proxy: upstream {}: {}",
                     parts.status,
                     String::from_utf8_lossy(&bytes).chars().take(2000).collect::<String>()
                 );
@@ -129,10 +129,13 @@ impl Proxy {
                 for name in [hyper::header::TRANSFER_ENCODING, hyper::header::CONNECTION] {
                     parts.headers.remove(name);
                 }
-                Response::from_parts(parts, body.boxed())
+                // The body may come out shorter (markers stripped): its
+                // length is no longer the upstream's.
+                parts.headers.remove(CONTENT_LENGTH);
+                Response::from_parts(parts, Watched::new(body).boxed())
             }
             Err(e) => {
-                eprintln!("sivrad-llm: upstream: {e}");
+                eprintln!("llm-proxy: upstream: {e}");
                 plain(StatusCode::BAD_GATEWAY, &format!("upstream: {e}"))
             }
         }
@@ -155,7 +158,7 @@ async fn read_whatever_arrives(mut body: Incoming, cap: usize) -> Bytes {
                 }
             }
             Err(e) => {
-                eprintln!("sivrad-llm: upstream error body cut short: {e}");
+                eprintln!("llm-proxy: upstream error body cut short: {e}");
                 break;
             }
         }
@@ -163,11 +166,119 @@ async fn read_whatever_arrives(mut body: Incoming, cap: usize) -> Bytes {
     Bytes::from(out)
 }
 
+/// A response body passed through untouched, but watched for the usage
+/// report at the end of a Responses API answer (`response.completed`, as
+/// an event in the stream or the one JSON object), which goes to the
+/// journal: how much of the prompt the upstream served from its cache is
+/// the number that says whether a long thread costs full price each turn.
+struct Watched {
+    inner: Incoming,
+    tail: Vec<u8>,
+}
+
+impl Watched {
+    fn new(inner: Incoming) -> Self {
+        Watched { inner, tail: Vec::new() }
+    }
+
+    fn look(&mut self, data: &[u8]) {
+        // Keep the last stretch of the body: the usage block sits near the
+        // end, and an event may straddle two frames.
+        self.tail.extend_from_slice(data);
+        if self.tail.len() > 64 * 1024 {
+            let cut = self.tail.len() - 64 * 1024;
+            self.tail.drain(..cut);
+        }
+    }
+
+    fn report(&self) {
+        if let Some(usage) = last_usage(&String::from_utf8_lossy(&self.tail)) {
+            eprintln!(
+                "llm-proxy: usage: input {} (cached {}), output {} (reasoning {})",
+                usage["input_tokens"],
+                usage["input_tokens_details"]["cached_tokens"],
+                usage["output_tokens"],
+                usage["output_tokens_details"]["reasoning_tokens"]
+            );
+        }
+    }
+}
+
+/// The last `"usage": {...}` object in a stretch of body text.
+fn last_usage(text: &str) -> Option<Value> {
+    let at = text.rfind("\"usage\"")?;
+    let start = at + text[at..].find('{')?;
+    let mut depth = 0;
+    let mut end = None;
+    for (i, c) in text[start..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(start + i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let usage: Value = serde_json::from_str(&text[start..end?]).ok()?;
+    (!usage["input_tokens"].is_null()).then_some(usage)
+}
+
+impl hyper::body::Body for Watched {
+    type Data = Bytes;
+    type Error = hyper::Error;
+    fn poll_frame(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<hyper::body::Frame<Bytes>, hyper::Error>>> {
+        let polled = std::pin::Pin::new(&mut self.inner).poll_frame(cx);
+        match polled {
+            std::task::Poll::Ready(Some(Ok(frame))) => match frame.into_data() {
+                Ok(data) => {
+                    self.look(&data);
+                    // The model's channel markers out of what it says, so
+                    // a client that shows the text as it streams (Codex's
+                    // own terminal) never shows them. They arrive whole, as
+                    // single tokens, within one event.
+                    let data = match strip_markers_bytes(&data) {
+                        Some(clean) => clean,
+                        None => data,
+                    };
+                    std::task::Poll::Ready(Some(Ok(hyper::body::Frame::data(data))))
+                }
+                Err(frame) => std::task::Poll::Ready(Some(Ok(frame))),
+            },
+            std::task::Poll::Ready(None) => {
+                self.report();
+                std::task::Poll::Ready(None)
+            }
+            other => other,
+        }
+    }
+}
+
 /// Kimi K3's channel markers, which Tinfoil's Responses API lets through
 /// in its text. Fed back as history they multiply (the model sees them as
 /// the way to talk), so they come out of every assistant text on the way
 /// up; the channel takes them out of answers on the way down.
 const MARKERS: [&str; 4] = ["<|open|> response", "<|close|> response", "<|open|>", "<|close|>"];
+
+/// The markers out of a stretch of response bytes, as they stand in JSON
+/// strings (they hold no character JSON escapes); None when there are none.
+fn strip_markers_bytes(data: &[u8]) -> Option<Bytes> {
+    let text = std::str::from_utf8(data).ok()?;
+    if !MARKERS.iter().any(|m| text.contains(m)) {
+        return None;
+    }
+    let mut text = text.to_owned();
+    for marker in MARKERS {
+        text = text.replace(marker, "");
+    }
+    Some(Bytes::from(text))
+}
 
 fn strip_markers(text: &str) -> Option<String> {
     if !MARKERS.iter().any(|m| text.contains(m)) {
@@ -206,12 +317,57 @@ fn clean_item(item: &mut Value) -> bool {
     changed
 }
 
+/// Context editing, as Claude Code does it: a thread keeps every tool
+/// output forever (page snapshots, command output), and re-reading them
+/// all is what makes an old thread slow. Only the last few tool outputs
+/// stay whole; older ones are cut to their opening, with a note. The
+/// agent keeps the conversation and its own messages, and loses only
+/// stale dumps it would not act on again.
+const RECENT_TOOL_OUTPUTS: usize = 6;
+const KEEP_OF_OLD_OUTPUT: usize = 400;
+
+fn is_tool_output(item: &Value) -> bool {
+    matches!(
+        item["type"].as_str(),
+        Some("function_call_output" | "custom_tool_call_output" | "local_shell_call_output")
+    )
+}
+
+/// Cuts the old tool outputs in `items`; true when anything changed.
+fn elide_old_tool_outputs(items: &mut [Value]) -> bool {
+    let total = items.iter().filter(|i| is_tool_output(i)).count();
+    let mut seen = 0;
+    let mut changed = false;
+    for item in items.iter_mut() {
+        if !is_tool_output(item) {
+            continue;
+        }
+        seen += 1;
+        if seen + RECENT_TOOL_OUTPUTS > total {
+            break;
+        }
+        let Some(Value::String(output)) = item.get_mut("output") else {
+            continue;
+        };
+        if output.chars().count() <= KEEP_OF_OLD_OUTPUT * 2 {
+            continue;
+        }
+        let head: String = output.chars().take(KEEP_OF_OLD_OUTPUT).collect();
+        *output = format!(
+            "{head}\n[... older tool output, {} characters in all, cut to save context; run the tool again if you need it ...]",
+            output.chars().count()
+        );
+        changed = true;
+    }
+    changed
+}
+
 /// What the upstream needs changed in a request: `model` set to the
 /// upstream's name when one is configured, `developer` messages (what
 /// Codex sends its instructions as) relabelled `system`, which open-model
-/// servers know (the two roles mean the same), and the model's own channel
-/// markers taken out of its earlier messages. Anything that is not a JSON
-/// object passes through untouched.
+/// servers know (the two roles mean the same), the model's own channel
+/// markers taken out of its earlier messages, and old tool outputs cut.
+/// Anything that is not a JSON object passes through untouched.
 pub fn adapt(bytes: Bytes, model: Option<&str>) -> Bytes {
     let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else {
         return bytes;
@@ -227,7 +383,7 @@ pub fn adapt(bytes: Bytes, model: Option<&str>) -> Bytes {
         }
     }
     if let Some(items) = object.get_mut("input").and_then(Value::as_array_mut) {
-        for item in items {
+        for item in items.iter_mut() {
             if item["role"] == "developer" {
                 item["role"] = Value::from("system");
                 changed = true;
@@ -235,6 +391,9 @@ pub fn adapt(bytes: Bytes, model: Option<&str>) -> Bytes {
             if item["role"] == "assistant" && clean_item(item) {
                 changed = true;
             }
+        }
+        if elide_old_tool_outputs(items) {
+            changed = true;
         }
     }
     if changed {
@@ -273,7 +432,7 @@ fn plain(status: StatusCode, text: &str) -> Response<Body> {
 pub async fn serve(proxy: Arc<Proxy>, listen: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(listen).await?;
     eprintln!(
-        "sivrad-llm: {} -> {}{}",
+        "llm-proxy: {} -> {}{}",
         listener.local_addr()?,
         proxy.upstream,
         proxy
@@ -286,7 +445,7 @@ pub async fn serve(proxy: Arc<Proxy>, listen: &str) -> std::io::Result<()> {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
             Err(e) => {
-                eprintln!("sivrad-llm: accept: {e}");
+                eprintln!("llm-proxy: accept: {e}");
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
             }
@@ -307,11 +466,31 @@ pub async fn serve(proxy: Arc<Proxy>, listen: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn markers_come_out_of_response_bytes() {
+        let event = br#"data: {"type":"response.output_text.delta","delta":" <|open|> response Hi. <|close|> response"}"#;
+        let clean = strip_markers_bytes(event).unwrap();
+        assert_eq!(
+            &clean[..],
+            br#"data: {"type":"response.output_text.delta","delta":"  Hi. "}"#
+        );
+        assert!(strip_markers_bytes(b"data: {\"delta\":\"plain\"}").is_none());
+    }
+
+    #[test]
+    fn usage_is_found_at_the_end_of_a_stream() {
+        let body = "event: response.output_text.delta\ndata: {\"delta\":\"hi\"}\n\nevent: response.completed\ndata: {\"response\":{\"id\":\"r\",\"usage\":{\"input_tokens\":1200,\"input_tokens_details\":{\"cached_tokens\":1000},\"output_tokens\":40,\"output_tokens_details\":{\"reasoning_tokens\":30}}}}\n\n";
+        let usage = last_usage(body).unwrap();
+        assert_eq!(usage["input_tokens_details"]["cached_tokens"], 1000);
+        assert!(last_usage("data: {\"no\":1}").is_none());
+    }
 
     #[test]
     fn adapts_model_and_developer_role_only() {
         let out = adapt(
-            Bytes::from(r#"{"model":"sivrad","input":[{"role":"developer","content":"x"},{"role":"user","content":"y"}]}"#),
+            Bytes::from(r#"{"model":"agent","input":[{"role":"developer","content":"x"},{"role":"user","content":"y"}]}"#),
             Some("glm-5-3"),
         );
         let v: Value = serde_json::from_slice(&out).unwrap();
@@ -326,6 +505,37 @@ mod tests {
         for untouched in [r#"{"messages":[]}"#, "[1,2]", "not json", r#"{"input":"plain"}"#] {
             assert_eq!(adapt(Bytes::from(untouched), Some("x")), Bytes::from(untouched));
         }
+    }
+
+    #[test]
+    fn old_tool_outputs_are_cut_recent_ones_kept() {
+        let big = "x".repeat(5000);
+        let mut items: Vec<Value> = (0..10)
+            .map(|i| json!({ "type": "function_call_output", "call_id": format!("c{i}"), "output": big }))
+            .collect();
+        items.push(json!({ "type": "message", "role": "user", "content": "next" }));
+        let out = adapt(Bytes::from(json!({ "input": items }).to_string()), None);
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        let outputs: Vec<&str> = v["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|i| i["output"].as_str())
+            .collect();
+        assert_eq!(outputs.len(), 10);
+        for cut in &outputs[..4] {
+            assert!(cut.len() < 600, "old output should be cut, got {} chars", cut.len());
+            assert!(cut.contains("5000 characters in all"));
+        }
+        for kept in &outputs[4..] {
+            assert_eq!(kept.len(), 5000);
+        }
+        // small old outputs stay as they are
+        let small: Vec<Value> = (0..10)
+            .map(|i| json!({ "type": "function_call_output", "call_id": format!("c{i}"), "output": "ok" }))
+            .collect();
+        let body = json!({ "input": small }).to_string();
+        assert_eq!(adapt(Bytes::from(body.clone()), None), Bytes::from(body));
     }
 
     #[test]
@@ -404,7 +614,7 @@ mod tests {
             .header(AUTHORIZATION, "Bearer should-be-replaced")
             .header("x-forwarded", "kept")
             .header(CONTENT_TYPE, "application/json")
-            .body(Full::new(Bytes::from(r#"{"model":"sivrad","stream":true}"#)))
+            .body(Full::new(Bytes::from(r#"{"model":"agent","stream":true}"#)))
             .unwrap();
         let response = client.request(request).await.unwrap();
         assert_eq!(response.status(), 200);

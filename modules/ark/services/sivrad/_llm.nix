@@ -1,5 +1,6 @@
-# The model behind sivrad, as the guest sees it: sivrad-llm on loopback
-# (./llm, Rust), an OpenAI-compatible proxy that the agent (./_codex.nix)
+# The model behind sivrad, as the guest sees it: llm-proxy on loopback
+# (modules/ark/llm-proxy, Rust, as the sivrad-llm service), an
+# OpenAI-compatible proxy that the agent (./_codex.nix)
 # sends everything to with no key and the model name `sivrad`. It forwards
 # upstream with the real key and the real model name, so where the model
 # runs is the two environment variables below and the agent's
@@ -16,7 +17,7 @@
 { ports }:
 { pkgs, lib, ... }:
 let
-  llm = pkgs.callPackage ../../_rust.nix { pname = "sivrad-llm"; };
+  llm = pkgs.callPackage ../../_rust.nix { pname = "llm-proxy"; };
   hardening = {
     DynamicUser = true;
     Restart = "always";
@@ -56,25 +57,25 @@ in
     wants = [ "sivrad-tinfoil.service" ];
     unitConfig.RequiresMountsFor = "/run/host-credentials";
     environment = {
-      SIVRAD_LLM_LISTEN = "127.0.0.1:${toString ports.llm}";
+      LLM_PROXY_LISTEN = "127.0.0.1:${toString ports.llm}";
       # Where the model is. To move it, change these two lines: say, a
       # model on adam's GPU with Ollama there (open the port to the
       # container in ./_host.nix first):
-      #   SIVRAD_LLM_UPSTREAM = "http://192.168.77.1:11434";
-      #   SIVRAD_LLM_MODEL = "qwen3:32b";
+      #   LLM_PROXY_UPSTREAM = "http://192.168.77.1:11434";
+      #   LLM_PROXY_MODEL = "qwen3:32b";
       # and drop the credential and sivrad-tinfoil.
-      SIVRAD_LLM_UPSTREAM = "http://127.0.0.1:${toString ports.tinfoil}";
-      # Tinfoil's chat models (https://docs.tinfoil.sh/models/chat): kimi-k3
-      # is their pick for agentic workflows and complex tool calling, and
-      # the one strong model with vision (photos over Signal, screenshots).
-      # Through the Responses API its channel markers (`<|open|> response`)
-      # come through in its text; the channel takes them out of answers
-      # (channel/src/codex.rs). glm-5-3 is the text-only alternative at a
-      # quarter of the price. Both serve the Responses API the agent speaks.
-      SIVRAD_LLM_MODEL = "kimi-k3";
+      LLM_PROXY_UPSTREAM = "http://127.0.0.1:${toString ports.tinfoil}";
+      # Tinfoil's chat models (https://docs.tinfoil.sh/models/chat): glm-5-3
+      # is their pick for agentic, long-horizon tool use, with a 1M context,
+      # at under half Kimi K3's price for input and a quarter for output.
+      # It is text-only: photos sent over Signal and screenshots it cannot
+      # look at. kimi-k3 is the one with vision; its channel markers
+      # (`<|open|> response`) are stripped by the proxy and the channel.
+      # Both serve the Responses API the agent speaks.
+      LLM_PROXY_MODEL = "glm-5-3";
     };
     serviceConfig = hardening // {
-      ExecStart = "${llm}/bin/sivrad-llm";
+      ExecStart = "${llm}/bin/llm-proxy";
       # Read by systemd as root, handed over as $CREDENTIALS_DIRECTORY/key.
       LoadCredential = "key:/run/host-credentials/tinfoil_api_key";
     };

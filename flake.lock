@@ -35,22 +35,6 @@
         "type": "github"
       }
     },
-    "files": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785514153,
-        "narHash": "sha256-udzZZPcWFI1ul8uLNfofC2fzuq0LI7Pv1cY5qs+JlbQ=",
-        "owner": "mightyiam",
-        "repo": "files",
-        "rev": "ffaceaf36ccfd7868272ee3ccfe3f17ff2424060",
-        "type": "github"
-      },
-      "original": {
-        "owner": "mightyiam",
-        "repo": "files",
-        "type": "github"
-      }
-    },
     "firefox-addons": {
       "inputs": {
         "nixpkgs": [
@@ -109,28 +93,6 @@
     "flake-parts_2": {
       "inputs": {
         "nixpkgs-lib": [
-          "harken",
-          "petros",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1788450739,
-        "narHash": "sha256-glZLQlzIn1fXH6PazR2iUmTo7kzzyYSshrWhLS9TqCU=",
-        "owner": "hercules-ci",
-        "repo": "flake-parts",
-        "rev": "31729ca8cbdb4fa927b34e5f4353e6a83f39e993",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hercules-ci",
-        "repo": "flake-parts",
-        "type": "github"
-      }
-    },
-    "flake-parts_3": {
-      "inputs": {
-        "nixpkgs-lib": [
           "nixvim",
           "nixpkgs"
         ]
@@ -149,7 +111,7 @@
         "type": "github"
       }
     },
-    "flake-parts_4": {
+    "flake-parts_3": {
       "inputs": {
         "nixpkgs-lib": [
           "terranix",
@@ -170,23 +132,58 @@
         "type": "github"
       }
     },
-    "harken": {
+    "harken-v4-journal": {
       "inputs": {
-        "nixpkgs": "nixpkgs",
-        "petros": "petros"
+        "nixpkgs": [
+          "koon-apps",
+          "nixpkgs"
+        ],
+        "rust-overlay": [
+          "koon-apps",
+          "rust-overlay"
+        ]
       },
       "locked": {
-        "lastModified": 1789853966,
-        "narHash": "sha256-WWsCR5vKhIcrfUjJzUQe41oQn17yyyHeVxsKTPyhq7k=",
-        "owner": "k2on",
-        "repo": "harken",
-        "rev": "e7f060d62b56f8b0e64a6c0530c4ab59079d0060",
-        "type": "github"
+        "lastModified": 1790795584,
+        "narHash": "sha256-J2/Cuu9OAXb6eUm1lA9kJFAx6nOo1Nr2u5utfhH1tcs=",
+        "ref": "main",
+        "rev": "abbf861feed6468baea238babc7baa8e1750d3bc",
+        "revCount": 178,
+        "type": "git",
+        "url": "https://github.com/k2on/apps"
       },
       "original": {
-        "owner": "k2on",
-        "repo": "harken",
-        "type": "github"
+        "ref": "main",
+        "rev": "abbf861feed6468baea238babc7baa8e1750d3bc",
+        "type": "git",
+        "url": "https://github.com/k2on/apps"
+      }
+    },
+    "harken-v4-rows": {
+      "inputs": {
+        "nixpkgs": [
+          "koon-apps",
+          "nixpkgs"
+        ],
+        "rust-overlay": [
+          "koon-apps",
+          "rust-overlay"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790859199,
+        "narHash": "sha256-/9wea3OiIFulbSPviGGifVTwGA5kgCwu0/PuqiYTylI=",
+        "ref": "main",
+        "rev": "71f7b0c40e81a226d980f52d20c259d73ee4e055",
+        "revCount": 214,
+        "type": "git",
+        "url": "https://github.com/k2on/apps"
+      },
+      "original": {
+        "ref": "main",
+        "rev": "71f7b0c40e81a226d980f52d20c259d73ee4e055",
+        "type": "git",
+        "url": "https://github.com/k2on/apps"
       }
     },
     "home-manager": {
@@ -233,21 +230,6 @@
     },
     "import-tree": {
       "locked": {
-        "lastModified": 1788467110,
-        "narHash": "sha256-ljEMTXP/rH0tOvDzc9gzwww6KcHRPRnEHzd9lK48V7s=",
-        "owner": "vic",
-        "repo": "import-tree",
-        "rev": "eb1b52eaecc57f7c136d07ae8a93e724dfecac46",
-        "type": "github"
-      },
-      "original": {
-        "owner": "vic",
-        "repo": "import-tree",
-        "type": "github"
-      }
-    },
-    "import-tree_2": {
-      "locked": {
         "lastModified": 1784254960,
         "narHash": "sha256-iI88R3wHz8wTKQb5orvpc51L/Xr64AJyxid/0MKa/b8=",
         "owner": "vic",
@@ -258,6 +240,27 @@
       "original": {
         "owner": "vic",
         "repo": "import-tree",
+        "type": "github"
+      }
+    },
+    "koon-apps": {
+      "inputs": {
+        "harken-v4-journal": "harken-v4-journal",
+        "harken-v4-rows": "harken-v4-rows",
+        "nixpkgs": "nixpkgs",
+        "rust-overlay": "rust-overlay"
+      },
+      "locked": {
+        "lastModified": 1792114428,
+        "narHash": "sha256-j1X3PWNkcH6kv9eIJiBevxZXXO2STmMajQVtqL8N7Rw=",
+        "owner": "k2on",
+        "repo": "apps",
+        "rev": "ab1ce199190143cb8787c9863a2b426b5c746b94",
+        "type": "github"
+      },
+      "original": {
+        "owner": "k2on",
+        "repo": "apps",
         "type": "github"
       }
     },
@@ -283,18 +286,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1789009968,
-        "narHash": "sha256-GB16oaxpsrnGNnGIE+0uYBqMRzB9X6FYDUvjvnJAYew=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "d58a46e3bc02d91ebe04667f8397752a749c0024",
-        "type": "github"
+        "lastModified": 1751274312,
+        "narHash": "sha256-/bVBlRpECLVzjV19t5KMdMFWSwKLtb5RyXdjz3LJT+g=",
+        "rev": "50ab793786d9de88ee30ec4e4c24fb4236fc2674",
+        "revCount": 719113,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/NixOS/nixpkgs/0.2411.719113%2Brev-50ab793786d9de88ee30ec4e4c24fb4236fc2674/0197c594-378b-73ff-8d7e-3b1d0b8d135f/source.tar.gz"
       },
       "original": {
-        "owner": "NixOS",
-        "ref": "nixos-26.05",
-        "repo": "nixpkgs",
-        "type": "github"
+        "type": "tarball",
+        "url": "https://flakehub.com/f/NixOS/nixpkgs/0.2411.%2A.tar.gz"
       }
     },
     "nixpkgs-lib": {
@@ -362,7 +363,7 @@
     },
     "nixvim": {
       "inputs": {
-        "flake-parts": "flake-parts_3",
+        "flake-parts": "flake-parts_2",
         "nixpkgs": [
           "nixpkgs"
         ],
@@ -383,40 +384,15 @@
         "type": "github"
       }
     },
-    "petros": {
-      "inputs": {
-        "files": "files",
-        "flake-parts": "flake-parts_2",
-        "import-tree": "import-tree",
-        "nixpkgs": [
-          "harken",
-          "nixpkgs"
-        ],
-        "rust-overlay": "rust-overlay"
-      },
-      "locked": {
-        "lastModified": 1789475701,
-        "narHash": "sha256-XEw9MFiwbdW+r9GgJNQHodRFXRTK6tu1/2i3UI6Hilg=",
-        "owner": "k2on",
-        "repo": "petros",
-        "rev": "bf52c41b937f150d04a15aa9676f0b9ac10e61a7",
-        "type": "github"
-      },
-      "original": {
-        "owner": "k2on",
-        "repo": "petros",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "den": "den",
         "disko": "disko",
         "firefox-addons": "firefox-addons",
         "flake-parts": "flake-parts",
-        "harken": "harken",
         "home-manager": "home-manager",
-        "import-tree": "import-tree_2",
+        "import-tree": "import-tree",
+        "koon-apps": "koon-apps",
         "nixos-apple-silicon": "nixos-apple-silicon",
         "nixpkgs": "nixpkgs_3",
         "nixpkgs-unstable": "nixpkgs-unstable",
@@ -430,23 +406,21 @@
     "rust-overlay": {
       "inputs": {
         "nixpkgs": [
-          "harken",
-          "petros",
+          "koon-apps",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1788765185,
-        "narHash": "sha256-pp8lb5CrKjmscZbTK34HuCaq18zDU4Q6zlaD5dS+Hi4=",
-        "owner": "oxalica",
-        "repo": "rust-overlay",
-        "rev": "ca7f624be3935a5bc46d2c240515491ab8675503",
-        "type": "github"
+        "lastModified": 1790495762,
+        "narHash": "sha256-26FbceKgybcbwkIvs2yHsF5jHcWLEkITYg5g9WPSy64=",
+        "rev": "edea2d6f98b1e5f64ce5ac21e19a96c603c20b8c",
+        "revCount": 2317,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/oxalica/rust-overlay/0.1.2317%2Brev-edea2d6f98b1e5f64ce5ac21e19a96c603c20b8c/01a0e1f7-f406-78e0-92bb-707f8b757a5a/source.tar.gz"
       },
       "original": {
-        "owner": "oxalica",
-        "repo": "rust-overlay",
-        "type": "github"
+        "type": "tarball",
+        "url": "https://flakehub.com/f/oxalica/rust-overlay/0.1.%2A.tar.gz"
       }
     },
     "sops-nix": {
@@ -501,7 +475,7 @@
     },
     "terranix": {
       "inputs": {
-        "flake-parts": "flake-parts_4",
+        "flake-parts": "flake-parts_3",
         "nixpkgs": [
           "nixpkgs"
         ],

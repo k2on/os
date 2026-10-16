@@ -1,6 +1,6 @@
 [package]
-name = "sivrad-llm"
-description = "The model behind sivrad: a loopback proxy that names the upstream and holds its key"
+name = "llm-proxy"
+description = "A key-holding proxy in front of an OpenAI-compatible model API, adapted for open models"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

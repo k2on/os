@@ -4,7 +4,8 @@
 #   pkgs.callPackage ./_rust.nix { pname = "ark"; }
 # The whole workspace is the source, so the members can share files (the
 # services' cli/ code is compiled into `ark`; money-sync borrows plaid.rs).
-# Dependencies come from Cargo.lock; `cargo update` here and rebuild.
+# Dependencies come from Cargo.lock; `cargo update` here and rebuild. The
+# .js files are what sivrad-browser embeds (include_str!).
 {
   lib,
   rustPlatform,
@@ -17,7 +18,7 @@ rustPlatform.buildRustPackage {
   src = lib.fileset.toSource {
     root = ./.;
     fileset = lib.fileset.difference (lib.fileset.fileFilter (
-      f: f.hasExt "rs" || f.name == "Cargo.toml" || f.name == "Cargo.lock"
+      f: f.hasExt "rs" || f.hasExt "js" || f.name == "Cargo.toml" || f.name == "Cargo.lock"
     ) ./.) (lib.fileset.maybeMissing ./target);
   };
   cargoLock.lockFile = ./Cargo.lock;

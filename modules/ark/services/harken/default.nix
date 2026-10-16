@@ -11,13 +11,19 @@ in
       {
         service,
         config,
+        pkgs,
         ...
       }:
       {
-        imports = [ self.inputs.harken.nixosModules.default ];
+        imports = [ self.inputs.koon-apps.nixosModules.default ];
 
         services.harken = {
           enable = true;
+          # The browser client at /, which the old harken repo served by
+          # default and the apps monorepo leaves to the host: the server
+          # build, which signs in against this server (`harken-web` is the
+          # seeded demo GitHub Pages publishes).
+          web = self.inputs.harken.packages.${pkgs.stdenv.hostPlatform.system}.harken-web-server;
           port = service.port;
 
           # The house's speakers fetch their own bytes, and a Sonos is a

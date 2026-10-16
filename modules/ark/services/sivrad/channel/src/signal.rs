@@ -195,10 +195,10 @@ fn target(chat: &Chat) -> Value {
     }
 }
 
-/// Hands the message to the agent, and shows the sender it was read and
-/// is being answered (a read receipt and a typing indicator, which the
-/// reply itself ends); whether their phone shows those is up to its own
-/// settings.
+/// Hands the message to the agent, and shows the sender it was read (a
+/// read receipt; whether their phone shows it is up to its own settings).
+/// The typing indicator comes later, when the agent starts writing an
+/// answer (codex.rs): shown at once it only faded while the agent worked.
 fn deliver(state: &Arc<State>, m: Inbound) {
     let chat_kind = match m.chat {
         Chat::Direct(_) => "direct",
@@ -243,9 +243,6 @@ fn deliver(state: &Arc<State>, m: Inbound) {
             if let Err(e) = signal.request("sendReceipt", receipt).await {
                 eprintln!("sivrad: read receipt: {e}");
             }
-        }
-        if let Err(e) = signal.request("sendTyping", target(&m.chat)).await {
-            eprintln!("sivrad: typing indicator: {e}");
         }
     });
 }
@@ -546,6 +543,12 @@ impl Signal {
 
     /// Sends to a chat: a number, an account id, or a group. `files` are
     /// paths signal-cli can read (files::outgoing has checked them).
+    /// Shows the chat that a message is being written; it fades on its
+    /// own after a few seconds, and the message itself ends it.
+    pub async fn typing(&self, chat: &Chat) -> Result<(), String> {
+        self.request("sendTyping", target(chat)).await.map(|_| ())
+    }
+
     pub async fn send(&self, chat: &Chat, text: &str, files: &[String]) -> Result<(), String> {
         let mut params = target(chat);
         params["message"] = json!(text);

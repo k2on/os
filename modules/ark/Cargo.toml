@@ -9,7 +9,8 @@ members = [
   "cli",
   "services/money/sync",
   "services/sivrad/channel",
-  "services/sivrad/llm",
+  "llm-proxy",
+  "services/sivrad/browser",
 ]
 
 [workspace.package]
@@ -22,7 +23,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-# sivrad-llm: the client side of hyper, to forward requests upstream
+# llm-proxy: the client side of hyper, to forward requests upstream
+# sivrad-browser: a WebSocket client, for the Chrome DevTools Protocol
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 # the CLI only
 anyhow = "1"
 # unstable-ext: Arg::add, for clap_complete's per-argument value candidates
@@ -30,7 +34,7 @@ clap = { version = "4", default-features = false, features = ["std", "help", "us
 # unstable-dynamic: `COMPLETE=zsh ark` prints a shell shim that asks the binary itself for completions
 clap_complete = { version = "4", default-features = false, features = ["unstable-dynamic"] }
 rpassword = "7"
-# sivrad-channel and sivrad-llm: async sockets, HTTP both ways, SHA-256 and
+# sivrad-channel and llm-proxy: async sockets, HTTP both ways, SHA-256 and
 # random ids (ring is already here through ureq's rustls)
 tokio = { version = "1", features = ["rt-multi-thread", "io-std", "io-util", "net", "time", "macros", "sync"] }
 hyper = { version = "1", features = ["server", "client", "http1"] }

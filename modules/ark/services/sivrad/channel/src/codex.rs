@@ -34,10 +34,11 @@ use crate::files;
 use crate::signal::Chat;
 use crate::state::{Answer, State};
 
-/// Longer than any turn should take: the phone gives up after
-/// SIVRAD_TIMEOUT_MS anyway, and a Signal answer that late is still an
-/// answer.
-const RUN_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+/// How long a turn may run before the channel gives up on it and
+/// interrupts it: generous, since a task on a website takes as long as it
+/// takes and the person is told how it goes along the way; the phone gives
+/// up on its own after SIVRAD_TIMEOUT_MS anyway.
+const RUN_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 /// For the control requests (initialize, thread/start, turn/start), which
 /// answer at once.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -63,6 +64,11 @@ struct Conn {
     turns: Mutex<HashMap<String, Turn>>,
     /// Threads resumed or started on this connection.
     loaded: Mutex<std::collections::HashSet<String>>,
+    /// Where the agent's messages go as they come, by thread, when the
+    /// chat can take them (Signal); a message delivered this way is not the
+    /// turn's result as well. By thread, since events name the thread and
+    /// may arrive before the turn's id is known.
+    progress: Mutex<HashMap<String, mpsc::UnboundedSender<Progress>>>,
 }
 
 /// A turn as the connection sees it. Events may arrive before `turn/start`
@@ -76,9 +82,21 @@ struct Conn {
 /// turn in its last moments registers after the completion arrived.
 const KEEP_FINISHED: Duration = Duration::from_secs(10 * 60);
 
+/// What a chat hears of a turn as it goes: that the agent has started
+/// writing (a typing indicator), and each message once it is written.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Progress {
+    Writing,
+    Message(String),
+}
+
 #[derive(Default)]
 struct Turn {
     last_message: Option<String>,
+    /// Whether the chat already heard the turn's messages as they came
+    /// (progress); then the result is empty, and no fallback may repeat
+    /// the last one.
+    delivered: bool,
     error: Option<String>,
     done: Vec<oneshot::Sender<Result<String, String>>>,
     result: Option<Result<String, String>>,
@@ -153,10 +171,24 @@ impl Codex {
     }
 
     /// Runs a turn with `input` in the chat's thread and returns the
-    /// agent's last message of it.
-    pub async fn respond(&self, chat_id: &str, input: &str) -> Result<String, String> {
+    /// agent's last message of it; with `progress`, every message of the
+    /// turn goes there as it is said instead, and the result is empty.
+    pub async fn respond(
+        &self,
+        chat_id: &str,
+        input: &str,
+        progress: Option<mpsc::UnboundedSender<Progress>>,
+    ) -> Result<String, String> {
         let conn = self.connection().await?;
         let thread = self.thread(&conn, chat_id).await?;
+        match progress {
+            Some(p) => {
+                conn.progress.lock().unwrap().insert(thread.clone(), p);
+            }
+            None => {
+                conn.progress.lock().unwrap().remove(&thread);
+            }
+        }
         let turn = conn
             .request(
                 "turn/start",
@@ -262,6 +294,7 @@ impl Conn {
             pending: Mutex::new(HashMap::new()),
             turns: Mutex::new(HashMap::new()),
             loaded: Mutex::new(Default::default()),
+            progress: Mutex::new(HashMap::new()),
         });
         tokio::spawn(async move {
             while let Some(line) = rx.recv().await {
@@ -348,12 +381,27 @@ impl Conn {
 
     fn notification(&self, method: &str, params: &Value) {
         match method {
+            "item/agentMessage/delta" => {
+                // The first words of a message: the chat sees typing. Every
+                // delta is passed on; the forwarder rations them.
+                if let Some(thread) = params["threadId"].as_str() {
+                    if let Some(p) = self.progress.lock().unwrap().get(thread) {
+                        let _ = p.send(Progress::Writing);
+                    }
+                }
+            }
             "item/completed" => {
                 let item = &params["item"];
                 if item["type"] == "agentMessage" {
                     if let (Some(turn), Some(text)) = (params["turnId"].as_str(), item["text"].as_str()) {
+                        let delivered = params["threadId"]
+                            .as_str()
+                            .and_then(|thread| self.progress.lock().unwrap().get(thread).cloned())
+                            .is_some_and(|p| p.send(Progress::Message(text.to_owned())).is_ok());
                         let mut turns = self.turns.lock().unwrap();
-                        turns.entry(turn.to_owned()).or_default().last_message = Some(text.to_owned());
+                        let t = turns.entry(turn.to_owned()).or_default();
+                        t.delivered |= delivered;
+                        t.last_message = if delivered { None } else { Some(text.to_owned()) };
                     }
                 }
             }
@@ -371,7 +419,8 @@ impl Conn {
                 let t = turns.entry(id.to_owned()).or_default();
                 let status = turn["status"].as_str().unwrap_or("completed");
                 let result = if status == "completed" {
-                    Ok(t.last_message.take().or_else(|| final_message(turn)).unwrap_or_default())
+                    let fallback = if t.delivered { None } else { final_message(turn) };
+                    Ok(t.last_message.take().or(fallback).unwrap_or_default())
                 } else {
                     let detail = turn["error"]["message"]
                         .as_str()
@@ -444,10 +493,52 @@ pub fn split_media(text: &str) -> (String, Vec<String>) {
 }
 
 /// Runs the agent on an event and delivers its answer; returns at once.
+/// A Signal chat hears each of the agent's messages as it is said (the
+/// final one included), so a long task reads as progress rather than
+/// silence; the phone takes one answer, at the end.
 pub fn run(state: Arc<State>, event: Event) {
     tokio::spawn(async move {
         let input = event.input();
-        match state.codex.respond(&event.chat_id, &input).await {
+        let progress = match &event.source {
+            Source::Signal { chat } => {
+                let (tx, mut rx) = mpsc::unbounded_channel::<Progress>();
+                let state = state.clone();
+                let chat = chat.clone();
+                tokio::spawn(async move {
+                    // Typing is shown once per message being written: on the
+                    // first delta, and again only after a message went out
+                    // or a while passed (Signal drops it after some seconds).
+                    let mut typed_at: Option<std::time::Instant> = None;
+                    while let Some(progress) = rx.recv().await {
+                        match progress {
+                            Progress::Writing => {
+                                if typed_at.is_some_and(|t| t.elapsed() < Duration::from_secs(10)) {
+                                    continue;
+                                }
+                                typed_at = Some(std::time::Instant::now());
+                                if let Err(e) = state.signal.typing(&chat).await {
+                                    eprintln!("sivrad: typing indicator for {}: {e}", chat.id());
+                                }
+                            }
+                            Progress::Message(text) => {
+                                typed_at = None;
+                                let (text, media) = split_media(&text);
+                                if text.is_empty() || text == SILENT {
+                                    continue;
+                                }
+                                let files = files::outgoing(&state.config, &media).unwrap_or_default();
+                                if let Err(e) = state.signal.send(&chat, &text, &files).await {
+                                    eprintln!("sivrad: sending progress to {}: {e}", chat.id());
+                                }
+                            }
+                        }
+                    }
+                });
+                Some(tx)
+            }
+            Source::Voice { .. } => None,
+        };
+        match state.codex.respond(&event.chat_id, &input, progress).await {
             Ok(text) => answer(&state, &event, &text).await,
             Err(e) => {
                 eprintln!("sivrad: agent turn for {} failed: {e}", event.chat_id);
@@ -631,7 +722,10 @@ mod tests {
                                             "item": { "type": "agentMessage", "id": "i1", "text": "working" } } }),
                                     json!({ "method": "item/completed", "params": { "threadId": "thr_1", "turnId": turn,
                                             "item": { "type": "agentMessage", "id": "i2", "text": format!("echo: {text}") } } }),
-                                    json!({ "method": "turn/completed", "params": { "turn": { "id": turn, "status": "completed" } } }),
+                                    // As real Codex does: the final agent message
+                                    // again, in the completed turn.
+                                    json!({ "method": "turn/completed", "params": { "turn": { "id": turn, "status": "completed",
+                                            "items": [{ "type": "agentMessage", "id": "i2", "text": format!("echo: {text}") }] } } }),
                                 ]
                             }
                             _ => {
@@ -651,25 +745,32 @@ mod tests {
 
         let threads_file = dir.join("threads.json");
         let codex = Codex::new(socket.clone(), "/w", threads_file.clone());
-        assert_eq!(codex.respond("signal:+1", "hello").await, Ok("echo: hello".into()));
-        assert_eq!(codex.respond("signal:+1", "again").await, Ok("echo: again".into()));
+        assert_eq!(codex.respond("signal:+1", "hello", None).await, Ok("echo: hello".into()));
+        assert_eq!(codex.respond("signal:+1", "again", None).await, Ok("echo: again".into()));
         let saved: HashMap<String, String> =
             serde_json::from_str(&std::fs::read_to_string(&threads_file).unwrap()).unwrap();
         assert_eq!(saved["signal:+1"], "thr_1");
 
         // A new channel process: the thread is resumed, not started.
         let again = Arc::new(Codex::new(socket, "/w", threads_file));
-        assert_eq!(again.respond("signal:+1", "back").await, Ok("echo: back".into()));
+        assert_eq!(again.respond("signal:+1", "back", None).await, Ok("echo: back".into()));
 
         // A message during a running turn steers it: the earlier message
         // ends silent, the later one gets the answer.
         let held = {
             let again = again.clone();
-            tokio::spawn(async move { again.respond("signal:+1", "hold").await })
+            tokio::spawn(async move { again.respond("signal:+1", "hold", None).await })
         };
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(again.respond("signal:+1", "steer").await, Ok("steered answer".into()));
+        assert_eq!(again.respond("signal:+1", "steer", None).await, Ok("steered answer".into()));
         assert_eq!(held.await.unwrap(), Ok(String::new()));
+
+        // With a progress channel, each message is delivered as it comes and
+        // the result is empty.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        assert_eq!(again.respond("signal:+1", "hello", Some(tx)).await, Ok(String::new()));
+        assert_eq!(rx.recv().await, Some(Progress::Message("working".into())));
+        assert_eq!(rx.recv().await, Some(Progress::Message("echo: hello".into())));
         let methods = seen.lock().unwrap().clone();
         assert_eq!(methods.iter().filter(|m| *m == "thread/start").count(), 1);
         assert_eq!(methods.iter().filter(|m| *m == "thread/resume").count(), 1);

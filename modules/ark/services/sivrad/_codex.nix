@@ -38,6 +38,10 @@
 let
   codexHome = "${home}/.codex";
   playwrightMcp = pkgs.callPackage ./_browser.nix { };
+  # The compact browser tools (./browser, Rust): the same Chromium over
+  # DevTools, read as a distilled page rather than a whole accessibility
+  # tree. Playwright stays as the fallback for what they do not do.
+  browserTools = pkgs.callPackage ../../_rust.nix { pname = "sivrad-browser"; };
   # fontconfig is off in the guest, and Playwright's own Chromium (not
   # used here, as it attaches to the headed one) would want this anyway.
   browserFonts = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
@@ -59,8 +63,14 @@ let
     };
     model = "sivrad";
     model_context_window = 262144;
-    # Kimi K3 takes low, high or max (not medium); low keeps a phone
-    # answer quick.
+    # Summarize the thread well before the window is full: a summary of a
+    # quarter of a million tokens took the model two minutes, and a
+    # thread full of page dumps got there in an evening. (The proxy also
+    # cuts old tool outputs out of each request, ../../llm-proxy, so the thread
+    # itself fills slowly now.)
+    model_auto_compact_token_limit = 100000;
+    # Low keeps a phone answer quick (and is one Kimi K3 takes too, which
+    # refuses medium).
     model_reasoning_effort = "low";
     approval_policy = "never";
     sandbox_mode = "workspace-write";
@@ -73,6 +83,13 @@ let
     web_search = "disabled";
     history.persistence = "save-all";
     mcp_servers = {
+      page = {
+        command = "${browserTools}/bin/sivrad-browser";
+        env.SIVRAD_CDP = "http://127.0.0.1:${toString ports.cdp}";
+        startup_timeout_sec = 15;
+        tool_timeout_sec = 90;
+        default_tools_approval_mode = "approve";
+      };
       sivrad = {
         url = "http://127.0.0.1:${toString ports.mcp}/mcp";
         # phone_tool waits up to three minutes for the phone.
@@ -146,10 +163,16 @@ let
     - Keep durable notes (preferences, ongoing tasks, reminders) in files
       in your workspace and read them when relevant. Scheduled jobs are
       not available here.
-    - You have a real browser: Chromium on a screen of its own, driven with
-      the `browser` tools (snapshots are text; take a screenshot only when
-      you must). It keeps its sign-ins between sessions; its downloads land
-      in `downloads/` and its screenshots in `browser/` in your workspace.
+    - You have a real browser: Chromium on a screen of its own. Drive it
+      with the `page_*` tools: `page_open` or `page_read` gives you the
+      page distilled (numbered interactive elements and the visible text),
+      and you act by number with `page_click`, `page_type` and
+      `page_select`. They cost a fraction of the context of the Playwright
+      `browser_*` tools, which are there for what the page tools cannot do
+      (file uploads, dialogs, frames); take a screenshot only when the text
+      is not enough. It keeps its sign-ins between sessions; its downloads
+      land in `downloads/` and its screenshots in `browser/` in your
+      workspace.
     - People can watch and take over that browser at ${browserPage.url}
       (it asks them to sign in with their Kanidm account, and only
       ${lib.concatStringsSep " and " browserPage.people} are let in, so

@@ -51,7 +51,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    harken.url = "github:k2on/harken";
+    koon-apps.url = "github:k2on/apps";
   };
 
   # secrets/ is the private submodule: besides sops files it carries the
