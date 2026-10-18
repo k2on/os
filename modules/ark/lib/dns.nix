@@ -14,14 +14,22 @@ let
     let
       pd = builtins.filter (d: d.provider == pname) config.ark.domains;
       records = builtins.filter (r: builtins.any (d: d.domain == r.domain) pd) dns_records;
+      # The terraform resource name: the record's name, or its `id` where
+      # two records share a name (an MX beside an A at the apex).
+      recordId = r: r.id or (if r.name == "" then "apex" else r.name);
+      ids = map recordId records;
+      dup = lib.filter (i: lib.count (j: j == i) ids > 1) (lib.unique ids);
       recordAttrs =
         fn:
-        builtins.listToAttrs (
-          map (r: {
-            name = if r.name == "" then "apex" else r.name;
-            value = fn r;
-          }) records
-        );
+        if dup != [ ] then
+          throw "ark: DNS records for ${pname} share a resource name: ${toString dup}; give one an `id`"
+        else
+          builtins.listToAttrs (
+            map (r: {
+              name = recordId r;
+              value = fn r;
+            }) records
+          );
     in
     p.records { inherit records recordAttrs lib; };
 in

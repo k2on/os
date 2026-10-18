@@ -24,6 +24,7 @@
             ttl = r.ttl or 600;
           }
           // lib.optionalAttrs (r.name != "") { inherit (r) name; }
+          // lib.optionalAttrs (r ? priority) { prio = toString r.priority; }
         );
       };
   };

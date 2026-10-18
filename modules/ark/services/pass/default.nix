@@ -7,22 +7,12 @@
 # leaves the device. In the apps, pick "self-hosted", server
 # https://pass.<mainDomain>, then "Enterprise single sign-on"; any
 # identifier will do. Who may sign in: pass_members in Kanidm, which is
-# everyone in a vault plus ark.groups.pass.members (secrets/ark.nix).
+# everyone in a vault plus ark.access.pass.members (secrets/ark.nix).
 #
-# Shared vaults are declared under ark.pass.vaults, by the secrets repo
-# (secrets/services/pass/default.nix), since who shares what is the people
-# side of the config. Each is a Bitwarden organization with its
-# collections, and its members are confirmed into it without anyone
-# clicking through the admin console:
-#
-#   ark.pass.vaults.house = { };       # "House": every person, one "House"
-#                                      # collection, ark.groups.pass.admin owning it
-#   ark.pass.vaults.work = {
-#     name = "Work";
-#     members = [ <persons> ];
-#     owners = [ <persons> ];
-#     collections = [ "Servers" "Accounts" ];
-#   };
+# Every group in ark.groups (secrets/ark.nix) has a shared vault: a
+# Bitwarden organization named after it (family -> "Family") with one
+# collection of the same name, its members confirmed into it without anyone
+# clicking through the admin console, and ark.access.pass.admin owning it.
 #
 # Bitwarden encrypts end to end, so the server cannot add anyone to an
 # organization: that takes the organization's key encrypted to the member's
@@ -32,7 +22,7 @@
 # Vaultwarden starts, and when someone's account gets its keys (their first
 # sign-in): ./vaultwarden-keys-changed.patch makes Vaultwarden write
 # KEYS_CHANGED_FILE then, and a path unit watches it. The patch means
-# Vaultwarden is built from source on adam. Removing a person from `members`
+# Vaultwarden is built from source on adam. Removing a person from a group
 # takes them out of the vault (what they saw is still on their devices
 # until they sync). Losing a vault's key secret means losing nothing stored
 # (members still hold it), but pass-vaults can then add nobody new to it
@@ -41,7 +31,6 @@
 { lib, config, ... }:
 let
   ark = config.ark;
-  persons = lib.attrNames ark.persons;
 
   # Stable ids from names, so the organization and its collections stay the
   # same rows across rebuilds and renames of their display names.
@@ -55,37 +44,6 @@ let
 
   keySecret = name: "pass_vault_${name}_key";
 
-  vaultType = lib.types.submodule (
-    { name, config, ... }:
-    {
-      options = {
-        name = lib.mkOption {
-          type = lib.types.str;
-          default = lib.toSentenceCase name;
-          description = "The organization's name, as the apps show it.";
-        };
-        members = lib.mkOption {
-          type = lib.types.listOf (lib.types.enum persons);
-          default = persons;
-          defaultText = "every person in ark.persons";
-          description = "Who is in it (persons, by username). Owners are in it too.";
-        };
-        owners = lib.mkOption {
-          type = lib.types.listOf (lib.types.enum persons);
-          default = ark.groups.pass.admin or [ ];
-          defaultText = "ark.groups.pass.admin";
-          description = "Members who own it: they manage its collections and settings in the web vault.";
-        };
-        collections = lib.mkOption {
-          type = lib.types.nonEmptyListOf lib.types.str;
-          default = [ config.name ];
-          defaultText = "[ name ]";
-          description = "Its collections; every member gets every one, to read and write.";
-        };
-      };
-    }
-  );
-
   # Vaultwarden, telling us when an account's keys are stored (see the top).
   patchVaultwarden =
     p:
@@ -93,16 +51,21 @@ let
       patches = (o.patches or [ ]) ++ [ ./vaultwarden-keys-changed.patch ];
     });
 
-  vaults = ark.pass.vaults;
+  # One per group, under the group's name, which keys its ids and secret.
+  vaults = lib.mapAttrs (
+    group: members:
+    let
+      name = lib.toSentenceCase group;
+    in
+    {
+      inherit name members;
+      owners = ark.access.pass.admin or [ ];
+      collections = [ name ];
+    }
+  ) ark.groups;
   inVaults = lib.unique (lib.concatMap (v: v.members ++ v.owners) (lib.attrValues vaults));
 in
 {
-  options.ark.pass.vaults = lib.mkOption {
-    type = lib.types.attrsOf vaultType;
-    default = { };
-    description = "Shared vaults (Bitwarden organizations), by a short name that keys their ids and secrets.";
-  };
-
   config.perSystem =
     { pkgs, inputs', ... }:
     let
@@ -121,7 +84,7 @@ in
     oidc = {
       callbacks = [ "/identity/connect/oidc-signin" ];
       # Everyone with a vault may sign in, plus whoever secrets/ark.nix adds.
-      groups.members = lib.unique ((ark.groups.pass.members or [ ]) ++ inVaults);
+      groups.members = lib.unique ((ark.access.pass.members or [ ]) ++ inVaults);
     };
     secrets = lib.mapAttrs' (
       name: _:
@@ -201,7 +164,7 @@ in
             SSO_PKCE = true;
             SSO_SIGNUPS_MATCH_EMAIL = true;
 
-            # Accounts come from Kanidm, organizations from ark.pass.vaults.
+            # Accounts come from Kanidm, organizations from ark.groups.
             SIGNUPS_ALLOWED = false;
             INVITATIONS_ALLOWED = false;
             SHOW_PASSWORD_HINT = false;
@@ -211,7 +174,7 @@ in
         };
 
         systemd.services.pass-vaults = {
-          description = "Shared vaults from ark.pass.vaults in Vaultwarden";
+          description = "A shared vault per ark.groups group in Vaultwarden";
           # On deploy when the vaults change, and whenever Vaultwarden starts.
           wantedBy = [
             "multi-user.target"

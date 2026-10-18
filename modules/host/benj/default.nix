@@ -21,6 +21,7 @@
         den.batteries.hostname
         den.aspects.nixos-deploy
         den.aspects.headscale
+        den.aspects.mail
       ];
 
       nixos = {

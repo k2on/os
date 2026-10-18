@@ -22,7 +22,7 @@
 #       scopes = [ ... ];         # defaults to openid profile email groups
 #       clientId = "home-app";    # the kanidm client's name, when not the service's
 #       public = true;            # a public client (PKCE, no secret), e.g. a phone app
-#       groups.users = [ ... ];   # members of kanidm group <name>_users, besides ark.groups
+#       groups.users = [ ... ];   # members of kanidm group <name>_users, besides ark.access
 #       pkce = true;              # false for clients that cannot do PKCE
 #       legacyCrypto = false;     # true for clients that only accept RS256 tokens
 #       owner = "hass";           # unix user on this host that reads the secret file

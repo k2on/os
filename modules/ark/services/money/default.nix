@@ -230,7 +230,7 @@ in
           }
         );
         moneyGroup =
-          ark.groups.money or {
+          ark.access.money or {
             members = [ ];
             admin = [ ];
           };

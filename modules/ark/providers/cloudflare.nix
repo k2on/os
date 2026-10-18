@@ -24,12 +24,16 @@ in
     records =
       { recordAttrs, lib, ... }:
       {
-        resource.cloudflare_dns_record = recordAttrs (r: {
-          zone_id = "\${data.cloudflare_zone.${zoneKey r.domain}.id}";
-          name = if r.name == "" then "@" else r.name;
-          inherit (r) type content;
-          ttl = r.ttl or 600;
-        });
+        resource.cloudflare_dns_record = recordAttrs (
+          r:
+          {
+            zone_id = "\${data.cloudflare_zone.${zoneKey r.domain}.id}";
+            name = if r.name == "" then "@" else r.name;
+            inherit (r) type content;
+            ttl = r.ttl or 600;
+          }
+          // lib.optionalAttrs (r ? priority) { inherit (r) priority; }
+        );
       };
   };
 }

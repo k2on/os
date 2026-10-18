@@ -1,9 +1,10 @@
 # OIDC clients for ark services, provisioned in kanidm (host/adam/kanidm.nix).
 #
 # A service opts in by declaring `oidc` on its ark.services spec (see
-# lib/services.nix). Who may use it is not part of the spec: persons and
-# per-service group memberships live in the secrets repo (secrets/ark.nix),
-# and every group listed there becomes the kanidm group <service>_<group>.
+# lib/services.nix). Who may use it is not part of the spec: persons, groups
+# of them and who gets which role in which service (ark.access) live in the
+# secrets repo (secrets/ark.nix), and every role listed in ark.access becomes
+# the kanidm group <service>_<role>.
 # `service.oidc.groups.<group>.claim` is the value clients see in the
 # `groups` claim, for modules that map roles or restrict logins. A service
 # may add groups of its own with `oidc.groups.<group> = [ persons ]` (for
@@ -50,7 +51,7 @@ let
         inherit members;
         name = "${name}_${g}";
         claim = "${name}_${g}@id.${mainDomain}";
-      }) ((config.ark.groups.${name} or { }) // (o.groups or { }));
+      }) ((config.ark.access.${name} or { }) // (o.groups or { }));
     };
 in
 {
@@ -78,9 +79,24 @@ in
       description = "Everyone with a kanidm account, keyed by username.";
     };
     groups = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.listOf (lib.types.enum (lib.attrNames config.ark.persons)));
+      default = { };
+      example = {
+        family = [ "<person>" ];
+        admin = [ "<person>" ];
+      };
+      description = "Groups of persons, by name. ark.access grants them services; services may use them directly too (each has a shared mailbox and vault).";
+    };
+    access = lib.mkOption {
       type = lib.types.attrsOf (lib.types.attrsOf (lib.types.listOf lib.types.str));
       default = { };
-      description = "<service> -> <group> -> persons. Each entry is the kanidm group <service>_<group>.";
+      example = {
+        git = {
+          members = [ "<person>" ];
+          admin = [ "<person>" ];
+        };
+      };
+      description = "<service> -> <role> -> persons. Each entry is the kanidm group <service>_<role>.";
     };
     oidc.name = lib.mkOption {
       type = lib.types.str;

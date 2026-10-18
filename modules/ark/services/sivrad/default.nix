@@ -59,7 +59,7 @@ let
   idOrigin = "https://id.${ark.mainDomain}";
   # Who may open the headed browser's page (sivrad-browser below): the
   # group `users` of sivrad-browser in secrets/ark.nix, like any service's.
-  browserPeople = ark.groups.sivrad-browser.users or [ ];
+  browserPeople = ark.access.sivrad-browser.users or [ ];
   unknownBrowserPeople = lib.filter (p: !(ark.persons ? ${p})) browserPeople;
   browserPage = {
     url = "https://${ark.serviceDomain "sivrad-browser" ark.services.sivrad-browser}${container.novncPrefix}";
