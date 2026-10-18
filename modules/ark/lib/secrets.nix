@@ -13,9 +13,15 @@
 #     foo_cert = { generate = "openssl ..."; mode = "0400"; };  # custom script
 #     foo_api_key = { file = "foo"; };                 # in secrets/vars/foo.yaml with
 #     foo_api_user = { file = "foo"; };                # others a CLI reads together
+#     foo_smtp_password = { optional = true; };        # filled in by a command, later
 #   };
 #
-# Every attribute other than `generate` and `file` is passed through to
+# An optional secret is one some command fills in (`ark service <name> ...`)
+# rather than `ark secrets`, which leaves it alone. Until its file exists a
+# host builds without it: it is not in sops.secrets, so a module tests
+# `config.sops.secrets ? <name>` to use it only once it is there.
+#
+# Every attribute other than `generate`, `file` and `optional` is passed through to
 # sops.secrets.<name>, so owner/group/mode/restartUnits/... work as usual.
 # Each declaration reads secrets/vars/<file>.yaml (by default one file per
 # key), encrypted to ark.adminKeys (secrets/ark.nix) plus ark.hostKey of
@@ -73,6 +79,11 @@ let
         default = null;
         description = "null: entered by hand. true: random alphanumerics. string: shell script whose stdout is the value.";
       };
+      options.optional = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Filled in by a command rather than `ark secrets`; hosts build without it (and without it in sops.secrets) until its file exists.";
+      };
     }
   );
 
@@ -99,20 +110,28 @@ let
           builtins.removeAttrs s [
             "generate"
             "file"
+            "optional"
           ]
           // {
             sopsFile = varsFile s.file;
           }
-        ) config.ark.secrets;
+        ) (lib.filterAttrs (_: s: !s.optional || builtins.pathExists (varsFile s.file)) config.ark.secrets);
 
-        assertions = map (file: {
-          assertion = builtins.pathExists (varsFile file);
-          message = "ark: ${varsDir}/${file}.yaml is not in sops yet. Run `ark secrets` and commit it";
-        }) (lib.unique (lib.mapAttrsToList (_: s: s.file) config.ark.secrets));
+        assertions =
+          map
+            (file: {
+              assertion = builtins.pathExists (varsFile file);
+              message = "ark: ${varsDir}/${file}.yaml is not in sops yet. Run `ark secrets` and commit it";
+            })
+            (
+              lib.unique (
+                lib.mapAttrsToList (_: s: s.file) (lib.filterAttrs (_: s: !s.optional) config.ark.secrets)
+              )
+            );
       };
     };
 
-  # Fold every host's declarations into { key -> { generate; hosts; recipients } }.
+  # Fold every host's declarations into { key -> { generate; optional; hosts; recipients } }.
   # The first non-null generator wins.
   hostSecrets = lib.foldl' (
     acc: host:
@@ -122,6 +141,7 @@ let
         prev =
           acc.${s.key} or {
             generate = null;
+            optional = true;
             hosts = [ ];
             recipients = [ ];
           };
@@ -131,6 +151,8 @@ let
         ${s.key} = {
           file = s.file;
           generate = if s.generate == null then prev.generate else script s.generate;
+          # Optional only if every declaration says so.
+          optional = prev.optional && s.optional;
           hosts = lib.unique (prev.hosts ++ [ host.config.networking.hostName ]);
           recipients = lib.unique (prev.recipients ++ [ host.config.ark.hostKey ]);
         };
@@ -159,6 +181,7 @@ let
         lib.nameValuePair s.key {
           file = "infra";
           generate = script s.generate;
+          inherit (s) optional;
           hosts = [ ];
           recipients = [ ];
         }

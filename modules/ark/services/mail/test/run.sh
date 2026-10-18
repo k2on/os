@@ -3,8 +3,10 @@
 # (../_check.nix). alice and bob share "family", carol does not. Through
 # SMTP and IMAP as each of them: mail to a person lands in their inbox, mail
 # to family lands once in the shared mailbox both members see and carol does
-# not, members may send as family and carol may not, logins work by name and not with a wrong password,
-# nobody unauthenticated can relay, and mail from outside is taken in.
+# not, members may send as family and carol may not, logins work by name
+# and not with a wrong password, nobody unauthenticated can relay, mail from
+# outside is taken in, and mail to the outside world heads for the relay
+# (SES on benj) rather than the recipient's MX.
 set -euo pipefail
 
 mkdir -p "$WORK"
@@ -14,7 +16,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=mail.test.example \
   -keyout key.pem -out cert.pem 2>/dev/null
-for who in alice bob carol; do head -c 18 /dev/urandom | base64 | tr -d '/+=\n' >"$who.pw"; done
+for who in alice bob carol relay; do head -c 18 /dev/urandom | base64 | tr -d '/+=\n' >"$who.pw"; done
+printf ses >relay.user
 sed "s|@WORK@|$WORK|g" "$CONFIG" >config.toml
 
 stalwart --config "$WORK/config.toml" >stalwart.log 2>&1 &
@@ -60,8 +63,10 @@ fi
 if curl -sS --fail -k "imaps://127.0.0.1:12993/" --user "alice:wrong" -X NOOP 2>/dev/null; then
   fail "a wrong password was accepted"
 fi
+# To the world: off to the relay.
+send alice alice@test.example outside@elsewhere.example "to the world"
 
-sleep 2 # local delivery is queued
+sleep 2 # delivery is queued
 
 [ "$(messages bob INBOX)" = 1 ] || fail "bob's inbox: $(messages bob INBOX), not 1"
 [ "$(messages carol INBOX)" = 2 ] || fail "carol's inbox: $(messages carol INBOX), not 2"
@@ -71,5 +76,10 @@ for who in alice bob; do
     fail "$who sees $(messages $who 'Shared Folders/family/INBOX') in family, not 1: $(imap $who 'LIST "" "*"')"
 done
 if imap carol 'LIST "" "*"' | grep -q family; then fail "carol sees family"; fi
+# It heads for the relay, which cannot be reached here (see ../_check.nix);
+# a temporary failure, so nothing bounces.
+relayed() { grep "outside@elsewhere.example" stalwart.log | grep -q 'hostname = "relay.test.example"'; }
+for _ in $(seq 60); do relayed && break; sleep 0.5; done
+relayed || { grep outside@ stalwart.log | tail -5; fail "mail to the world did not head for the relay"; }
 
 echo "mail: all good"

@@ -3,6 +3,12 @@
 # `nix build .#checks.<system>.mail`: test/run.sh against a real Stalwart
 # on loopback, with the settings benj runs (./_settings.nix). Paths only
 # known at run time are @WORK@ in the config, filled in by the script.
+#
+# The relay (SES on benj) is relay.test.example, which does not resolve
+# here: the check sees mail for the outside world head for it rather than
+# for the recipient's MX. Logging in to SES over TLS is not tested here,
+# because Stalwart never relays to a loopback address, and loopback is all
+# the sandbox has.
 {
   lib,
   runCommand,
@@ -36,11 +42,18 @@ let
       submissions = "127.0.0.1:12465";
       imaps = "127.0.0.1:12993";
     };
+    relay = {
+      address = "relay.test.example";
+      port = 2465;
+      usernameFile = "${work}/relay.user";
+      passwordFile = "${work}/relay.pw";
+    };
     certFile = "${work}/cert.pem";
     keyFile = "${work}/key.pem";
     spamFilter = "file://${stalwart.spam-filter}/spam-filter.toml";
   };
-  # What the NixOS module adds on benj, and no DNS: the sandbox has none.
+  # What the NixOS module adds on benj, and checks needing DNS off: the
+  # sandbox has none.
   config = (formats.toml { }).generate "stalwart.toml" (
     lib.recursiveUpdate settings {
       store.db = {
@@ -59,10 +72,7 @@ let
         ansi = false;
         enable = true;
       };
-      resolver = {
-        type = "custom";
-        custom = [ "udp://127.0.0.1:1" ];
-      };
+      resolver.type = "system";
       # Stalwart takes mail without a login on port 25 only; 12525 stands in.
       session.auth.require = [
         {

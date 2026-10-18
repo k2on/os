@@ -6,6 +6,7 @@
 #   mailboxes = [ { name; address; passwordFile; memberOf = [ <shared> ]; } ];
 #   shared    = [ { name; address; } ];
 #   listen    = { smtp = "[::]:25"; submissions = "[::]:465"; imaps = "[::]:993"; };
+#   relay     = null | { address; port; usernameFile; passwordFile; };
 #
 # Everything is read from this file (config.local-keys = *), so nothing can
 # drift in Stalwart's database. Accounts are its in-memory directory, built
@@ -14,6 +15,11 @@
 # the password in their passwordFile. A shared mailbox is a Stalwart group;
 # its members see it under "Shared Folders/<name>" in their own account and
 # may send as its address.
+#
+# With a relay, mail for anywhere but these domains leaves through it (SES,
+# over TLS from the first byte, which a port the vps's provider leaves open
+# allows), and the relay signs it: Stalwart signs nothing itself. Without
+# one it goes straight to the recipient's server.
 {
   hostname,
   mailboxes,
@@ -22,6 +28,7 @@
   certFile,
   keyFile,
   spamFilter,
+  relay ? null,
 }:
 let
   sharedAddress = builtins.listToAttrs (
@@ -93,4 +100,28 @@ in
   ];
 
   spam-filter.resource = spamFilter;
+
+  auth.dkim.sign = false;
 }
+// (
+  if relay == null then
+    { }
+  else
+    {
+      queue.route.relay = {
+        type = "relay";
+        inherit (relay) address port;
+        protocol = "smtp";
+        tls.implicit = true;
+        auth.username = "%{file:${relay.usernameFile}}%";
+        auth.secret = "%{file:${relay.passwordFile}}%";
+      };
+      queue.strategy.route = [
+        {
+          "if" = "is_local_domain('*', rcpt_domain)";
+          "then" = "'local'";
+        }
+        { "else" = "'relay'"; }
+      ];
+    }
+)

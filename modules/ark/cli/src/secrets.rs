@@ -27,6 +27,9 @@ pub struct Spec {
     pub file: String,
     /// Shell script whose stdout is the value; None means entered by hand.
     pub generate: Option<String>,
+    /// Filled in by a service command rather than here: listed, never prompted for.
+    #[serde(default)]
+    pub optional: bool,
     pub hosts: Vec<String>,
     pub recipients: Vec<String>,
 }
@@ -172,15 +175,24 @@ pub fn run(ctx: &Ctx, dry_run: bool) -> Result<()> {
     for (key, spec) in &manifest.secrets {
         let state = manifest.state(ctx, key)?;
         let hosts = if spec.hosts.is_empty() { "(admin only)".to_string() } else { spec.hosts.join(" ") };
-        let source = if spec.generate.is_some() { "generate" } else { "prompt" };
+        let source = if spec.optional {
+            "command"
+        } else if spec.generate.is_some() {
+            "generate"
+        } else {
+            "prompt"
+        };
         let file = if spec.file == *key { "" } else { spec.file.as_str() };
         let shown = match state {
             State::Ok => "ok",
+            State::Missing if spec.optional => "unset",
             State::Missing => "missing",
             State::Rekey => "rekey",
         };
         println!("{key:<32} {shown:<8} {source:<9} {file:<12} {hosts}");
         match state {
+            // Its own command fills it in.
+            State::Missing if spec.optional => {}
             State::Missing => missing.entry(spec.file.clone()).or_default().push(key.clone()),
             State::Rekey => {
                 rekey.insert(spec.file.clone());

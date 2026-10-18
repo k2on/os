@@ -12,9 +12,21 @@
 # mail_password_<person>.yaml` shows it). Thunderbird (and other apps that
 # look) fills all of that in from autoconfig.<domain>, given the address.
 #
+# Mail to the internet leaves through Amazon SES, which signs it (DKIM) and
+# sends it from addresses mail providers trust; the vps's own port 25 out is
+# blocked anyway. `ark push` sets SES up for the domain, with its DNS records
+# (DKIM, a bounce.<domain> MAIL FROM, SPF, DMARC) and an IAM user that may
+# only send as it. `ark service mail init` (./cli) then stores that user's
+# SMTP login (mail_ses_*, which benj builds without until then) and asks AWS
+# to take the account out of the sandbox, a review by a person that takes
+# about a day; until it passes, SES only delivers to addresses verified in
+# it. `ark service mail status` says where that stands. Another `ark push`
+# after init turns the relay on. The AWS keys `ark push` uses are infra
+# secrets (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), entered with `ark
+# secrets`, for an IAM user that may manage SES and IAM.
+#
 # The settings are ./_settings.nix; `nix flake check` runs them in a real
-# Stalwart (./_check.nix). Sending to the internet goes out directly for now:
-# the vps's provider blocks port 25 until asked, and nothing signs it yet.
+# Stalwart (./_check.nix).
 { lib, config, ... }:
 let
   ark = config.ark;
@@ -25,6 +37,14 @@ let
     ) (throw "mail: no domain with role = \"secondary\" in ark.domains") ark.domains).domain;
   hostname = "mail.${domain}";
   passwordSecret = p: "mail_password_${p}";
+
+  # SES: the region, its SMTP endpoint (2465 is TLS from the first byte, on
+  # a port the vps's provider leaves open), and terraform names.
+  region = "us-east-1";
+  sesSmtp = "email-smtp.${region}.amazonaws.com";
+  identity = "aws_sesv2_email_identity.mail";
+  sesOutput = "mail_ses_smtp";
+  sesSecret = field: "mail_ses_${field}";
 in
 {
   config.perSystem =
@@ -33,16 +53,53 @@ in
       checks.mail = pkgs.callPackage ./_check.nix { };
     };
 
+  # For `ark service mail` (./cli).
+  config.flake.arkServiceConfig.mail = {
+    inherit domain region sesOutput;
+    secrets = {
+      username = sesSecret "username";
+      password = sesSecret "password";
+    };
+  };
+
+  # The AWS provider, once for the whole infra; its keys are admin-only
+  # infra secrets (lib/secrets.nix), exported to `ark plan/push`.
+  config.den.aspects.mail-aws = {
+    terranix = {
+      terraform.required_providers.aws = {
+        source = "hashicorp/aws";
+        version = "~> 6.0";
+      };
+      provider.aws = { inherit region; };
+    };
+    secrets = {
+      AWS_ACCESS_KEY_ID = { };
+      AWS_SECRET_ACCESS_KEY = { };
+    };
+  };
+  config.den.aspects.infra-base.includes = [ config.den.aspects.mail-aws ];
+
   config.ark.services.mail = {
     web = false;
-    secrets = lib.genAttrs' persons (
-      p:
-      lib.nameValuePair (passwordSecret p) {
-        generate = "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24";
-        owner = "stalwart";
-        restartUnits = [ "stalwart.service" ];
-      }
-    );
+    secrets =
+      lib.genAttrs' persons (
+        p:
+        lib.nameValuePair (passwordSecret p) {
+          generate = "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24";
+          owner = "stalwart";
+          restartUnits = [ "stalwart.service" ];
+        }
+      )
+      # The SES SMTP login, from `ark service mail init`.
+      // lib.genAttrs' [ "username" "password" ] (
+        field:
+        lib.nameValuePair (sesSecret field) {
+          file = "mail_ses";
+          optional = true;
+          owner = "stalwart";
+          restartUnits = [ "stalwart.service" ];
+        }
+      );
 
     nixos =
       {
@@ -130,6 +187,17 @@ in
             certFile = "${certDir}/fullchain.pem";
             keyFile = "${certDir}/key.pem";
             spamFilter = "file://${config.services.stalwart.package.spam-filter}/spam-filter.toml";
+            # Once `ark service mail init` has stored the login.
+            relay =
+              if config.sops.secrets ? ${sesSecret "password"} then
+                {
+                  address = sesSmtp;
+                  port = 2465;
+                  usernameFile = config.sops.secrets.${sesSecret "username"}.path;
+                  passwordFile = config.sops.secrets.${sesSecret "password"}.path;
+                }
+              else
+                null;
           };
         };
 
@@ -187,13 +255,103 @@ in
       };
   };
 
-  # The host-specific half: the names pointing at the vps that runs it.
+  # The host-specific half: the names pointing at the vps that runs it, and
+  # SES for its domain.
   config.den.aspects.mail =
     { host, ... }:
     {
       includes = [ config.den.aspects.service-mail ];
 
+      terranix = {
+        # The domain, signed by SES's own DKIM keys (the CNAMEs below), with
+        # bounces coming back to bounce.<domain> so SPF lines up with it.
+        resource.aws_sesv2_email_identity.mail.email_identity = domain;
+        resource.aws_sesv2_email_identity_mail_from_attributes.mail = {
+          email_identity = "\${${identity}.email_identity}";
+          mail_from_domain = "bounce.${domain}";
+          behavior_on_mx_failure = "USE_DEFAULT_VALUE";
+        };
+
+        # Stalwart's login: may send as the domain and nothing else.
+        resource.aws_iam_user.mail.name = "ark-mail-smtp";
+        resource.aws_iam_user_policy.mail = {
+          name = "send-as-${domain}";
+          user = "\${aws_iam_user.mail.name}";
+          policy = builtins.toJSON {
+            Version = "2012-10-17";
+            Statement = [
+              {
+                Effect = "Allow";
+                Action = "ses:SendRawEmail";
+                Resource = "*";
+                Condition.StringLike."ses:FromAddress" = "*@${domain}";
+              }
+            ];
+          };
+        };
+        resource.aws_iam_access_key.mail.user = "\${aws_iam_user.mail.name}";
+        # What `ark service mail init` stores (SMTP wants the key's id and a
+        # password derived from its secret for the region).
+        output.${sesOutput} = {
+          sensitive = true;
+          value = {
+            username = "\${aws_iam_access_key.mail.id}";
+            password = "\${aws_iam_access_key.mail.ses_smtp_password_v4}";
+          };
+        };
+      };
+
       dns_records = [
+        {
+          inherit domain;
+          id = "spf";
+          name = "";
+          type = "TXT";
+          content = "v=spf1 include:amazonses.com ~all";
+        }
+        {
+          inherit domain;
+          name = "_dmarc";
+          type = "TXT";
+          content = "v=DMARC1; p=quarantine";
+        }
+        {
+          inherit domain;
+          id = "bounce_mx";
+          name = "bounce";
+          type = "MX";
+          content = "feedback-smtp.${region}.amazonses.com";
+          priority = 10;
+        }
+        {
+          inherit domain;
+          id = "bounce_spf";
+          name = "bounce";
+          type = "TXT";
+          content = "v=spf1 include:amazonses.com ~all";
+        }
+      ]
+      ++
+        map
+          (
+            i:
+            let
+              token = "\${${identity}.dkim_signing_attributes[0].tokens[${toString i}]}";
+            in
+            {
+              inherit domain;
+              id = "dkim${toString i}";
+              name = "${token}._domainkey";
+              type = "CNAME";
+              content = "${token}.dkim.amazonses.com";
+            }
+          )
+          [
+            0
+            1
+            2
+          ]
+      ++ [
         {
           inherit domain;
           name = "mail";
