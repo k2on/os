@@ -1,0 +1,10 @@
+[package]
+name = "photos-avatars"
+description = "Everyone's Immich profile picture as a file named after them, kept current from Immich's database"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

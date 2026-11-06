@@ -1,0 +1,17 @@
+[package]
+name = "mail-aliases"
+description = "Mail accounts and aliases for Stalwart, and the API Bitwarden makes aliases through"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# Not the workspace's bundled build: linked against nixpkgs' SQLite (../_package.nix).
+rusqlite = "0.32"
+ring.workspace = true
+tokio.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true

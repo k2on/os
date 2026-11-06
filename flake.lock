@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "classical": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793025480,
+        "narHash": "sha256-olXTLXNA0yf1JnVZSkkTQlUcF7lPXEYIC+2drlYRWC8=",
+        "ref": "main",
+        "rev": "a9f86e65a9b9571c09418d9b23f3eaef4d71b060",
+        "revCount": 8,
+        "type": "git",
+        "url": "https://github.com/k2on/classical"
+      },
+      "original": {
+        "ref": "main",
+        "type": "git",
+        "url": "https://github.com/k2on/classical"
+      }
+    },
     "den": {
       "locked": {
         "lastModified": 1786141890,
@@ -191,15 +208,16 @@
     },
     "koon-apps": {
       "inputs": {
+        "classical": "classical",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1792279540,
-        "narHash": "sha256-YIKgiLLTUZSQ9YVRM2l791fp+Pnsgm2pmJlw18WmUFU=",
+        "lastModified": 1793987558,
+        "narHash": "sha256-YK1jeBrkMPP9gEdag/NecoIos8cf/llDEzbdu9CLe7Y=",
         "owner": "k2on",
         "repo": "apps",
-        "rev": "c262bde058281811961cc09b4ee3088068ef9a28",
+        "rev": "77da98074c9792e96efc643abfe2943eabe4abd7",
         "type": "github"
       },
       "original": {

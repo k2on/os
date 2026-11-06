@@ -1,10 +1,11 @@
 # Mail: Stalwart on the vps, which has the static address mail needs.
 #
-# On the domain with role = "secondary" (modules/domains.nix) for now.
-# Every person gets a mailbox, <person>@<domain>, and every group in
-# ark.groups (secrets/ark.nix) a shared one, <group>@<domain>: its members
-# see it inside their own account, under "Shared Folders/<group>", and may
-# send as its address; nobody logs in to it.
+# Mailboxes are on the main domain (modules/domains.nix), aliases on the
+# one with role = "secondary". Every person gets a mailbox, <person>@<domain>,
+# and every group in ark.groups (secrets/ark.nix) a shared one,
+# <group>@<domain>: its members see it inside their own account, under
+# "Shared Folders/<group>", and may send as its address; nobody logs in to
+# it.
 #
 # In a mail app: IMAP mail.<domain>:993 (TLS) and SMTP mail.<domain>:465
 # (TLS), user name the person's username (not their address), password the
@@ -12,72 +13,137 @@
 # mail_password_<person>.yaml` shows it). Thunderbird (and other apps that
 # look) fills all of that in from autoconfig.<domain>, given the address.
 #
-# Mail to the internet leaves through Amazon SES, which signs it (DKIM) and
-# sends it from addresses mail providers trust; the vps's own port 25 out is
-# blocked anyway. `ark push` sets SES up for the domain, with its DNS records
-# (DKIM, a bounce.<domain> MAIL FROM, SPF, DMARC) and an IAM user that may
-# only send as it. `ark service mail init` (./cli) then stores that user's
-# SMTP login (mail_ses_*, which benj builds without until then) and asks AWS
-# to take the account out of the sandbox, a review by a person that takes
-# about a day; until it passes, SES only delivers to addresses verified in
-# it. `ark service mail status` says where that stands. Another `ark push`
-# after init turns the relay on. The AWS keys `ark push` uses are infra
-# secrets (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), entered with `ark
-# secrets`, for an IAM user that may manage SES and IAM.
+# Mail to the internet leaves through Scaleway Transactional Email (TEM),
+# which signs it (DKIM) and sends it from addresses mail providers trust;
+# the vps's own port 25 out is blocked anyway. (Amazon SES was the first
+# choice, but AWS would not take the account out of its sandbox.) `ark push`
+# does all of it, in one apply: subscribes the project to TEM's Essential
+# plan (a free monthly allowance, then pay per mail), sets TEM up for the
+# domain with its DNS records (DKIM, SPF, DMARC) and an IAM application
+# whose API key may only send mail, and writes that key onto the vps as
+# Stalwart's SMTP login (in /var/lib/mail-relay, not sops: see
+# mail_tem_login below). Scaleway checks the records by itself; `ark
+# service mail status` (./cli) asks it to now if they have not passed yet,
+# and says how much it sent. The Scaleway keys `ark push` uses are infra
+# secrets (SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_ORGANIZATION_ID,
+# SCW_DEFAULT_PROJECT_ID), entered with `ark secrets`, for an API key that
+# may manage TEM and IAM.
+#
+# Aliases: Bitwarden's username generator makes them ("Forwarded email
+# alias", service addy.io, self-hosted server https://alias.<domain>, the
+# domain <domain>, and the person's mail_alias_token_<person> as its API
+# key: `ark service mail bitwarden <person>` prints all that). One is
+# <site>-<5 letters and digits>@<domain> and delivers to whoever made it,
+# who may also reply from it; once the login holding it is saved in a
+# group's vault (services/pass), its mail goes to that group's mailbox, and
+# back when it leaves. mail-aliases (./aliases, Rust) makes and keeps them,
+# and writes Stalwart's accounts when Stalwart starts; Stalwart restarts
+# whenever an alias changes (a few seconds; senders retry). `ark service mail
+# aliases` lists them, `ark service mail alias <address> off` stops one.
 #
 # The settings are ./_settings.nix; `nix flake check` runs them in a real
-# Stalwart (./_check.nix).
+# Stalwart, with mail-aliases (./_check.nix).
 { lib, config, ... }:
 let
   ark = config.ark;
   persons = lib.attrNames ark.persons;
-  domain =
+  # Mailboxes (<person>@, <group>@) are on the main domain, aliases on the
+  # secondary one. Stalwart takes mail for both, and each is its own TEM
+  # domain.
+  domain = ark.mainDomain;
+  aliasDomain =
     (lib.findFirst (
       d: d.role == "secondary"
     ) (throw "mail: no domain with role = \"secondary\" in ark.domains") ark.domains).domain;
+  domains = [
+    domain
+    aliasDomain
+  ];
   hostname = "mail.${domain}";
   passwordSecret = p: "mail_password_${p}";
 
-  # SES: the region, its SMTP endpoint (2465 is TLS from the first byte, on
-  # a port the vps's provider leaves open), and terraform names.
-  region = "us-east-1";
-  sesSmtp = "email-smtp.${region}.amazonaws.com";
-  identity = "aws_sesv2_email_identity.mail";
-  sesOutput = "mail_ses_smtp";
-  sesSecret = field: "mail_ses_${field}";
+  # TEM: the region (its only one), its SMTP endpoint (2465 is TLS from the
+  # first byte, on a port the vps's provider leaves open), and terraform
+  # names.
+  region = "fr-par";
+  temSmtp = "smtp.tem.scaleway.com";
+  # The alias domain keeps the resource name from when it was the only
+  # one, so terraform does not replace it (terranix has no `moved`).
+  temName = d: if d == aliasDomain then "mail" else lib.replaceStrings [ "." "-" ] [ "_" "_" ] d;
+  temDomain = d: "scaleway_tem_domain.${temName d}";
+  # Where terraform writes Stalwart's login to TEM on the vps (below).
+  relayDir = "/var/lib/mail-relay";
+  domainsOutput = "mail_tem_domains";
+
+  # Aliases: Bitwarden's endpoint (public, through nginx), the internal one
+  # (the tailnet: pass-vaults on adam, `ark service mail`), and the key the
+  # internal one wants.
+  aliasesHost = "alias.${aliasDomain}";
+  aliasesPort = 8730;
+  aliasesInternalPort = 8731;
+  aliasesKey = "mail_aliases_key";
+  tokenSecret = p: "mail_alias_token_${p}";
+  # The mail host's name on the tailnet, as `ark hosts` has it.
+  mailHost =
+    let
+      h = lib.findFirst (h: lib.elem "mail" h.services) null (lib.attrValues config.flake.arkHosts);
+    in
+    if h == null || h.ssh == null then null else lib.last (lib.splitString "@" h.ssh);
 in
 {
   config.perSystem =
     { pkgs, ... }:
     {
-      checks.mail = pkgs.callPackage ./_check.nix { };
+      checks.mail = pkgs.callPackage ./_check.nix {
+        mail-aliases = pkgs.callPackage ./aliases/_package.nix { };
+      };
     };
 
   # For `ark service mail` (./cli).
   config.flake.arkServiceConfig.mail = {
-    inherit domain region sesOutput;
-    secrets = {
-      username = sesSecret "username";
-      password = sesSecret "password";
-    };
+    inherit region domainsOutput;
+    inherit (config.ark.mail) aliases;
   };
 
-  # The AWS provider, once for the whole infra; its keys are admin-only
-  # infra secrets (lib/secrets.nix), exported to `ark plan/push`.
-  config.den.aspects.mail-aws = {
-    terranix = {
-      terraform.required_providers.aws = {
-        source = "hashicorp/aws";
-        version = "~> 6.0";
+  # For services/pass, which reports where aliases go. Not through `flake`,
+  # which the services' secrets help make.
+  options.ark.mail = lib.mkOption {
+    type = lib.types.raw;
+    readOnly = true;
+    default = {
+      inherit domain;
+      aliases = {
+        domain = aliasDomain;
+        url = "https://${aliasesHost}";
+        # Read only by hosts' own units, never while declaring secrets.
+        endpoint = if mailHost == null then null else "http://${mailHost}:${toString aliasesInternalPort}";
+        key = aliasesKey;
+        tokens = lib.genAttrs persons tokenSecret;
       };
-      provider.aws = { inherit region; };
+    };
+    description = "Where mail and its aliases are, for other services.";
+  };
+
+  # The Scaleway provider, once for the whole infra; its keys are admin-only
+  # infra secrets (lib/secrets.nix), exported to `ark plan/push`.
+  config.den.aspects.mail-scaleway = {
+    terranix = {
+      terraform.required_providers.scaleway = {
+        source = "scaleway/scaleway";
+        version = "~> 2.0";
+      };
+      provider.scaleway = { inherit region; };
     };
     secrets = {
-      AWS_ACCESS_KEY_ID = { };
-      AWS_SECRET_ACCESS_KEY = { };
+      SCW_ACCESS_KEY = { };
+      SCW_SECRET_KEY = { };
+      SCW_DEFAULT_ORGANIZATION_ID = { };
+      SCW_DEFAULT_PROJECT_ID = { };
     };
   };
-  config.den.aspects.infra-base.includes = [ config.den.aspects.mail-aws ];
+  config.den.aspects.infra-base.includes = [
+    config.den.aspects.mail-scaleway
+  ];
 
   config.ark.services.mail = {
     web = false;
@@ -90,16 +156,23 @@ in
           restartUnits = [ "stalwart.service" ];
         }
       )
-      # The SES SMTP login, from `ark service mail init`.
-      // lib.genAttrs' [ "username" "password" ] (
-        field:
-        lib.nameValuePair (sesSecret field) {
-          file = "mail_ses";
-          optional = true;
+      # What Bitwarden sends for each person when it makes an alias.
+      // lib.genAttrs' persons (
+        p:
+        lib.nameValuePair (tokenSecret p) {
+          generate = true;
           owner = "stalwart";
-          restartUnits = [ "stalwart.service" ];
+          restartUnits = [ "mail-aliases.service" ];
         }
-      );
+      )
+      # The internal API's key, shared with pass-vaults (services/pass).
+      // {
+        ${aliasesKey} = {
+          generate = true;
+          owner = "stalwart";
+          restartUnits = [ "mail-aliases.service" ];
+        };
+      };
 
     nixos =
       {
@@ -144,7 +217,7 @@ in
           <?xml version="1.0" encoding="UTF-8"?>
           <clientConfig version="1.1">
             <emailProvider id="${domain}">
-              <domain>${domain}</domain>
+              ${lib.concatMapStrings (d: "<domain>${d}</domain>") domains}
               <displayName>${domain}</displayName>
               <incomingServer type="imap">
               ${server 993}</incomingServer>
@@ -155,6 +228,31 @@ in
         '';
         clash = lib.intersectLists persons (lib.attrNames ark.groups);
         certDir = config.security.acme.certs.${hostname}.directory;
+
+        mailAliases = pkgs.callPackage ./aliases/_package.nix { };
+        aliasesDir = "/var/lib/mail-aliases";
+        aliasesChanged = "${aliasesDir}/changed";
+        aliasesConfig = pkgs.writeText "mail-aliases.json" (
+          builtins.toJSON {
+            db = "${aliasesDir}/aliases.db";
+            changedFile = aliasesChanged;
+            domain = aliasDomain;
+            listen = "127.0.0.1:${toString aliasesPort}";
+            internalListen = "0.0.0.0:${toString aliasesInternalPort}";
+            internalKeyFile = config.sops.secrets.${aliasesKey}.path;
+            persons = map (p: {
+              name = p;
+              address = "${p}@${domain}";
+              passwordFile = config.sops.secrets.${passwordSecret p}.path;
+              tokenFile = config.sops.secrets.${tokenSecret p}.path;
+              groups = lib.attrNames (lib.filterAttrs (_: members: lib.elem p members) ark.groups);
+            }) persons;
+            groups = lib.mapAttrsToList (name: _: {
+              inherit name;
+              address = "${name}@${domain}";
+            }) ark.groups;
+          }
+        );
       in
       {
         assertions = [
@@ -167,18 +265,9 @@ in
         services.stalwart = {
           enable = true;
           stateVersion = "26.05";
+          # Its accounts are appended when it starts (systemd.services.stalwart).
           settings = import ./_settings.nix {
-            inherit hostname;
-            mailboxes = map (p: {
-              name = p;
-              address = "${p}@${domain}";
-              passwordFile = config.sops.secrets.${passwordSecret p}.path;
-              memberOf = lib.attrNames (lib.filterAttrs (_: members: lib.elem p members) ark.groups);
-            }) persons;
-            shared = lib.mapAttrsToList (name: _: {
-              inherit name;
-              address = "${name}@${domain}";
-            }) ark.groups;
+            inherit hostname domains;
             listen = {
               smtp = "[::]:25";
               submissions = "[::]:465";
@@ -187,17 +276,16 @@ in
             certFile = "${certDir}/fullchain.pem";
             keyFile = "${certDir}/key.pem";
             spamFilter = "file://${config.services.stalwart.package.spam-filter}/spam-filter.toml";
-            # Once `ark service mail init` has stored the login.
-            relay =
-              if config.sops.secrets ? ${sesSecret "password"} then
-                {
-                  address = sesSmtp;
-                  port = 2465;
-                  usernameFile = config.sops.secrets.${sesSecret "username"}.path;
-                  passwordFile = config.sops.secrets.${sesSecret "password"}.path;
-                }
-              else
-                null;
+            # The login is written by terraform right after each deploy that
+            # needs it (below); until then Stalwart logs that the files are
+            # missing and the relay refuses it, which only matters for mail
+            # sent in those seconds.
+            relay = {
+              address = temSmtp;
+              port = 2465;
+              usernameFile = "${relayDir}/username";
+              passwordFile = "${relayDir}/password";
+            };
           };
         };
 
@@ -205,8 +293,12 @@ in
         # there for headscale); Stalwart reads it as a member of nginx's group.
         # The site itself serves nothing, but answers HTTPS with the right
         # certificate: Thunderbird looks there too, and asks you about any
-        # other.
-        services.nginx.virtualHosts.${hostname} = httpsSite;
+        # other. One certificate for mail.<each domain>: mail apps set up
+        # with mail.<alias domain>, from before the mailboxes moved, keep
+        # working.
+        services.nginx.virtualHosts.${hostname} = httpsSite // {
+          serverAliases = map (d: "mail.${d}") (lib.remove domain domains);
+        };
         security.acme.certs.${hostname}.reloadServices = [ "stalwart.service" ];
         # A first order can come before its name resolves (`ark push` makes
         # the records and deploys together). Keep trying until it does, at
@@ -214,38 +306,95 @@ in
         # failures an hour); Stalwart has a self-signed stand-in until then.
         systemd.services."acme-order-renew-${hostname}".serviceConfig.Restart = "on-failure";
         systemd.services."acme-order-renew-autoconfig.${domain}".serviceConfig.Restart = "on-failure";
+        systemd.services."acme-order-renew-${aliasesHost}".serviceConfig.Restart = "on-failure";
         users.users.stalwart.extraGroups = [ config.services.nginx.group ];
 
         # Thunderbird asks for the settings above at both
         # autoconfig.<domain>/mail/ and <domain>/.well-known/autoconfig/mail/
         # (at once, and asks you about a bad certificate on either), before it
-        # guesses. One site, one certificate for both names; the bare domain
-        # serves nothing else. %EMAILLOCALPART% makes the user name the part
-        # before the @.
+        # guesses. One site, one certificate for all those names; otherwise
+        # the alias domain's bare name serves a page saying what the domain
+        # is and who to write to (./homepage.html; relays look for one
+        # before letting a domain send). The main domain's bare name is not
+        # this server's, so Thunderbird finds it at autoconfig.<domain>.
+        # %EMAILLOCALPART% makes the user name the part before the @.
         services.nginx.virtualHosts."autoconfig.${domain}" = httpsSite // {
-          serverAliases = [ domain ];
+          serverAliases = map (d: "autoconfig.${d}") (lib.remove domain domains) ++ [ aliasDomain ];
           locations =
-            lib.genAttrs [ "= /mail/config-v1.1.xml" "= /.well-known/autoconfig/mail/config-v1.1.xml" ]
-              (_: {
-                alias = autoconfig;
-                extraConfig = "default_type application/xml;";
-              });
+            lib.genAttrs [ "= /mail/config-v1.1.xml" "= /.well-known/autoconfig/mail/config-v1.1.xml" ] (_: {
+              alias = autoconfig;
+              extraConfig = "default_type application/xml;";
+            })
+            // {
+              "/".root = pkgs.writeTextDir "index.html" (
+                builtins.replaceStrings [ "@domain@" ] [ aliasDomain ] (builtins.readFile ./homepage.html)
+              );
+            };
         };
         systemd.services.stalwart = {
-          wants = [ "acme-finished-${hostname}.target" ];
-          after = [ "acme-finished-${hostname}.target" ];
+          wants = [
+            "acme-finished-${hostname}.target"
+            "mail-aliases.service"
+          ];
+          after = [
+            "acme-finished-${hostname}.target"
+            "mail-aliases.service"
+          ];
           # Stalwart writes its defaults back into the file it was started
           # with, which fails on the store's copy. A fresh writable copy each
-          # start keeps the settings Nix's.
-          preStart = "install -m 0600 ${configFile} /run/stalwart/config.toml";
+          # start keeps the settings Nix's; its accounts, aliases included,
+          # come after them.
+          preStart = ''
+            install -m 0600 ${configFile} /run/stalwart/config.toml
+            ${lib.getExe mailAliases} render ${aliasesConfig} >> /run/stalwart/config.toml
+          '';
           serviceConfig = {
             RuntimeDirectory = "stalwart";
+            ReadWritePaths = [ aliasesDir ];
             ExecStart = lib.mkForce [
               ""
               "${lib.getExe config.services.stalwart.package} --config=/run/stalwart/config.toml"
             ];
           };
         };
+
+        # Aliases: Bitwarden's API, and the tailnet's.
+        systemd.tmpfiles.rules = [
+          "d ${aliasesDir} 0700 stalwart stalwart - -"
+          "d ${relayDir} 0700 stalwart stalwart - -"
+        ];
+        systemd.services.mail-aliases = {
+          description = "Mail aliases from Bitwarden";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network.target" ];
+          serviceConfig = {
+            User = "stalwart";
+            Group = "stalwart";
+            ExecStart = "${lib.getExe mailAliases} serve ${aliasesConfig}";
+            Restart = "on-failure";
+            RestartSec = 5;
+            ReadWritePaths = [ aliasesDir ];
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            PrivateTmp = true;
+            NoNewPrivileges = true;
+          };
+        };
+        # Stalwart reads its accounts when it starts, so an alias changing
+        # restarts it.
+        systemd.paths.stalwart-accounts = {
+          wantedBy = [ "paths.target" ];
+          pathConfig.PathChanged = aliasesChanged;
+        };
+        systemd.services.stalwart-accounts = {
+          description = "Restart Stalwart for changed aliases";
+          serviceConfig.Type = "oneshot";
+          script = "systemctl try-restart stalwart.service";
+        };
+        services.nginx.virtualHosts.${aliasesHost} = httpsSite // {
+          locations."/api/".proxyPass = "http://127.0.0.1:${toString aliasesPort}";
+        };
+        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ aliasesInternalPort ];
 
         networking.firewall.allowedTCPPorts = [
           25 # mail from the internet
@@ -256,121 +405,151 @@ in
   };
 
   # The host-specific half: the names pointing at the vps that runs it, and
-  # SES for its domain.
+  # TEM for its domains.
   config.den.aspects.mail =
     { host, ... }:
-    {
-      includes = [ config.den.aspects.service-mail ];
-
-      terranix = {
-        # The domain, signed by SES's own DKIM keys (the CNAMEs below), with
-        # bounces coming back to bounce.<domain> so SPF lines up with it.
-        resource.aws_sesv2_email_identity.mail.email_identity = domain;
-        resource.aws_sesv2_email_identity_mail_from_attributes.mail = {
-          email_identity = "\${${identity}.email_identity}";
-          mail_from_domain = "bounce.${domain}";
-          behavior_on_mx_failure = "USE_DEFAULT_VALUE";
-        };
-
-        # Stalwart's login: may send as the domain and nothing else.
-        resource.aws_iam_user.mail.name = "ark-mail-smtp";
-        resource.aws_iam_user_policy.mail = {
-          name = "send-as-${domain}";
-          user = "\${aws_iam_user.mail.name}";
-          policy = builtins.toJSON {
-            Version = "2012-10-17";
-            Statement = [
-              {
-                Effect = "Allow";
-                Action = "ses:SendRawEmail";
-                Resource = "*";
-                Condition.StringLike."ses:FromAddress" = "*@${domain}";
-              }
-            ];
-          };
-        };
-        resource.aws_iam_access_key.mail.user = "\${aws_iam_user.mail.name}";
-        # What `ark service mail init` stores (SMTP wants the key's id and a
-        # password derived from its secret for the region).
-        output.${sesOutput} = {
-          sensitive = true;
-          value = {
-            username = "\${aws_iam_access_key.mail.id}";
-            password = "\${aws_iam_access_key.mail.ses_smtp_password_v4}";
-          };
-        };
-      };
-
-      dns_records = [
+    let
+      # Every domain's records, on whichever DNS provider has it (record ids
+      # need only be unique per provider).
+      records = d: [
         {
-          inherit domain;
+          domain = d;
           id = "spf";
           name = "";
           type = "TXT";
-          content = "v=spf1 include:amazonses.com ~all";
+          # Not the provider's spf_value: TEM builds that from whatever SPF
+          # the domain had when it was added (SES's, on the alias domain),
+          # and keeps it.
+          content = "v=spf1 include:_spf.tem.scaleway.com ~all";
         }
         {
-          inherit domain;
+          domain = d;
           name = "_dmarc";
           type = "TXT";
           content = "v=DMARC1; p=quarantine";
         }
         {
-          inherit domain;
-          id = "bounce_mx";
-          name = "bounce";
-          type = "MX";
-          content = "feedback-smtp.${region}.amazonses.com";
-          priority = 10;
-        }
-        {
-          inherit domain;
-          id = "bounce_spf";
-          name = "bounce";
+          domain = d;
+          id = "dkim";
+          name = "\${${temDomain d}.project_id}._domainkey";
           type = "TXT";
-          content = "v=spf1 include:amazonses.com ~all";
+          content = "\${${temDomain d}.dkim_config}";
         }
-      ]
-      ++
-        map
-          (
-            i:
-            let
-              token = "\${${identity}.dkim_signing_attributes[0].tokens[${toString i}]}";
-            in
-            {
-              inherit domain;
-              id = "dkim${toString i}";
-              name = "${token}._domainkey";
-              type = "CNAME";
-              content = "${token}.dkim.amazonses.com";
-            }
-          )
-          [
-            0
-            1
-            2
-          ]
-      ++ [
         {
-          inherit domain;
+          domain = d;
           name = "mail";
           type = "A";
           content = ark.vps.ip host;
         }
         {
-          inherit domain;
+          domain = d;
           name = "autoconfig";
           type = "A";
           content = ark.vps.ip host;
         }
         {
-          inherit domain;
+          domain = d;
           id = "mx";
           name = "";
           type = "MX";
-          content = hostname;
+          content = "mail.${d}";
           priority = 10;
+        }
+      ];
+    in
+    {
+      includes = [ config.den.aspects.service-mail ];
+
+      terranix = {
+        # Each domain, signed by TEM's DKIM key (its TXT record below, at
+        # <project id>._domainkey: the provider's dkim_name is the full name,
+        # with a trailing dot, and the DNS providers want it relative).
+        # Scaleway checks the records by itself, and again when `ark service
+        # mail status` asks.
+        resource.scaleway_tem_domain = lib.listToAttrs (
+          map (d: {
+            name = temName d;
+            value = {
+              name = d;
+              accept_tos = true;
+              depends_on = [ "terraform_data.mail_tem_offer" ];
+            };
+          }) domains
+        );
+        # TEM takes no domain in a project without a plan, and the provider
+        # can only read one: subscribe with the Scaleway CLI, which reads
+        # the same SCW_* keys from the environment. Subscribing again to the
+        # plan the project has changes nothing.
+        resource.terraform_data.mail_tem_offer = {
+          input = "essential";
+          provisioner.local-exec.command = "nix run nixpkgs#scaleway-cli -- tem offers update name=essential region=${region}";
+        };
+
+        # Stalwart's login: an application limited to TEM in the domains'
+        # project (one login sends for all of them).
+        # TransactionalEmailEmailApiCreate, the narrowest set, sends through
+        # the API only: SMTP refuses it with "535 Permission denied".
+        resource.scaleway_iam_application.mail.name = "ark-mail-smtp";
+        resource.scaleway_iam_policy.mail = {
+          name = "send-as-${domain}";
+          application_id = "\${scaleway_iam_application.mail.id}";
+          rule = [
+            {
+              project_ids = [ "\${${temDomain domain}.project_id}" ];
+              permission_set_names = [ "TransactionalEmailFullAccess" ];
+            }
+          ];
+        };
+        resource.scaleway_iam_api_key.mail = {
+          application_id = "\${scaleway_iam_application.mail.id}";
+          description = "Stalwart's SMTP login on the vps";
+        };
+        # The login, onto the vps over the ssh nixos-anywhere deploys with
+        # (aspects/nixos-anywhere.nix), after the deploy and in the same
+        # apply: the host is built at plan time, before this key exists, so
+        # going through sops would take a second push. SMTP wants the
+        # project's id and the key's secret. Written again whenever the key
+        # or the server is replaced (a reinstall wipes /var/lib).
+        resource.terraform_data.mail_tem_login = {
+          triggers_replace = [
+            "\${scaleway_iam_api_key.mail.id}"
+            (ark.vps.id host)
+          ];
+          depends_on = [ "module.deploy" ];
+          # The system ssh, as nixos-anywhere uses it (keys from ~/.ssh as
+          # well as the agent, and no known_hosts: a reinstall changes the
+          # host key), not terraform's own, which knows only the agent. The
+          # login goes over stdin, never on a command line.
+          provisioner.local-exec = {
+            environment = {
+              HOST = ark.vps.ip host;
+              TEM_USERNAME = "\${${temDomain domain}.smtps_auth_user}";
+              TEM_PASSWORD = "\${scaleway_iam_api_key.mail.secret_key}";
+              WRITE_LOGIN = lib.concatStringsSep "; " [
+                "set -e"
+                "install -d -m 0700 -o stalwart -g stalwart ${relayDir}"
+                "umask 077"
+                "IFS= read -r user; IFS= read -r password"
+                "printf %s \"$user\" > ${relayDir}/username"
+                "printf %s \"$password\" > ${relayDir}/password"
+                "chown stalwart:stalwart ${relayDir}/username ${relayDir}/password"
+                "chmod 0400 ${relayDir}/username ${relayDir}/password"
+                "systemctl try-restart stalwart.service"
+              ];
+            };
+            command = ''printf '%s\n%s\n' "$TEM_USERNAME" "$TEM_PASSWORD" | ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 "root@$HOST" "$WRITE_LOGIN"'';
+          };
+        };
+        # For `ark service mail status`: each domain's TEM id.
+        output.${domainsOutput}.value = lib.genAttrs domains (d: "\${${temDomain d}.id}");
+      };
+
+      dns_records = lib.concatMap records domains ++ [
+        {
+          domain = aliasDomain;
+          name = "alias";
+          type = "A";
+          content = ark.vps.ip host;
         }
       ];
     };

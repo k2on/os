@@ -62,4 +62,8 @@ rec {
   # this path, which websockify serves it under too.
   novncPort = 6080;
   novncPrefix = "/browser";
+  # The browser's DevTools, relayed to adam alone, as the noVNC page is:
+  # money's server on adam drives the same browser (its Costco receipts, and
+  # amazon-orders' sign-in challenges), in the profile people sign in to.
+  cdpRelayPort = 9223;
 }

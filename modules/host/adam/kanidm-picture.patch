@@ -1,0 +1,20 @@
+--- a/server/lib/src/idm/oauth2.rs
++++ b/server/lib/src/idm/oauth2.rs
+@@ -3344,6 +3344,17 @@
+         extra_claims.insert(claim_name.to_string(), claim_value.to_json_value());
+     }
+ 
++    // Everyone's picture: the URL in KANIDM_OAUTH2_PICTURE_URL with {name}
++    // replaced by their name, nothing stored. OIDC has it under `profile`.
++    if scopes.contains(OAUTH2_SCOPE_PROFILE) {
++        if let Ok(url) = std::env::var("KANIDM_OAUTH2_PICTURE_URL") {
++            extra_claims.insert(
++                "picture".to_string(),
++                serde_json::Value::String(url.replace("{name}", account.name())),
++            );
++        }
++    }
++
+     // Now perform our custom claim's from scopes. We do these second so that
+     // a user can't stomp our claim names.
+ 

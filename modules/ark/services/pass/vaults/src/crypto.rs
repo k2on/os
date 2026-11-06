@@ -31,6 +31,14 @@ impl SymKey {
         Ok(SymKey { bytes })
     }
 
+    /// A key that arrived encrypted, such as an item's own (its `key`).
+    pub fn from_bytes(raw: &[u8]) -> Result<SymKey> {
+        let Ok(bytes) = <[u8; 64]>::try_from(raw) else {
+            bail!("the key is {} bytes, not 64", raw.len());
+        };
+        Ok(SymKey { bytes })
+    }
+
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }

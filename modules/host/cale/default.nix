@@ -15,7 +15,9 @@
 
   den.aspects.koonMax = {
     includes = with den.aspects; [
+      avatar
       codex
+      security
     ];
 
     nixos = {

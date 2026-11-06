@@ -68,14 +68,20 @@ in
       # Tinfoil's chat models (https://docs.tinfoil.sh/models/chat): glm-5-3
       # is their pick for agentic, long-horizon tool use, with a 1M context,
       # at under half Kimi K3's price for input and a quarter for output.
-      # It is text-only: photos sent over Signal and screenshots it cannot
-      # look at. kimi-k3 is the one with vision; its channel markers
-      # (`<|open|> response`) are stripped by the proxy and the channel.
-      # Both serve the Responses API the agent speaks.
+      # It is text-only, so an image in a thread (a photo sent over Signal
+      # and looked at, a screenshot) would fail that turn and every one
+      # after it. kimi-k3 has vision: the proxy asks it to describe each
+      # image and glm reads the description instead, kept by the image's
+      # hash in the state directory so a thread pays for each image once.
+      # (Its channel markers, `<|open|> response`, are stripped by the
+      # proxy and the channel.) Both serve the Responses API.
       LLM_PROXY_MODEL = "glm-5-3";
+      LLM_PROXY_VISION_MODEL = "kimi-k3";
     };
     serviceConfig = hardening // {
       ExecStart = "${llm}/bin/llm-proxy";
+      # The image descriptions, as $STATE_DIRECTORY.
+      StateDirectory = "sivrad-llm";
       # Read by systemd as root, handed over as $CREDENTIALS_DIRECTORY/key.
       LoadCredential = "key:/run/host-credentials/tinfoil_api_key";
     };

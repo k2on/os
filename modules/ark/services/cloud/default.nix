@@ -14,6 +14,7 @@ in
       {
         service,
         pkgs,
+        lib,
         config,
         ...
       }:
@@ -45,6 +46,8 @@ in
             trusted_domains = [ "cloud.${ark.mainDomain}" ];
             trusted_proxies = [ "127.0.0.1" ];
             allow_local_remote_servers = true;
+            # Kanidm only (nextcloud-oidc-provision below).
+            hide_login_form = true;
           };
         };
 
@@ -105,8 +108,21 @@ in
               --unique-uid=0 \
               --mapping-uid=preferred_username \
               --mapping-display-name=name \
-              --mapping-email=email
+              --mapping-email=email \
+              --mapping-avatar=picture
 
+            # Only that provider: any other (an earlier one by another name)
+            # goes. Accounts are not tied to it (--unique-uid=0).
+            ${config.services.nextcloud.occ}/bin/nextcloud-occ user_oidc:provider --output=json \
+              | ${pkgs.jq}/bin/jq -r --arg keep ${lib.escapeShellArg service.oidc.name} '.[].identifier | select(. != $keep)' \
+              | while read -r other; do
+                  ${config.services.nextcloud.occ}/bin/nextcloud-occ user_oidc:provider:delete --force "$other"
+                done
+            # Signing in is through it alone: /login goes straight there
+            # (with one provider), and the password form is hidden (hide_login_form
+            # above).
+            ${config.services.nextcloud.occ}/bin/nextcloud-occ config:app:set user_oidc \
+              allow_multiple_user_backends --value=0
 
             ${config.services.nextcloud.occ}/bin/nextcloud-occ config:app:set richdocuments \
               wopi_url --value="https://office.${ark.mainDomain}"

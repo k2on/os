@@ -1,12 +1,14 @@
 # Underscore: import-tree loads every other .nix under modules/ as a flake module.
 #
 # `nix flake check` / `nix build .#checks.<system>.pass-vaults`: runs
-# test/run.sh inside the sandbox, against a real Vaultwarden on loopback.
+# test/run.sh inside the sandbox, against a real Vaultwarden on loopback,
+# and a real mail-aliases for the aliases (../../mail/aliases).
 {
   lib,
   runCommand,
   vaultwarden,
   pass-vaults,
+  mail-aliases,
   curl,
   jq,
   openssl,
@@ -16,6 +18,7 @@ runCommand "pass-vaults-e2e"
     nativeBuildInputs = [
       vaultwarden
       pass-vaults
+      mail-aliases
       curl
       jq
       openssl

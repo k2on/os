@@ -121,6 +121,12 @@ in
             # For repositories made from now on; an existing one keeps its own
             # switch (Settings > Pull Requests).
             "repository.pull-request".DEFAULT_DELETE_BRANCH_AFTER_MERGE = true;
+            # Gitea calls out only to public addresses unless told: the
+            # picture it fetches on sign-in (UPDATE_AVATAR, from
+            # ark.oidc.picture) is on photos.*, which is ark's own nginx at
+            # its tailnet address (arkTailnetIp, ../headscale). Only HTTPS
+            # there; a host name alone never covers a private address.
+            security.ALLOWED_HOST_LIST = "100.64.0.1/32:443";
             oauth2_client = {
               ACCOUNT_LINKING = "auto";
               ENABLE_AUTO_REGISTRATION = true;

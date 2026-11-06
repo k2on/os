@@ -18,6 +18,8 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use serde_json::Value;
 use tokio::net::TcpListener;
 
+use crate::vision::{self, Vision};
+
 /// Requests are JSON a model can read in one go; a conversation with
 /// images stays well under this.
 const MAX_REQUEST: usize = 64 * 1024 * 1024;
@@ -31,6 +33,7 @@ pub struct Proxy {
     model: Option<String>,
     authorization: Option<HeaderValue>,
     client: Client<HttpConnector, Full<Bytes>>,
+    vision: Option<Vision>,
 }
 
 impl Proxy {
@@ -64,7 +67,14 @@ impl Proxy {
             model,
             authorization,
             client,
+            vision: None,
         })
+    }
+
+    /// Images go to `vision` to be described rather than upstream as they are.
+    pub fn with_vision(mut self, vision: Vision) -> Self {
+        self.vision = Some(vision);
+        self
     }
 
     /// The upstream request for a client request: same method, path and
@@ -95,12 +105,73 @@ impl Proxy {
         (builder, body)
     }
 
+    /// A request with its images described, when there is a vision model
+    /// and the request has any; otherwise as it came.
+    async fn describe_images(&self, bytes: Bytes) -> Bytes {
+        let Some(vision) = &self.vision else {
+            return bytes;
+        };
+        let Ok(mut request) = serde_json::from_slice::<Value>(&bytes) else {
+            return bytes;
+        };
+        let urls = vision::images(&request);
+        if urls.is_empty() {
+            return bytes;
+        }
+        let mut said = std::collections::HashMap::new();
+        for url in urls {
+            let text = match vision.recall(&url) {
+                Some(text) => Ok(text),
+                None => {
+                    let text = tokio::time::timeout(Duration::from_secs(180), self.ask_vision(vision, &url))
+                        .await
+                        .unwrap_or_else(|_| Err("no answer in three minutes".to_owned()));
+                    match &text {
+                        Ok(text) => vision.keep(&url, text),
+                        Err(e) => eprintln!("llm-proxy: describing an image with {}: {e}", vision.model),
+                    }
+                    text
+                }
+            };
+            said.insert(url, text);
+        }
+        vision::replace(&mut request, &vision.model, &said);
+        Bytes::from(request.to_string())
+    }
+
+    async fn ask_vision(&self, vision: &Vision, url: &str) -> Result<String, String> {
+        let uri = format!("{}/v1/responses", self.upstream.to_string().trim_end_matches('/'));
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(HOST, self.host.clone())
+            .header(CONTENT_TYPE, "application/json");
+        if let Some(auth) = &self.authorization {
+            builder = builder.header(AUTHORIZATION, auth.clone());
+        }
+        let request = builder
+            .body(Full::new(Bytes::from(vision.request(url).to_string())))
+            .map_err(|e| e.to_string())?;
+        let response = self.client.request(request).await.map_err(|e| e.to_string())?;
+        let status = response.status();
+        let body = read_whatever_arrives(response.into_body(), 4 * 1024 * 1024).await;
+        if !status.is_success() {
+            return Err(format!(
+                "{status}: {}",
+                String::from_utf8_lossy(&body).chars().take(500).collect::<String>()
+            ));
+        }
+        let answer: Value = serde_json::from_slice(&body).map_err(|e| format!("answer: {e}"))?;
+        vision::answer_text(&answer).ok_or_else(|| "an empty answer".to_owned())
+    }
+
     async fn forward(&self, req: Request<Incoming>) -> Response<Body> {
         let (builder, body) = self.rewrite(req);
         let bytes = match Limited::new(body, MAX_REQUEST).collect().await {
             Ok(collected) => collected.to_bytes(),
             Err(_) => return plain(StatusCode::PAYLOAD_TOO_LARGE, "request too large"),
         };
+        let bytes = self.describe_images(bytes).await;
         let bytes = adapt(bytes, self.model.as_deref());
         let request = match builder.body(Full::new(bytes)) {
             Ok(r) => r,
@@ -280,7 +351,7 @@ fn strip_markers_bytes(data: &[u8]) -> Option<Bytes> {
     Some(Bytes::from(text))
 }
 
-fn strip_markers(text: &str) -> Option<String> {
+pub(crate) fn strip_markers(text: &str) -> Option<String> {
     if !MARKERS.iter().any(|m| text.contains(m)) {
         return None;
     }
@@ -692,5 +763,85 @@ mod error_tests {
         assert_eq!(response.status(), 400);
         let body = response.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&body[..], br#"{"error":{"message":"bad effort"}}"#);
+    }
+}
+
+#[cfg(test)]
+mod vision_tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::Mutex;
+
+    /// An image in the thread goes to the vision model once; the main
+    /// model gets its description, this turn and the next.
+    #[tokio::test]
+    async fn images_reach_the_model_as_descriptions() {
+        let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream.local_addr().unwrap();
+        let seen: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let log = seen.clone();
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = upstream.accept().await.unwrap();
+                let log = log.clone();
+                tokio::spawn(async move {
+                    let service = service_fn(move |req: Request<Incoming>| {
+                        let log = log.clone();
+                        async move {
+                            let body: Value =
+                                serde_json::from_slice(&req.into_body().collect().await.unwrap().to_bytes())
+                                    .unwrap();
+                            let answer = if body["model"] == "kimi-k3" {
+                                json!({ "output": [{ "type": "message", "content": [{ "type": "output_text", "text": "Text: HELLO 42" }] }] })
+                            } else {
+                                json!({ "output": [] })
+                            };
+                            log.lock().unwrap().push(body);
+                            Ok::<_, Infallible>(Response::new(Full::new(Bytes::from(answer.to_string()))))
+                        }
+                    });
+                    let _ = http1::Builder::new()
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await;
+                });
+            }
+        });
+
+        let proxy = Arc::new(
+            Proxy::new(&format!("http://{upstream_addr}"), Some("glm-5-3".into()), String::new())
+                .unwrap()
+                .with_vision(Vision::new("kimi-k3".into(), None)),
+        );
+        let front = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let front_addr = front.local_addr().unwrap();
+        drop(front);
+        let listen = front_addr.to_string();
+        tokio::spawn(async move { serve(proxy, &listen).await.unwrap() });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let client: Client<HttpConnector, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
+        let turn = json!({ "model": "sivrad", "input": [
+            { "type": "function_call_output", "call_id": "c1", "output": [
+                { "type": "input_image", "image_url": "data:image/png;base64,AAAA" },
+            ]},
+        ]});
+        for _ in 0..2 {
+            let request = Request::builder()
+                .method("POST")
+                .uri(format!("http://{front_addr}/v1/responses"))
+                .body(Full::new(Bytes::from(turn.to_string())))
+                .unwrap();
+            assert_eq!(client.request(request).await.unwrap().status(), 200);
+        }
+
+        let seen = seen.lock().unwrap();
+        let models: Vec<&str> = seen.iter().map(|b| b["model"].as_str().unwrap()).collect();
+        assert_eq!(models, ["kimi-k3", "glm-5-3", "glm-5-3"], "described once, then remembered");
+        assert_eq!(seen[0]["input"][0]["content"][1]["image_url"], "data:image/png;base64,AAAA");
+        for main in &seen[1..] {
+            let part = &main["input"][0]["output"][0];
+            assert_eq!(part["type"], "input_text");
+            assert!(part["text"].as_str().unwrap().ends_with("\nText: HELLO 42"));
+        }
     }
 }

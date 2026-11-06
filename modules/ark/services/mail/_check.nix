@@ -4,9 +4,13 @@
 # on loopback, with the settings benj runs (./_settings.nix). Paths only
 # known at run time are @WORK@ in the config, filled in by the script.
 #
-# The relay (SES on benj) is relay.test.example, which does not resolve
+# Stalwart's accounts come from `mail-aliases render` (./aliases), as on
+# benj; the test makes aliases through its API like Bitwarden does, and
+# restarts Stalwart after each change as benj does.
+#
+# The relay (TEM on benj) is relay.test.example, which does not resolve
 # here: the check sees mail for the outside world head for it rather than
-# for the recipient's MX. Logging in to SES over TLS is not tested here,
+# for the recipient's MX. Logging in to TEM over TLS is not tested here,
 # because Stalwart never relays to a loopback address, and loopback is all
 # the sandbox has.
 {
@@ -14,29 +18,40 @@
   runCommand,
   formats,
   stalwart,
+  mail-aliases,
   curl,
   openssl,
 }:
 let
   work = "@WORK@";
-  person = name: memberOf: {
-    inherit name memberOf;
+  person = name: groups: {
+    inherit name groups;
     address = "${name}@test.example";
     passwordFile = "${work}/${name}.pw";
+    tokenFile = "${work}/${name}.token";
   };
-  settings = import ./_settings.nix {
-    hostname = "mail.test.example";
-    mailboxes = [
+  aliases = (formats.json { }).generate "aliases.json" {
+    db = "${work}/aliases.db";
+    changedFile = "${work}/changed";
+    domain = "test.example";
+    listen = "127.0.0.1:12480";
+    internalListen = "127.0.0.1:12481";
+    internalKeyFile = "${work}/internal.key";
+    persons = [
       (person "alice" [ "family" ])
       (person "bob" [ "family" ])
       (person "carol" [ ])
     ];
-    shared = [
+    groups = [
       {
         name = "family";
         address = "family@test.example";
       }
     ];
+  };
+  settings = import ./_settings.nix {
+    hostname = "mail.test.example";
+    domains = [ "test.example" ];
     listen = {
       smtp = "127.0.0.1:12525";
       submissions = "127.0.0.1:12465";
@@ -97,10 +112,12 @@ runCommand "mail-e2e"
   {
     nativeBuildInputs = [
       stalwart
+      mail-aliases
       curl
       openssl
     ];
     CONFIG = config;
+    ALIASES = aliases;
     src = lib.fileset.toSource {
       root = ./.;
       fileset = ./test;

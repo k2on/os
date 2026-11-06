@@ -13,6 +13,19 @@ pub struct Config {
     /// Vaultwarden's SQLite database.
     pub db: PathBuf,
     pub vaults: Vec<Vault>,
+    /// Where aliases go (`pass-vaults aliases`, aliases.rs); none without mail.
+    #[serde(default)]
+    pub aliases: Option<Aliases>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Aliases {
+    /// Aliases are <something>@<domain>.
+    pub domain: String,
+    /// mail-aliases's internal API, on the tailnet.
+    pub endpoint: String,
+    pub key_file: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -20,6 +33,8 @@ pub struct Config {
 pub struct Vault {
     /// The organization's id.
     pub id: String,
+    /// The group (ark.groups) it is for, whose mailbox its aliases go to.
+    pub group: String,
     pub name: String,
     /// Shown as the organization's billing address; Vaultwarden mails nothing to it.
     pub billing_email: String,

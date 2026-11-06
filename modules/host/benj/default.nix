@@ -22,6 +22,7 @@
         den.aspects.nixos-deploy
         den.aspects.headscale
         den.aspects.mail
+        den.aspects.security
       ];
 
       nixos = {
@@ -57,6 +58,10 @@
             (builtins.readFile ../../aspects/key.pub)
           ];
         };
+
+        # 2 GB and it builds its own system: compressed swap in memory, so a
+        # big compile slows down rather than crashes.
+        zramSwap.enable = true;
 
         programs.neovim = {
           enable = true;

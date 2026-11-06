@@ -1,8 +1,19 @@
-{ self, config, ... }:
+{
+  self,
+  config,
+  lib,
+  ...
+}:
 let
   ark = config.ark;
 in
 {
+  # Reachable off the tailnet only from the addresses in
+  # ark.publicFrom.harken (secrets/ark.nix; lib/public.nix), and not at
+  # all without them: /media is served to anyone who asks (the speakers
+  # fetch it so), so Harken is never public to the whole internet.
+  ark.public = lib.mkIf (ark.publicFrom ? harken) { harken = 443; };
+
   ark.services.harken = {
     oidc.callbacks = [ "/auth/callback" ];
     secrets.harken_home_assistant_token = { }; # long-lived token made in Home Assistant
@@ -11,6 +22,7 @@ in
       {
         service,
         config,
+        lib,
         pkgs,
         ...
       }:
@@ -47,6 +59,19 @@ in
           oidc = {
             inherit (service.oidc) issuer clientId clientSecretFile;
           };
+          # The `picture` claim (ark.oidc.picture) is on photos.*, ark's own
+          # nginx at its tailnet address, which Harken fetches from only when
+          # told: otherwise only public addresses and Kanidm's own host.
+          pictureHosts = lib.optional (ark.oidc.picture != null) (
+            builtins.head (lib.splitString "/" (lib.removePrefix "https://" ark.oidc.picture))
+          );
+          # Classical recordings free to download (github.com/k2on/classical),
+          # downloaded into the state directory at boot and on Settings'
+          # Resync, which only the library's role may ask: max's Kanidm id,
+          # as Harken knows him (the sign-in's `sub`).
+          catalogue = "https://k2on.github.io/classical/catalogue.json";
+
+          roles.library = [ "3f78ea05-f996-48c1-857d-6467f5621251" ];
           homeAssistant = {
             url = "https://home.${ark.mainDomain}";
             tokenFile = config.sops.secrets.harken_home_assistant_token.path;

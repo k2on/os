@@ -11,6 +11,11 @@
 # memberships it derives rather than reads from the secrets repo).
 #
 # The client's icon is modules/ark/services/<service>/icon.svg when present.
+#
+# Every client gets the standard `picture` claim, ark.oidc.picture with
+# {name} for the username: Kanidm keeps no pictures, so it is patched to
+# make the claim from that (host/adam/kanidm.nix), and services/photos
+# serves everyone's Immich picture there.
 { lib, config, ... }:
 let
   mainDomain = config.ark.mainDomain;
@@ -98,9 +103,21 @@ in
       };
       description = "<service> -> <role> -> persons. Each entry is the kanidm group <service>_<role>.";
     };
+    oidc.picture = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "https://photos.example.com/avatar/{name}";
+      description = "Everyone's picture URL, {name} being their username: the `picture` claim every client gets. null for none.";
+    };
     oidc.name = lib.mkOption {
       type = lib.types.str;
-      description = "What clients call the identity provider (login buttons, gitea's auth source, ...).";
+      description = "What clients call the identity provider (login buttons, gitea's auth source, ...), and what Kanidm's own pages are titled.";
+    };
+    oidc.logo = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      example = lib.literalExpression "../assets/logo.png";
+      description = "The identity provider's logo, on Kanidm's own pages (PNG, JPEG, GIF, WebP or SVG). null for Kanidm's.";
     };
     oidc.clients = lib.mkOption {
       type = lib.types.raw;

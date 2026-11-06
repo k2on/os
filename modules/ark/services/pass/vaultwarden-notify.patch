@@ -1,0 +1,84 @@
+diff -ru a/src/api/core/accounts.rs b/src/api/core/accounts.rs
+--- a/src/api/core/accounts.rs	2026-10-18 00:05:50.175416245 -0500
++++ b/src/api/core/accounts.rs	2026-10-18 00:05:50.183502396 -0500
+@@ -421,6 +421,7 @@
+     }
+ 
+     user.save(&conn).await?;
++    crate::util::notify_changed("KEYS_CHANGED_FILE");
+ 
+     // accept any open emergency access invitations
+     if !CONFIG.mail_enabled() && CONFIG.emergency_access_allowed() {
+@@ -491,6 +492,7 @@
+         .await;
+ 
+     user.save(&conn).await?;
++    crate::util::notify_changed("KEYS_CHANGED_FILE");
+ 
+     Ok(Json(json!({
+       "object": "set-password",
+@@ -529,6 +531,7 @@
+     user.name = data.name;
+ 
+     user.save(&conn).await?;
++    crate::util::notify_changed("KEYS_CHANGED_FILE");
+     Ok(Json(user.to_json(&conn).await))
+ }
+ 
+@@ -555,6 +558,7 @@
+     user.avatar_color = data.avatar_color;
+ 
+     user.save(&conn).await?;
++    crate::util::notify_changed("KEYS_CHANGED_FILE");
+     Ok(Json(user.to_json(&conn).await))
+ }
+ 
+@@ -583,6 +587,7 @@
+     user.public_key = Some(data.public_key);
+ 
+     user.save(&conn).await?;
++    crate::util::notify_changed("KEYS_CHANGED_FILE");
+ 
+     Ok(Json(json!({
+         "privateKey": user.private_key,
+diff -ru a/src/db/models/cipher.rs b/src/db/models/cipher.rs
+--- a/src/db/models/cipher.rs	2026-10-18 00:05:50.176296044 -0500
++++ b/src/db/models/cipher.rs	2026-10-18 00:05:50.198540857 -0500
+@@ -437,6 +437,7 @@
+ 
+     pub async fn save(&mut self, conn: &DbConn) -> EmptyResult {
+         self.update_users_revision(conn).await;
++        crate::util::notify_changed("CIPHERS_CHANGED_FILE");
+         self.updated_at = Utc::now().naive_utc();
+ 
+         db_run! { conn:
+@@ -463,6 +464,7 @@
+ 
+     pub async fn delete(&self, conn: &DbConn) -> EmptyResult {
+         self.update_users_revision(conn).await;
++        crate::util::notify_changed("CIPHERS_CHANGED_FILE");
+ 
+         FolderCipher::delete_all_by_cipher(&self.uuid, conn).await?;
+         CollectionCipher::delete_all_by_cipher(&self.uuid, conn).await?;
+diff -ru a/src/util.rs b/src/util.rs
+--- a/src/util.rs	2026-10-18 00:05:50.173424728 -0500
++++ b/src/util.rs	2026-10-18 00:05:50.196797634 -0500
+@@ -398,6 +398,18 @@
+ //
+ // String util methods
+ //
++/// ark: write $<var> (a file path, when the variable is set) so that whatever
++/// a systemd path unit runs on it can react right then: KEYS_CHANGED_FILE once
++/// a user's key pair is stored, CIPHERS_CHANGED_FILE whenever an item is
++/// saved or deleted.
++pub fn notify_changed(var: &str) {
++    if let Ok(path) = env::var(var) {
++        if let Err(e) = std::fs::write(&path, get_uuid()) {
++            warn!("Could not write {var} {path}: {e}");
++        }
++    }
++}
++
+ #[inline]
+ pub fn upcase_first(s: &str) -> String {
+     let mut c = s.chars();

@@ -24,8 +24,28 @@ let
   # Everything else on 443 is the vps's own vhosts (headscale) on 8444.
   arkTailnetIp = "100.64.0.1";
   upstreamName = name: "ark_${lib.replaceStrings [ "." "-" ] [ "_" "_" ] name}";
+  # A name forwarded only for some addresses (ark.publicFrom) routes to a
+  # variable instead, which a geo block sets to its upstream for those
+  # addresses and to `refused` for the rest.
+  restricted = lib.mapAttrs' (
+    label: cidrs:
+    if ark.public ? ${label} then
+      lib.nameValuePair "${label}.${ark.mainDomain}" cidrs
+    else
+      throw "ark.publicFrom.${label}: ${label} is not in ark.public"
+  ) ark.publicFrom;
+  allowVar = name: "$allow_${upstreamName name}";
   publicMap = lib.concatStrings (
-    lib.mapAttrsToList (name: _: "  ${name}  ${upstreamName name};\n") ark.publicDomains
+    lib.mapAttrsToList (
+      name: _: "  ${name}  ${if restricted ? ${name} then allowVar name else upstreamName name};\n"
+    ) ark.publicDomains
+  );
+  publicGeo = lib.concatStrings (
+    lib.mapAttrsToList (name: cidrs: ''
+      geo ${allowVar name} {
+        default refused;
+      ${lib.concatMapStrings (c: "  ${c}  ${upstreamName name};\n") cidrs}}
+    '') restricted
   );
   publicUpstreams = lib.concatStrings (
     lib.mapAttrsToList (name: port: ''
@@ -190,9 +210,16 @@ in
             ${publicMap}  default  https_local;
             }
 
+            ${publicGeo}
             ${publicUpstreams}
             upstream https_local {
               server 127.0.0.1:8444;
+            }
+
+            # Nothing listens here: a name forwarded only for some
+            # addresses, asked for from another, has its connection closed.
+            upstream refused {
+              server 127.0.0.1:9;
             }
 
             server {

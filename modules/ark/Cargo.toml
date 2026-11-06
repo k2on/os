@@ -7,11 +7,12 @@
 resolver = "2"
 members = [
   "cli",
-  "services/money/sync",
   "services/sivrad/channel",
   "llm-proxy",
   "services/sivrad/browser",
   "services/pass/vaults",
+  "services/mail/aliases",
+  "services/photos/avatars",
 ]
 
 [workspace.package]

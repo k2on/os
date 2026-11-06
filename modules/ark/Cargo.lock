@@ -645,6 +645,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "ring",
  "serde_json",
  "tokio",
 ]
@@ -654,6 +655,20 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "mail-aliases"
+version = "0.1.0"
+dependencies = [
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "ring",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "memchr"
@@ -680,16 +695,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "money-sync"
-version = "0.1.0"
-dependencies = [
- "rusqlite",
- "serde",
- "serde_json",
- "ureq",
 ]
 
 [[package]]
@@ -756,6 +761,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
+ "ureq",
 ]
 
 [[package]]
@@ -763,6 +769,14 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "photos-avatars"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "pin-project-lite"

@@ -25,6 +25,7 @@
       service-sivrad
       service-sivrad-browser
       tailnet
+      security
     ];
 
     nixos = {
@@ -78,6 +79,11 @@
         # container's Hermes tree) thrashed it into silence for an hour.
         max-jobs = 1;
         cores = 2;
+        # What k2on/apps' CI built (harken's server, its web client, arkdb:
+        # the build workflow's `server` job), so a deploy of harken
+        # substitutes them rather than compiling them here.
+        extra-substituters = [ "https://k2on.cachix.org" ];
+        extra-trusted-public-keys = [ "k2on.cachix.org-1:oI4Db0uW5ER+s4Te/MrXSmjWUWkOc9rmKdzsgUDxQP8=" ];
       };
       # Compressed swap in RAM: no swap at all meant memory pressure had
       # nowhere to go but the page cache, and the host stopped answering

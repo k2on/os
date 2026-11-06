@@ -1,4 +1,4 @@
-{ self, ... }:
+{ self, config, ... }:
 {
   flake.nixosModules.koonMaxConfiguration =
     {
@@ -185,6 +185,38 @@
         (pkgs.writeShellScriptBin "ocr-clip" ''
           ${pkgs.grimblast}/bin/grimblast -f save area - | ${pkgs.tesseract}/bin/tesseract stdin stdout | ${pkgs.wl-clipboard}/bin/wl-copy
         '')
+
+        # harken's and money's desktop apps (koon-apps' iced clients), each
+        # on ark's server.
+        (pkgs.writeShellScriptBin "harken" ''
+          exec ${
+            self.inputs.koon-apps.packages.${pkgs.stdenv.hostPlatform.system}.harken-iced
+          }/bin/harken-iced --server https://harken.${config.ark.mainDomain} "$@"
+        '')
+        (pkgs.makeDesktopItem {
+          name = "harken";
+          desktopName = "Harken";
+          exec = "harken";
+          categories = [
+            "AudioVideo"
+            "Audio"
+          ];
+        })
+
+        (pkgs.writeShellScriptBin "money" ''
+          exec ${
+            self.inputs.koon-apps.packages.${pkgs.stdenv.hostPlatform.system}.money-iced
+          }/bin/money-iced --server https://money.${config.ark.mainDomain} "$@"
+        '')
+        (pkgs.makeDesktopItem {
+          name = "money";
+          desktopName = "Money";
+          exec = "money";
+          categories = [
+            "Office"
+            "Finance"
+          ];
+        })
       ];
 
       programs.zsh.enable = true;
@@ -220,6 +252,29 @@
         automatic = true;
         dates = "weekly";
         options = "--delete-older-than 30d";
+      };
+
+      # Compressed swap in RAM: with no swap at all, a big link and whisper
+      # at once ran memory out and the kernel's OOM killer took the
+      # session's own D-Bus and systemd --user with the build, leaving the
+      # desktop up but its brightness, volume and shortcut keys dead until
+      # a reboot. Half of RAM, zstd.
+      zramSwap = {
+        enable = true;
+        memoryPercent = 50;
+      };
+      # When memory runs out anyway, kill the biggest process early, and
+      # rather a build or a transcription than anything the session runs on.
+      services.earlyoom = {
+        enable = true;
+        freeMemThreshold = 5;
+        freeSwapThreshold = 10;
+        extraArgs = [
+          "--prefer"
+          "^(ld|ld\\.lld|rustc|cc1plus|cargo|whisper-cli|node|nix)$"
+          "--avoid"
+          "^(systemd|dbus-broker.*|dbus-daemon|pipewire.*|wireplumber|cosmic-.*|Xwayland)$"
+        ];
       };
 
       system.stateVersion = "25.05";

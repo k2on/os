@@ -20,13 +20,18 @@
 # it holds each vault's key (the pass_vault_<name>_key secret, made by
 # `ark secrets`) and writes Vaultwarden's database. It runs on deploy, when
 # Vaultwarden starts, and when someone's account gets its keys (their first
-# sign-in): ./vaultwarden-keys-changed.patch makes Vaultwarden write
+# sign-in): ./vaultwarden-notify.patch makes Vaultwarden write
 # KEYS_CHANGED_FILE then, and a path unit watches it. The patch means
 # Vaultwarden is built from source on adam. Removing a person from a group
 # takes them out of the vault (what they saw is still on their devices
 # until they sync). Losing a vault's key secret means losing nothing stored
 # (members still hold it), but pass-vaults can then add nobody new to it
 # and says so rather than make a second one.
+# Mail aliases (services/mail) follow the vault a login is saved in: the
+# same patch writes CIPHERS_CHANGED_FILE whenever an item is saved or
+# deleted, and `pass-vaults aliases` then reads the username of each login
+# in the vaults (nothing else, and never anyone's own vault) and tells
+# mail-aliases on the mail host which aliases are in which group's vault.
 # `nix flake check` runs it against a real Vaultwarden (./vaults/_check.nix).
 { lib, config, ... }:
 let
@@ -44,11 +49,12 @@ let
 
   keySecret = name: "pass_vault_${name}_key";
 
-  # Vaultwarden, telling us when an account's keys are stored (see the top).
+  # Vaultwarden, telling us when an account's keys are stored and when an
+  # item changes (see the top).
   patchVaultwarden =
     p:
     p.overrideAttrs (o: {
-      patches = (o.patches or [ ]) ++ [ ./vaultwarden-keys-changed.patch ];
+      patches = (o.patches or [ ]) ++ [ ./vaultwarden-notify.patch ];
     });
 
   # One per group, under the group's name, which keys its ids and secret.
@@ -64,6 +70,11 @@ let
     }
   ) ark.groups;
   inVaults = lib.unique (lib.concatMap (v: v.members ++ v.owners) (lib.attrValues vaults));
+
+  # Where mail aliases are made (services/mail), if there is mail.
+  mailAliases = config.ark.mail.aliases or null;
+  mailDomain = config.ark.mail.aliases.domain or null;
+  aliasesKey = "${mailAliases.key}_vaultwarden";
 in
 {
   config.perSystem =
@@ -76,6 +87,7 @@ in
       # Against the Vaultwarden adam runs: nixpkgs-unstable's, patched.
       checks.pass-vaults = pkgs.callPackage ./vaults/_check.nix {
         inherit pass-vaults;
+        mail-aliases = pkgs.callPackage ../mail/aliases/_package.nix { };
         vaultwarden = patchVaultwarden inputs'.nixpkgs-unstable.legacyPackages.vaultwarden;
       };
     };
@@ -86,14 +98,22 @@ in
       # Everyone with a vault may sign in, plus whoever secrets/ark.nix adds.
       groups.members = lib.unique ((ark.access.pass.members or [ ]) ++ inVaults);
     };
-    secrets = lib.mapAttrs' (
-      name: _:
-      lib.nameValuePair (keySecret name) {
-        # 64 bytes: AES-256 key and HMAC-SHA256 key, as Bitwarden's are.
-        generate = "head -c 64 /dev/urandom | base64 -w0";
-        owner = "vaultwarden";
-      }
-    ) vaults;
+    secrets =
+      lib.mapAttrs' (
+        name: _:
+        lib.nameValuePair (keySecret name) {
+          # 64 bytes: AES-256 key and HMAC-SHA256 key, as Bitwarden's are.
+          generate = "head -c 64 /dev/urandom | base64 -w0";
+          owner = "vaultwarden";
+        }
+      ) vaults
+      // lib.optionalAttrs (mailAliases != null) {
+        # mail-aliases's internal key, the mail host's secret too.
+        ${aliasesKey} = {
+          key = mailAliases.key;
+          owner = "vaultwarden";
+        };
+      };
 
     nixos =
       {
@@ -113,26 +133,37 @@ in
           else
             "/var/lib/vaultwarden";
         keysChanged = "${dataDir}/keys-changed";
+        ciphersChanged = "${dataDir}/ciphers-changed";
         backupDir = "/var/backup/vaultwarden";
 
         vaultsConfig = pkgs.writeText "pass-vaults.json" (
-          builtins.toJSON {
-            db = "${dataDir}/db.sqlite3";
-            vaults = lib.mapAttrsToList (key: v: {
-              id = idOf "vault/${key}";
-              inherit (v) name;
-              billingEmail = "pass@${ark.mainDomain}";
-              keyFile = config.sops.secrets.${keySecret key}.path;
-              collections = map (c: {
-                id = idOf "vault/${key}/collection/${c}";
-                name = c;
-              }) v.collections;
-              members = map (p: {
-                email = ark.persons.${p}.mail;
-                owner = lib.elem p v.owners;
-              }) (lib.unique (v.members ++ v.owners));
-            }) vaults;
-          }
+          builtins.toJSON (
+            {
+              db = "${dataDir}/db.sqlite3";
+              vaults = lib.mapAttrsToList (key: v: {
+                id = idOf "vault/${key}";
+                group = key;
+                inherit (v) name;
+                billingEmail = "pass@${ark.mainDomain}";
+                keyFile = config.sops.secrets.${keySecret key}.path;
+                collections = map (c: {
+                  id = idOf "vault/${key}/collection/${c}";
+                  name = c;
+                }) v.collections;
+                members = map (p: {
+                  email = ark.persons.${p}.mail;
+                  owner = lib.elem p v.owners;
+                }) (lib.unique (v.members ++ v.owners));
+              }) vaults;
+            }
+            // lib.optionalAttrs (mailAliases != null && mailAliases.endpoint != null) {
+              aliases = {
+                domain = mailDomain;
+                inherit (mailAliases) endpoint;
+                keyFile = config.sops.secrets.${aliasesKey}.path;
+              };
+            }
+          )
         );
       in
       {
@@ -170,6 +201,12 @@ in
             SHOW_PASSWORD_HINT = false;
 
             KEYS_CHANGED_FILE = keysChanged;
+            CIPHERS_CHANGED_FILE = ciphersChanged;
+          }
+          // lib.optionalAttrs (mailAliases != null) {
+            # The web vault may call the alias API (services/mail) to make
+            # aliases; its page only lets it reach the services listed.
+            ALLOWED_CONNECT_SRC = "${mailAliases.url}/api/";
           };
         };
 
@@ -193,6 +230,30 @@ in
         systemd.paths.pass-vaults = {
           wantedBy = [ "paths.target" ];
           pathConfig.PathChanged = keysChanged;
+        };
+
+        # Which mail aliases are in which group's vault: whenever an item
+        # changes, and after the vaults are set up.
+        systemd.services.pass-aliases = lib.mkIf (mailAliases != null && mailAliases.endpoint != null) {
+          description = "Tell mail-aliases which aliases are in which vault";
+          wantedBy = [ "pass-vaults.service" ];
+          after = [
+            "pass-vaults.service"
+            "tailscaled.service"
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            User = "vaultwarden";
+            Group = "vaultwarden";
+            ExecStart = "${lib.getExe passVaults} aliases ${vaultsConfig}";
+            # The mail host may be restarting, or the tailnet coming up.
+            Restart = "on-failure";
+            RestartSec = 30;
+          };
+        };
+        systemd.paths.pass-aliases = lib.mkIf (mailAliases != null && mailAliases.endpoint != null) {
+          wantedBy = [ "paths.target" ];
+          pathConfig.PathChanged = ciphersChanged;
         };
 
         services.restic.backups = lib.genAttrs [ "pass-local" "pass-remote" ] (name: {

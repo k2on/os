@@ -3,27 +3,26 @@
 # Stalwart's settings for ark's mail, shared by the server (./default.nix)
 # and the end-to-end check (./_check.nix) so the check runs what benj runs.
 #
-#   mailboxes = [ { name; address; passwordFile; memberOf = [ <shared> ]; } ];
-#   shared    = [ { name; address; } ];
-#   listen    = { smtp = "[::]:25"; submissions = "[::]:465"; imaps = "[::]:993"; };
-#   relay     = null | { address; port; usernameFile; passwordFile; };
+#   domains = [ the domains mail is delivered here for ];
+#   listen  = { smtp = "[::]:25"; submissions = "[::]:465"; imaps = "[::]:993"; };
+#   relay   = null | { address; port; usernameFile; passwordFile; };
 #
 # Everything is read from this file (config.local-keys = *), so nothing can
-# drift in Stalwart's database. Accounts are its in-memory directory, built
-# from the above on every start: a person logs in by name (not address, which
-# changes when the domain does; the name keeps the mailbox) with
-# the password in their passwordFile. A shared mailbox is a Stalwart group;
-# its members see it under "Shared Folders/<name>" in their own account and
-# may send as its address.
+# drift in Stalwart's database. Accounts are its in-memory directory, whose
+# entries `mail-aliases render` (./aliases) appends when Stalwart starts:
+# people log in by name (not address, which changes when the domain does;
+# the name keeps the mailbox). A group is a shared mailbox: its members see
+# it under "Shared Folders/<name>" in their own account and may send as
+# its address and its aliases; a person may send as their own aliases, so
+# a reply goes out from the address it came to.
 #
-# With a relay, mail for anywhere but these domains leaves through it (SES,
+# With a relay, mail for anywhere but these domains leaves through it (TEM,
 # over TLS from the first byte, which a port the vps's provider leaves open
 # allows), and the relay signs it: Stalwart signs nothing itself. Without
 # one it goes straight to the recipient's server.
 {
   hostname,
-  mailboxes,
-  shared,
+  domains,
   listen,
   certFile,
   keyFile,
@@ -31,12 +30,7 @@
   relay ? null,
 }:
 let
-  sharedAddress = builtins.listToAttrs (
-    map (s: {
-      inherit (s) name;
-      value = s.address;
-    }) shared
-  );
+  isLocal = builtins.concatStringsSep " || " (map (d: "rcpt_domain == '${d}'") domains);
 in
 {
   config.local-keys = [ "*" ];
@@ -68,27 +62,7 @@ in
   };
 
   storage.directory = "ark";
-  directory.ark = {
-    type = "memory";
-    # Groups first: an address listed on several principals goes to the
-    # first, so mail to a shared address lands in the group's mailbox. Its
-    # members carry it too, as an alias, which is what lets them send as it:
-    # Stalwart looks a group's own addresses up in its internal directory,
-    # not this one, so membership alone does not.
-    principals =
-      map (s: {
-        class = "group";
-        inherit (s) name;
-        email = [ s.address ];
-      }) shared
-      ++ map (m: {
-        class = "individual";
-        inherit (m) name;
-        secret = "%{file:${m.passwordFile}}%";
-        email = [ m.address ] ++ map (g: sharedAddress.${g}) m.memberOf;
-        member-of = m.memberOf;
-      }) mailboxes;
-  };
+  directory.ark.type = "memory";
 
   # Only people with an account may send through it.
   session.rcpt.relay = [
@@ -102,26 +76,31 @@ in
   spam-filter.resource = spamFilter;
 
   auth.dkim.sign = false;
+
+  queue = {
+    # Our domains by name: Stalwart's own is_local_domain() only knows a
+    # domain once it has looked up an account in it.
+    strategy.route = [
+      {
+        "if" = isLocal;
+        "then" = "'local'";
+      }
+      { "else" = if relay == null then "'mx'" else "'relay'"; }
+    ];
+  }
+  // (
+    if relay == null then
+      { }
+    else
+      {
+        route.relay = {
+          type = "relay";
+          inherit (relay) address port;
+          protocol = "smtp";
+          tls.implicit = true;
+          auth.username = "%{file:${relay.usernameFile}}%";
+          auth.secret = "%{file:${relay.passwordFile}}%";
+        };
+      }
+  );
 }
-// (
-  if relay == null then
-    { }
-  else
-    {
-      queue.route.relay = {
-        type = "relay";
-        inherit (relay) address port;
-        protocol = "smtp";
-        tls.implicit = true;
-        auth.username = "%{file:${relay.usernameFile}}%";
-        auth.secret = "%{file:${relay.passwordFile}}%";
-      };
-      queue.strategy.route = [
-        {
-          "if" = "is_local_domain('*', rcpt_domain)";
-          "then" = "'local'";
-        }
-        { "else" = "'relay'"; }
-      ];
-    }
-)

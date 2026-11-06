@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# Telling mail-aliases where aliases go (aliases.rs).
+ureq.workspace = true
 rusqlite.workspace = true
 ring.workspace = true
 # Bitwarden's encryption, which the server never does itself: AES-256-CBC

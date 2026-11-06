@@ -1,7 +1,8 @@
 //! pass-vaults: shared vaults (Bitwarden organizations) in Vaultwarden,
 //! from configuration.
 //!
-//!   pass-vaults <config.json>
+//!   pass-vaults <config.json>           the vaults and who is in them
+//!   pass-vaults aliases <config.json>   which aliases are in which vault (aliases.rs)
 //!
 //! Joining someone to an organization takes the organization's key,
 //! encrypted to that person's public key, and only a client holding the key
@@ -25,6 +26,7 @@
 //! alone. Config is JSON rendered by ../default.nix (config.rs).
 use std::path::Path;
 
+mod aliases;
 mod config;
 mod crypto;
 mod vault;
@@ -42,7 +44,8 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         [path] => config::Config::load(Path::new(path)).and_then(|c| vault::reconcile(&c)),
-        _ => Err("usage: pass-vaults <config.json>".into()),
+        ["aliases", path] => config::Config::load(Path::new(path)).and_then(|c| aliases::report(&c)),
+        _ => Err("usage: pass-vaults [aliases] <config.json>".into()),
     };
     if let Err(e) = result {
         eprintln!("pass-vaults: {e}");

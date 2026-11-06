@@ -3,7 +3,7 @@
 # Builds one member of the Rust workspace in this directory (Cargo.toml):
 #   pkgs.callPackage ./_rust.nix { pname = "ark"; }
 # The whole workspace is the source, so the members can share files (the
-# services' cli/ code is compiled into `ark`; money-sync borrows plaid.rs).
+# services' cli/ code is compiled into `ark`).
 # Dependencies come from Cargo.lock; `cargo update` here and rebuild. The
 # .js files are what sivrad-browser embeds (include_str!).
 {

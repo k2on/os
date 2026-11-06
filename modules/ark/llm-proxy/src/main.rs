@@ -10,7 +10,8 @@
 //! On the way it adapts the conversation for open models (proxy.rs):
 //! `developer` messages become `system`, Kimi's channel markers come out
 //! both ways, and old tool outputs in a long session are cut to their
-//! opening. Each answer's token usage, cached share included, goes to the
+//! opening. With a vision model configured, images are described by it
+//! for a main model that cannot see them (vision.rs). Each answer's token usage, cached share included, goes to the
 //! journal.
 //!
 //! Environment:
@@ -23,12 +24,19 @@
 //!   LLM_PROXY_KEY_FILE   file holding the upstream key (default: `key` in
 //!                        $CREDENTIALS_DIRECTORY, systemd's LoadCredential);
 //!                        empty or missing: no Authorization header is added
+//!   LLM_PROXY_VISION_MODEL  a model that can see, to describe each image
+//!                        for one that cannot (vision.rs); unset: images go
+//!                        through as they are
+//!   LLM_PROXY_CACHE      directory to keep those descriptions in (default:
+//!                        $STATE_DIRECTORY, systemd's StateDirectory)
 
 mod proxy;
+mod vision;
 
 use std::sync::Arc;
 
 use proxy::Proxy;
+use vision::Vision;
 
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.trim().is_empty())
@@ -51,7 +59,13 @@ async fn main() {
     };
     let upstream = env("LLM_PROXY_UPSTREAM").unwrap_or_else(|| "http://127.0.0.1:3301".into());
     let proxy = match Proxy::new(&upstream, env("LLM_PROXY_MODEL"), key) {
-        Ok(p) => Arc::new(p),
+        Ok(p) => Arc::new(match env("LLM_PROXY_VISION_MODEL") {
+            Some(model) => {
+                let cache = env("LLM_PROXY_CACHE").or_else(|| env("STATE_DIRECTORY"));
+                p.with_vision(Vision::new(model, cache.map(Into::into)))
+            }
+            None => p,
+        }),
         Err(e) => {
             eprintln!("llm-proxy: {e}");
             std::process::exit(78);

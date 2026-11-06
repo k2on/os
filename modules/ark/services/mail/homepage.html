@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>@domain@</title>
+  <meta name="description" content="@domain@ is the mail domain of a small family mail server.">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fafaf9;
+      --fg: #1c1917;
+      --muted: #57534e;
+      --rule: #e7e5e4;
+      --link: #1d4ed8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1917;
+        --fg: #f5f5f4;
+        --muted: #a8a29e;
+        --rule: #44403c;
+        --link: #93c5fd;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main {
+      max-width: 38rem;
+      margin: 0 auto;
+      padding: 4rem 1rem 3rem;
+    }
+    h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.75rem;
+      letter-spacing: -0.01em;
+    }
+    .lede { margin: 0 0 2.5rem; color: var(--muted); }
+    h2 {
+      margin: 2rem 0 0.5rem;
+      font-size: 1rem;
+    }
+    p { margin: 0 0 1rem; }
+    a { color: var(--link); }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--rule);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>@domain@</h1>
+    <p class="lede">The mail domain of a small, self-hosted family mail server.</p>
+
+    <h2>What this is</h2>
+    <p>
+      A few people in one family use addresses at @domain@ for their own
+      everyday mail: writing to people they know, replying, and signing up
+      for accounts. Some of those addresses are aliases, one per website, so
+      that each site gets its own address and can be turned off if it starts
+      sending spam.
+    </p>
+
+    <h2>What is not sent from here</h2>
+    <p>
+      No marketing, newsletters, or bulk mail, and no mailing lists. Every
+      message is written by a person here, to someone they chose to write to.
+      There is no sign-up and no service for anyone outside the family.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      For anything about mail from this domain, including abuse reports and
+      unwanted mail, write to
+      <a href="mailto:max@@domain@">max@@domain@</a>.
+      A person reads it.
+    </p>
+
+    <footer>@domain@</footer>
+  </main>
+</body>
+</html>

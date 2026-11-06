@@ -85,6 +85,7 @@ let
     phonePort
     novncPort
     novncPrefix
+    cdpRelayPort
     ;
 
   # Who may talk to sivrad, keyed by Kanidm username:
@@ -194,6 +195,7 @@ in
         hostAddress
         novncPort
         novncPrefix
+        cdpRelayPort
         ;
       legacyProfile = "${home}/.config/chromium";
       display = ":1";

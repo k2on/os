@@ -16,7 +16,9 @@
 #     password of its own;
 #   - sivrad-novnc: websockify serving noVNC, the VNC client as a web page,
 #     on novncPort, which the guest's firewall opens to adam alone, on the
-#     veth.
+#     veth;
+#   - sivrad-cdp-relay: socat, DevTools relayed on cdpRelayPort for money's
+#     server on adam, opened to adam alone the same way.
 # On adam, the sivrad-browser service (./default.nix) serves that page at
 # https://sivrad.<mainDomain>/browser: nginx with the wildcard's
 # certificate, then oauth2-proxy, which lets through only those who sign in
@@ -48,6 +50,8 @@
   novncPort,
   novncPrefix,
   hostAddress,
+  # DevTools relayed to adam's end of the veth, for money's server there.
+  cdpRelayPort,
 }:
 { lib, pkgs, ... }:
 let
@@ -164,6 +168,11 @@ in
     group = "sivrad-novnc";
   };
   users.groups.sivrad-novnc = { };
+  users.users.sivrad-cdp-relay = {
+    isSystemUser = true;
+    group = "sivrad-cdp-relay";
+  };
+  users.groups.sivrad-cdp-relay = { };
 
   # The policies, in /etc/chromium/policies/managed. programs.chromium
   # installs no browser, it only writes these files.
@@ -348,6 +357,31 @@ in
     };
   };
 
+  # DevTools for money's server on adam (koon-apps' money: Costco's receipts
+  # read in the profile people sign in to, and amazon-orders' sign-in
+  # challenges), relayed from the container's address to loopback, where
+  # the browser listens. Whoever reaches it drives the browser, as whoever
+  # reaches the noVNC page does; the firewall below opens it to adam's end
+  # of the veth alone, the same as the page. Chrome names the WebSocket it
+  # answers with from the Host the client asked, so a client's addresses
+  # come back by way of this relay.
+  systemd.services.sivrad-cdp-relay = {
+    description = "sivrad's browser DevTools, relayed for adam";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "sivrad-chromium.service" ];
+    serviceConfig = {
+      User = "sivrad-cdp-relay";
+      Group = "sivrad-cdp-relay";
+      ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:${toString cdpRelayPort},fork,reuseaddr TCP:127.0.0.1:${toString cdpPort}";
+      Restart = "always";
+      RestartSec = "5s";
+      NoNewPrivileges = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      PrivateTmp = true;
+    };
+  };
+
   # Who reaches what. In: the noVNC page from adam's end of the veth only
   # (eth0, hostAddress), not from the tailnet or anywhere else. Out, from
   # inside the container itself, by the connecting user (the owner match,
@@ -357,6 +391,7 @@ in
   # none of the three asks for a password.
   networking.firewall.extraCommands = ''
     iptables -w -A nixos-fw -i eth0 -s ${hostAddress} -p tcp --dport ${toString novncPort} -j nixos-fw-accept
+    iptables -w -A nixos-fw -i eth0 -s ${hostAddress} -p tcp --dport ${toString cdpRelayPort} -j nixos-fw-accept
 
     ip46tables -D OUTPUT -o lo -j sivrad-screen 2>/dev/null || true
     ip46tables -F sivrad-screen 2>/dev/null || true
@@ -366,7 +401,9 @@ in
     ip46tables -A sivrad-screen -p tcp --dport 5900 -j DROP
     ip46tables -A sivrad-screen -p tcp --dport ${toString novncPort} -j DROP
     ip46tables -A sivrad-screen -p tcp --dport ${toString cdpPort} -m owner --uid-owner sivrad -j RETURN
+    ip46tables -A sivrad-screen -p tcp --dport ${toString cdpPort} -m owner --uid-owner sivrad-cdp-relay -j RETURN
     ip46tables -A sivrad-screen -p tcp --dport ${toString cdpPort} -j DROP
+    ip46tables -A sivrad-screen -p tcp --dport ${toString cdpRelayPort} -j DROP
     ip46tables -I OUTPUT 1 -o lo -j sivrad-screen
   '';
   networking.firewall.extraStopCommands = ''

@@ -6,6 +6,17 @@ in
   ark.services.home = {
     oidc.callbacks = [ "/auth/oidc/callback" ];
 
+    # The apartment's LuxorOne login, for the daily entry QR code shown in
+    # Home Assistant. One file, so reading both is one touch.
+    secrets = {
+      luxorone_email = {
+        file = "luxorone";
+      };
+      luxorone_password = {
+        file = "luxorone";
+      };
+    };
+
     nixos =
       {
         pkgs,
@@ -14,8 +25,13 @@ in
         ...
       }:
       {
-        # Its access token for the sivrad account (../sivrad/_bot.nix).
-        imports = [ ./_tokens.nix ];
+        # Its access token for the sivrad account (../sivrad/_bot.nix), and
+        # everyone's picture.
+        imports = [
+          ./_tokens.nix
+          (import ./_pictures.nix { inherit ark; })
+          ./_luxer.nix
+        ];
 
         virtualisation.oci-containers =
           let
@@ -24,6 +40,17 @@ in
               default_config:
 
               automation: !include automations.yaml
+
+              # The package room's code (./_luxer.nix) as an image, the
+              # home screen's badge: tapped, the QR code to scan. Read again
+              # once a day, at 06:05, just after the morning's code is made
+              # (the URL changing is what makes it read again); a code asked
+              # for by hand later in the day shows the next morning.
+              template:
+                - image:
+                    - name: Package room
+                      unique_id: luxer_package_room_code
+                      url: "http://127.0.0.1:${toString service.port}/local/luxer/code.png?v={{ (now() - timedelta(hours=6, minutes=5)).date() }}"
 
               # Web Server configuration
               http:
@@ -47,17 +74,24 @@ in
                   hosts:
                     - 10.0.0.77
                     - 10.0.0.186
-              # One Adaptive Lighting switch per room. Each points at the
-              # room's light group, which Adaptive Lighting expands, so lights
-              # added to a room's group are picked up without changing this.
+              # One Adaptive Lighting switch per room, over the room's lamps
+              # one by one. Not the room's Hue group (light.living_room,
+              # light.bedroom_2): Adaptive Lighting can't see into a Hue
+              # group, which is on while any lamp in it is, so adapting it
+              # turned back on a lamp just turned off. A lamp added to a
+              # room is added here too.
               # The YAML is re-imported on every start and overrides the UI.
               adaptive_lighting:
                 - name: Living room
                   lights:
-                    - light.living_room
+                    - light.fan_1 # Left
+                    - light.fan_3 # Right
+                    - light.stairs # Lamp
                 - name: Bedroom
                   lights:
-                    - light.bedroom_2
+                    - light.fan_2 # Max
+                    - light.bathroom_1 # Heather
+                    - light.kitchen # Mirror
             '';
           in
           {
@@ -75,6 +109,10 @@ in
               image = "ghcr.io/home-assistant/home-assistant:stable"; # Warning: if the tag does not change, the image will not be updated
               extraOptions = [
                 "--network=host"
+                # podman stop kills it after 10s by default, mid-shutdown: the
+                # recorder's database is then not closed cleanly. Under the
+                # unit's own 120s.
+                "--stop-timeout=90"
                 # Zigbee dongle
                 "--device=/dev/ttyUSB0:/dev/ttyUSB0"
               ];
