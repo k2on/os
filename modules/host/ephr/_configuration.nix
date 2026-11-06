@@ -11,6 +11,10 @@
   boot.loader.efi.canTouchEfiVariables = false;
   boot.loader.systemd-boot.graceful = true;
 
+  # Its name on the tailnet too: ephr.<tailnet domain>, where ark sends its
+  # backups (host/adam).
+  networking.hostName = "ephr";
+
   networking.wireless.iwd = {
     enable = true;
     settings.General.EnableNetworkConfiguration = true;

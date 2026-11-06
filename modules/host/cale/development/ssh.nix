@@ -12,7 +12,7 @@
           "*" = {
             AddKeysToAgent = "yes";
           };
-          "m1" = {
+          "ephr" = {
             User = "admin";
           };
           "ark" = {

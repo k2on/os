@@ -42,6 +42,12 @@ rebuild-ark-boot:
   git add .
   nixos-rebuild --flake '.?submodules=1#adam' --build-host admin@10.0.0.28 --target-host admin@10.0.0.28 --use-remote-sudo --fast boot
 
+# ephr (the backup server) builds its own system from its own store; its
+# admin needs a password for sudo.
+rebuild-ephr:
+  git add .
+  nixos-rebuild --flake '.?submodules=1#ephr' --build-host admin@ephr --target-host admin@ephr --sudo --ask-sudo-password --fast switch
+
 push-secrets:
   just add-secrets
 

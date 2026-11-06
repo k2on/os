@@ -28,6 +28,7 @@
 #       owner = "hass";           # unix user on this host that reads the secret file
 #     };
 #     secrets.home_token = { };   # other sops secrets, see lib/secrets.nix
+#     backup = { paths = [ ... ]; postgres = [ "home" ]; };   # or a function like nixos, see lib/backups.nix
 #     nixos = { service, pkgs, ... }: { ... };   # or a plain module attrset
 #   };
 #
@@ -131,14 +132,29 @@ let
               clientSecret = args.config.sops.placeholder.${oidc.secret};
             };
         };
+      # A module function f, given `service` and the args `like` asks for.
+      withService =
+        like: f:
+        lib.setFunctionArgs (args: f (args // { service = service args; })) (
+          builtins.removeAttrs (lib.functionArgs like) [ "service" ] // { config = false; }
+        );
       m = spec.nixos or { };
+      b = spec.backup or null;
     in
-    if lib.isFunction m then
-      lib.setFunctionArgs (args: m (args // { service = service args; })) (
-        builtins.removeAttrs (lib.functionArgs m) [ "service" ] // { config = false; }
-      )
-    else
-      m;
+    {
+      imports = [
+        (if lib.isFunction m then withService m m else m)
+      ]
+      # What it keeps, for lib/backups.nix.
+      ++ lib.optional (b != null) (
+        if lib.isFunction b then
+          withService b (args: {
+            ark.backup.services.${name} = b args;
+          })
+        else
+          { ark.backup.services.${name} = b; }
+      );
+    };
 in
 {
   options.ark = {
@@ -148,7 +164,7 @@ in
       description = ''
         Service definitions. Either a module function taking
         { service, config, pkgs, lib, ... }, or an attrset
-        { port ?, domain ?, oidc ?, secrets ?, nixos }.
+        { port ?, domain ?, oidc ?, secrets ?, backup ?, nixos }.
         Each entry generates den.aspects.service-<name>.
       '';
     };
@@ -210,6 +226,7 @@ in
             "web"
             "oidc"
             "secrets"
+            "backup"
             "nixos"
           ]
         )

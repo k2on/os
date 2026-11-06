@@ -98,6 +98,14 @@ in
       # Everyone with a vault may sign in, plus whoever secrets/ark.nix adds.
       groups.members = lib.unique ((ark.access.pass.members or [ ]) ++ inVaults);
     };
+    # Vaultwarden makes a consistent copy of its database and keys in
+    # backupDir every night.
+    backup =
+      { config, ... }:
+      {
+        paths = [ config.services.vaultwarden.backupDir ];
+      };
+
     secrets =
       lib.mapAttrs' (
         name: _:
@@ -180,7 +188,7 @@ in
           package = patchVaultwarden pkgs.vaultwarden;
           domain = service.domain;
           # A consistent copy of the database and keys every night, which
-          # restic below takes off the machine.
+          # the backup above takes off the machine.
           inherit backupDir;
           environmentFile = config.sops.templates."vaultwarden.env".path;
           config = {
@@ -255,13 +263,6 @@ in
           wantedBy = [ "paths.target" ];
           pathConfig.PathChanged = ciphersChanged;
         };
-
-        services.restic.backups = lib.genAttrs [ "pass-local" "pass-remote" ] (name: {
-          repository = if name == "pass-local" then "/mnt/hdd/restic/pass" else "rest:http://m1:8000/pass";
-          passwordFile = config.sops.secrets.restic-password.path;
-          initialize = true;
-          paths = [ backupDir ];
-        });
       };
   };
 }

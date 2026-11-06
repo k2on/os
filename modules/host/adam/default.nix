@@ -60,6 +60,13 @@
         fsType = "ext4";
       };
 
+      # Every service's backup goes to both (lib/backups.nix). remote is
+      # ephr's restic server.
+      ark.backup.locations = {
+        local.repository = "/mnt/hdd/restic";
+        remote.repository = "rest:http://ephr:8000";
+      };
+
       services.openssh.enable = true;
 
       networking.firewall.allowedTCPPorts = [

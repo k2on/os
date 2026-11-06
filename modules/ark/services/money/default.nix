@@ -63,6 +63,21 @@ in
     # money-server signs people in itself; the phones go through it.
     oidc.callbacks = [ "/auth/callback" ];
 
+    # Everything money has, the budget and the banks' connections, every
+    # night. The server stops for the copy so the log and the connections
+    # are read as one moment; it is back in seconds, and the phones and
+    # browsers redial. The service's dynamic user keeps its state behind
+    # the /var/lib/money symlink.
+    backup = {
+      paths = [ "/var/lib/private/money" ];
+      exclude = [
+        "/var/lib/private/money/.npm"
+        "/var/lib/private/money/.psql_history"
+      ];
+      stop = [ "money.service" ];
+      schedule = "03:30";
+    };
+
     nixos =
       {
         service,
@@ -72,9 +87,6 @@ in
       }:
       let
         secret = name: config.sops.secrets.${name}.path;
-        # The service's dynamic user keeps its state here, behind the
-        # /var/lib/money symlink.
-        data = "/var/lib/private/money";
       in
       {
         imports = [ self.inputs.koon-apps.nixosModules.money ];
@@ -101,27 +113,6 @@ in
           # in to there from its page; Amazon's sign-in challenge run there.
           inherit browser;
         };
-
-        # Everything money has, the budget and the banks' connections, every
-        # night, to the disk and to m1. The server stops for the copy so the
-        # log and the connections are read as one moment; it is back in
-        # seconds, and the phones and browsers redial.
-        services.restic.backups = lib.genAttrs [ "money-local" "money-remote" ] (name: {
-          repository = if name == "money-local" then "/mnt/hdd/restic/money" else "rest:http://m1:8000/money";
-          passwordFile = config.sops.secrets.restic-password.path;
-          initialize = true;
-          paths = [ data ];
-          exclude = [
-            "${data}/.npm"
-            "${data}/.psql_history"
-          ];
-          backupPrepareCommand = "${config.systemd.package}/bin/systemctl stop money.service";
-          backupCleanupCommand = "${config.systemd.package}/bin/systemctl start money.service";
-          timerConfig = {
-            OnCalendar = if name == "money-local" then "03:30" else "03:45";
-            Persistent = true;
-          };
-        });
       };
   };
 }
