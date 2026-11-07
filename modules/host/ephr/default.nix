@@ -13,10 +13,17 @@ in
 {
   den.hosts.aarch64-linux.${name} = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
+    # Nobody can get to its console: root over ssh, with a YubiKey key
+    # (modules/keys/max.pub), is the way back in if Kanidm logins fail.
+    console = false;
+    rootSsh = true;
   };
 
   den.aspects.${name} = {
-    includes = [ den.aspects.deploy ];
+    includes = with den.aspects; [
+      deploy
+      login
+    ];
 
     nixos = {
       imports = [
