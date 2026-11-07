@@ -97,7 +97,9 @@ in
             ) clients
             # Who may sign in to the hosts (aspects/login.nix); kanidm-hosts
             # below makes it and them POSIX.
-            // { ${ark.login.group}.members = ark.login.members; };
+            // {
+              ${ark.login.group}.members = ark.login.members;
+            };
 
           # Keyed by the client id, which is the service name unless the
           # service says otherwise (lib/oidc.nix).

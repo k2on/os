@@ -22,6 +22,18 @@ let
       };
     };
 
+  # What the shell shows (aspects/shell.nix).
+  shellFields =
+    { ... }:
+    {
+      options.color = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "#a6e3a1";
+        description = "The host's colour (#rrggbb), for its prompt: you can tell where you are at a glance. null for the terminal's default.";
+      };
+    };
+
   # How root is reached when Kanidm logins cannot be (aspects/login.nix).
   loginFields =
     { ... }:
@@ -47,5 +59,6 @@ in
   den.schema.host.imports = [
     infraFields
     loginFields
+    shellFields
   ];
 }

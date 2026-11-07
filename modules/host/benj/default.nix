@@ -12,6 +12,7 @@ in
   den.hosts.x86_64-linux = {
     ${name} = {
       provider = "hetzner";
+      color = "#fab387"; # orange
       server-type = "cpx11";
       region = "ash";
     };

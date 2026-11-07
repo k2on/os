@@ -91,7 +91,7 @@ in
               gid_attr_map = "name";
               home_attr = "uuid";
               home_alias = "name";
-              default_shell = "/run/current-system/sw/bin/bash";
+              default_shell = "/run/current-system/sw/bin/zsh";
             };
           };
 

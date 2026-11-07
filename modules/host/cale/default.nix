@@ -14,6 +14,7 @@ in
 {
   den.hosts.aarch64-linux.${name} = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
+    color = "#f9e2af"; # yellow
   };
 
   den.aspects.${name} = {

@@ -13,6 +13,7 @@ in
 {
   den.hosts.aarch64-linux.${name} = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
+    color = "#40a02b"; # dark green
     # Nobody can get to its console: root over ssh, with a YubiKey key
     # (modules/keys/max.pub), is the way back in if Kanidm logins fail.
     console = false;

@@ -10,6 +10,7 @@ let
 in
 {
   den.hosts.x86_64-linux.${name} = {
+    color = "#a6e3a1"; # light green
     instantiate = inputs.nixpkgs-unstable.lib.nixosSystem;
   };
 
