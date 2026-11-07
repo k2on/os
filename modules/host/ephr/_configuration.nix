@@ -16,21 +16,11 @@
     settings.General.EnableNetworkConfiguration = true;
   };
 
-  users.users.admin = {
-    isNormalUser = true;
-    extraGroups = [
-      "wheel"
-      "networkmanager"
-    ];
-    password = "password";
-    packages = with pkgs; [
-      tree
-      vim
-    ];
-  };
-
-  services.displayManager.autoLogin.enable = true;
-  services.displayManager.autoLogin.user = "admin";
+  # Who signs in, and how: aspects/login.nix (Kanidm, and root over ssh).
+  environment.systemPackages = with pkgs; [
+    tree
+    vim
+  ];
 
   systemd.sleep.settings.Sleep = {
     AllowSuspend = "no";
