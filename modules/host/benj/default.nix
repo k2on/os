@@ -23,6 +23,7 @@
         den.aspects.headscale
         den.aspects.mail
         den.aspects.security
+        den.aspects.deploy
       ];
 
       nixos = {

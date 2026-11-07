@@ -5,11 +5,13 @@
 # (./firmware) is the firmware.cpio the Asahi installer makes, here built
 # with asahi-fwextract from the all_firmware.tar.gz and kernelcache its
 # installer left on the ESP in /boot/asahi.
-{ inputs, ... }:
+{ inputs, den, ... }:
 {
   den.hosts.aarch64-linux.ephr = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
   };
+
+  den.aspects.ephr.includes = [ den.aspects.deploy ];
 
   den.aspects.ephr.nixos = {
     imports = [

@@ -37,6 +37,7 @@
               pkgs.lib.makeBinPath [
                 pkgs.sops
                 pkgs.age-plugin-yubikey
+                pkgs.libfido2
               ]
             }
           installShellCompletion --cmd ark \

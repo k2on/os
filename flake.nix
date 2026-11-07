@@ -52,6 +52,11 @@
     };
 
     koon-apps.url = "github:k2on/apps";
+
+    comin = {
+      url = "github:nlewo/comin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   # secrets/ is the private submodule: besides sops files it carries the

@@ -18,6 +18,7 @@
       avatar
       codex
       security
+      deploy
     ];
 
     nixos = {

@@ -26,6 +26,7 @@
       service-sivrad-browser
       tailnet
       security
+      deploy
     ];
 
     nixos = {

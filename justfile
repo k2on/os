@@ -42,6 +42,20 @@ rebuild-ark-boot:
   git add .
   nixos-rebuild --flake '.?submodules=1#adam' --build-host admin@10.0.0.28 --target-host admin@10.0.0.28 --use-remote-sudo --fast boot
 
+# comin there switches with `switch-to-configuration test`, so a reboot goes
+# back to main. HEAD must be on top of main, and signed like any commit comin
+# deploys.
+#
+# Try HEAD on one host before main
+try host:
+  git push --force origin HEAD:refs/heads/testing-{{host}}
+
+# comin follows main again once testing-<host> is gone.
+#
+# Put one host back on main
+untry host:
+  git push origin --delete testing-{{host}}
+
 # ephr (the backup server) builds its own system from its own store; its
 # admin needs a password for sudo.
 rebuild-ephr:
