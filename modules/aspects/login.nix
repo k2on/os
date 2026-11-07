@@ -106,6 +106,9 @@ in
             PasswordAuthentication = false;
             KbdInteractiveAuthentication = false;
             PermitRootLogin = if host.rootSsh then "prohibit-password" else "no";
+            # Name where you came from by its tailnet name (MagicDNS answers
+            # reverse lookups): "Last login: … from ephr.net.<domain>".
+            UseDns = true;
           };
 
           users.users.root = lib.mkMerge [
