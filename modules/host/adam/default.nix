@@ -18,6 +18,7 @@ in
     includes = with den.aspects; [
       service-audio
       service-cloud
+      service-dash
       service-git
       service-harken
       service-home

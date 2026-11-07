@@ -32,6 +32,11 @@ let
         example = "#a6e3a1";
         description = "The host's colour (#rrggbb), for its prompt: you can tell where you are at a glance. null for the terminal's default.";
       };
+      options.alwaysOn = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether the host is meant to be up all the time: monitoring (services/dash) alerts when one is down. false for a laptop.";
+      };
     };
 
   # How root is reached when Kanidm logins cannot be (aspects/login.nix).

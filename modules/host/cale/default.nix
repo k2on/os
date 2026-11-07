@@ -15,6 +15,8 @@ in
   den.hosts.aarch64-linux.${name} = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
     color = "#f9e2af"; # yellow
+    # A laptop: closed is not down.
+    alwaysOn = false;
   };
 
   den.aspects.${name} = {

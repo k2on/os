@@ -6,7 +6,8 @@
 //! too, which is what lets them send as them. A person carries their own
 //! address, their groups', and every alias that is on and goes to them, to
 //! one of their groups, or that they made. Turned-off aliases are nowhere,
-//! so mail to them is refused.
+//! so mail to them is refused. Senders (a service's alerts) come last: their
+//! own address only.
 use std::fmt::Write;
 
 use crate::config::Config;
@@ -54,6 +55,15 @@ pub fn render(config: &Config, aliases: &[Alias]) -> String {
             list(person.groups.iter().map(String::as_str)),
         );
     }
+    for sender in &config.senders {
+        let _ = write!(
+            out,
+            "\n[[directory.ark.principals]]\nclass = \"individual\"\nname = {}\nsecret = {}\nemail = {}\n",
+            quote(&sender.name),
+            quote(&format!("%{{file:{}}}%", sender.password_file.display())),
+            list([sender.address.as_str()]),
+        );
+    }
     out
 }
 
@@ -96,5 +106,21 @@ mod tests {
         assert!(out.contains("email = [\"carol@test.example\", \"trip-2@test.example\"]\nmember-of = []"), "{out}");
         assert!(!out.contains("dead-3"));
         assert!(out.contains(&format!("secret = \"%{{file:{}}}%\"", dir.join("alice.pw").display())));
+    }
+
+    #[test]
+    fn senders_carry_their_address_only() {
+        let dir = tempdir("render-senders");
+        let mut cfg = config(&dir, &[("alice", &["family"])], &["family"]);
+        cfg.senders.push(crate::config::Sender {
+            name: "alerts".into(),
+            address: "alerts@test.example".into(),
+            password_file: dir.join("alerts.pw"),
+        });
+        let out = render(&cfg, &[alias("a-1@test.example", "alice", "alerts", true)]);
+        let sender = &out[out.find("name = \"alerts\"").unwrap()..];
+        assert!(sender.contains("email = [\"alerts@test.example\"]\n"), "{out}");
+        assert!(!sender.contains("member-of"), "{out}");
+        assert!(sender.contains(&format!("secret = \"%{{file:{}}}%\"", dir.join("alerts.pw").display())));
     }
 }

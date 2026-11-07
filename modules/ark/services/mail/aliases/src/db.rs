@@ -166,6 +166,7 @@ pub(crate) mod tests {
                 .iter()
                 .map(|g| Group { name: g.to_string(), address: format!("{g}@test.example") })
                 .collect(),
+            senders: Vec::new(),
         }
     }
 

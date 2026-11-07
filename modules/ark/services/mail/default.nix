@@ -88,6 +88,9 @@ let
   aliasesInternalPort = 8731;
   aliasesKey = "mail_aliases_key";
   tokenSecret = p: "mail_alias_token_${p}";
+  # Accounts that only send: ark.mailSenders.<name>, as <name>@<domain>.
+  senders = lib.attrNames config.ark.mailSenders;
+  senderSecret = n: "mail_sender_${n}";
   # The mail host's name on the tailnet, as `ark hosts` has it.
   mailHost =
     let
@@ -125,8 +128,18 @@ in
         key = aliasesKey;
         tokens = lib.genAttrs persons tokenSecret;
       };
+      inherit senderSecret;
     };
     description = "Where mail and its aliases are, for other services.";
+  };
+
+  options.ark.mailSenders = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule { });
+    default = { };
+    example = {
+      alerts = { };
+    };
+    description = "Accounts that only send mail (a service's alerts), as <name>@<domain>, each with a generated password: ark.mail.senderSecret <name>, for the service to sign in to Stalwart with.";
   };
 
   # The Scaleway provider, once for the whole infra; its keys are admin-only
@@ -168,6 +181,15 @@ in
           generate = true;
           owner = "stalwart";
           restartUnits = [ "mail-aliases.service" ];
+        }
+      )
+      # Each sender's password; the service using it declares the same key.
+      // lib.genAttrs' senders (
+        n:
+        lib.nameValuePair (senderSecret n) {
+          generate = "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32";
+          owner = "stalwart";
+          restartUnits = [ "stalwart.service" ];
         }
       )
       # Stalwart's SMTP login at TEM, filled in by `ark service mail relay`.
@@ -242,6 +264,7 @@ in
           </clientConfig>
         '';
         clash = lib.intersectLists persons (lib.attrNames ark.groups);
+        senderClash = lib.intersectLists senders (persons ++ lib.attrNames ark.groups);
         certDir = config.security.acme.certs.${hostname}.directory;
 
         mailAliases = pkgs.callPackage ./aliases/_package.nix { };
@@ -266,6 +289,11 @@ in
               inherit name;
               address = "${name}@${domain}";
             }) ark.groups;
+            senders = map (n: {
+              name = n;
+              address = "${n}@${domain}";
+              passwordFile = config.sops.secrets.${senderSecret n}.path;
+            }) senders;
           }
         );
       in
@@ -274,6 +302,10 @@ in
           {
             assertion = clash == [ ];
             message = "mail: ${toString clash} is both a person and a group, and so one address";
+          }
+          {
+            assertion = senderClash == [ ];
+            message = "mail: ${toString senderClash} is a sender (ark.mailSenders) and a person or group, and so one address";
           }
         ];
 

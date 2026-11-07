@@ -24,6 +24,10 @@ pub struct Config {
     pub internal_key_file: PathBuf,
     pub persons: Vec<Person>,
     pub groups: Vec<Group>,
+    /// Accounts that only send (a service's alerts): one address each, in no
+    /// group, with no aliases.
+    #[serde(default)]
+    pub senders: Vec<Sender>,
 }
 
 #[derive(Deserialize)]
@@ -41,6 +45,14 @@ pub struct Person {
 pub struct Group {
     pub name: String,
     pub address: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sender {
+    pub name: String,
+    pub address: String,
+    pub password_file: PathBuf,
 }
 
 impl Config {

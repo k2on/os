@@ -55,7 +55,7 @@
       jobs = lib.concatMap (
         b:
         lib.mapAttrsToList (loc: l: {
-          inherit b l;
+          inherit b l loc;
           name = "${b.name}-${loc}";
         }) cfg.locations
       ) backups;
@@ -206,10 +206,24 @@
             map (
               j:
               lib.nameValuePair "restic-backups-${j.name}" (
-                lib.mkIf (needsPrepare j.b) {
-                  requires = [ "${prepareUnit j.b}.service" ];
-                  after = [ "${prepareUnit j.b}.service" ];
-                }
+                lib.mkMerge [
+                  (lib.mkIf (needsPrepare j.b) {
+                    requires = [ "${prepareUnit j.b}.service" ];
+                    after = [ "${prepareUnit j.b}.service" ];
+                  })
+                  # When it last succeeded, for monitoring (aspects/metrics.nix,
+                  # services/dash): only reached when the backup did.
+                  {
+                    serviceConfig.ExecStartPost = [
+                      (pkgs.writeShellScript "restic-${j.name}-metric" ''
+                        f=${config.ark.metrics.textfileDir}/restic-${j.name}.prom
+                        printf 'restic_backup_last_success_timestamp_seconds{backup="%s",location="%s"} %s\n' \
+                          ${j.b.name} ${j.loc} "$(date +%s)" > "$f.tmp"
+                        mv "$f.tmp" "$f"
+                      '')
+                    ];
+                  }
+                ]
               )
             ) jobs
           )
