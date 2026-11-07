@@ -18,7 +18,6 @@
 
         secrets = {
           "restic-password" = { };
-          "admin-password" = { };
 
           "cloudflare-api-key" = { };
 

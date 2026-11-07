@@ -12,12 +12,6 @@
           "*" = {
             AddKeysToAgent = "yes";
           };
-          "ephr" = {
-            User = "admin";
-          };
-          "adam" = {
-            User = "admin";
-          };
           "github.com" = {
             User = "git";
             IdentityFile = "~/.ssh/id_ed25519_sk";

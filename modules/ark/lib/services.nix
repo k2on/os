@@ -257,11 +257,13 @@ in
 
   # Consumed by the `ark` CLI (`ark hosts`, and service commands that reach
   # their host): every host, how to ssh to it, and the services it runs.
-  #   { adam = { name = "adam"; hostName = "adam"; ssh = "admin@adam.net.example.com"; services = [ "money" ... ]; }; ... }
-  # The ssh target is all derived: the host's one sudo user, at its MagicDNS
-  # name on the tailnet (headscale's base_domain, read off the host running
-  # headscale). null where that does not add up (no tailscale, no or several
-  # sudo users, no headscale anywhere).
+  #   { adam = { name = "adam"; hostName = "adam"; ssh = "adam.net.example.com"; services = [ "money" ... ]; }; ... }
+  # The ssh target is all derived: the host's MagicDNS name on the tailnet
+  # (headscale's base_domain, read off the host running headscale), with no
+  # user where people sign in as themselves through Kanidm (aspects/login.nix:
+  # ssh then uses your own name), else the host's one sudo user. null where
+  # that does not add up (no tailscale, no or several sudo users, no headscale
+  # anywhere).
   config.flake.arkHosts =
     let
       hosts = lib.filterAttrs (_: h: h.config ? ark) config.flake.nixosConfigurations;
@@ -278,9 +280,15 @@ in
             lib.filterAttrs (_: u: u.isNormalUser && lib.elem "wheel" u.extraGroups) host.config.users.users
           );
           onTailnet = host.config.services.tailscale.enable or false;
+          kanidm = host.config.services.kanidm.unix.enable or false;
+          address = "${host.config.networking.hostName}.${lib.head tailnetDomain}";
         in
-        if onTailnet && lib.length users == 1 && tailnetDomain != [ ] && lib.head tailnetDomain != null then
-          "${lib.head users}@${host.config.networking.hostName}.${lib.head tailnetDomain}"
+        if !onTailnet || tailnetDomain == [ ] || lib.head tailnetDomain == null then
+          null
+        else if kanidm then
+          address
+        else if lib.length users == 1 then
+          "${lib.head users}@${address}"
         else
           null;
     in

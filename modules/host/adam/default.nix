@@ -38,10 +38,20 @@ in
       imports = [
         ./_hardware-configuration.nix
         inputs.sops-nix.nixosModules.sops
-        config.flake.nixosModules.koonArkUser
         config.flake.nixosModules.koonArkSops
         config.flake.nixosModules.acme
         config.flake.nixosModules.kanidm
+        # What admin had, for whoever signs in now (aspects/login.nix).
+        (
+          { pkgs, ... }:
+          {
+            environment.systemPackages = with pkgs; [
+              tree
+              vim
+              tmux
+            ];
+          }
+        )
       ];
 
       # Use the systemd-boot EFI boot loader.
@@ -56,8 +66,6 @@ in
         useRoutingFeatures = "server";
         extraSetFlags = [ "--ssh=false" ];
       };
-
-      security.sudo.wheelNeedsPassword = false;
 
       fileSystems."/mnt/hdd" = {
         device = "/dev/sdb";

@@ -252,7 +252,11 @@
             ) (lib.filter needsPrepare backups)
           );
 
-        environment.systemPackages = [ restore ];
+        # restic itself, for looking into a repository by hand.
+        environment.systemPackages = [
+          restore
+          pkgs.restic
+        ];
       };
     };
 
