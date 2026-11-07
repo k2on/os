@@ -22,6 +22,7 @@ in
       codex
       security
       deploy
+      kanidm-client
     ];
 
     nixos = {

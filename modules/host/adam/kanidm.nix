@@ -91,9 +91,13 @@ in
             mailAddresses = [ p.mail ];
           }) ark.persons;
 
-          groups = lib.concatMapAttrs (
-            _: o: lib.mapAttrs' (_: g: lib.nameValuePair g.name { inherit (g) members; }) o.groups
-          ) clients;
+          groups =
+            lib.concatMapAttrs (
+              _: o: lib.mapAttrs' (_: g: lib.nameValuePair g.name { inherit (g) members; }) o.groups
+            ) clients
+            # Who may sign in to the hosts (aspects/login.nix); kanidm-hosts
+            # below makes it and them POSIX.
+            // { ${ark.login.group}.members = ark.login.members; };
 
           # Keyed by the client id, which is the service name unless the
           # service says otherwise (lib/oidc.nix).
@@ -250,6 +254,77 @@ in
                   fi
                 ''
             }
+          '';
+        };
+
+      # What signing in to the hosts needs of Kanidm that kanidm-provision
+      # does not do (aspects/login.nix): ark.login.group and its members as
+      # POSIX entries, so the hosts see them as a group and users; and the
+      # group's account policy: passkeys only, and write access to one's own
+      # account lapsing 15 minutes after signing in again. Signed in as
+      # idm_admin, each is set only when it is not so already; on every boot
+      # and whenever this changes.
+      systemd.services.kanidm-hosts =
+        let
+          url = "https://id.${ark.mainDomain}";
+          group = ark.login.group;
+        in
+        {
+          description = "Kanidm's POSIX entries and account policy for host logins";
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "kanidm.service" ];
+          after = [ "kanidm.service" ];
+          path = [
+            pkgs.coreutils
+            pkgs.curl
+            pkgs.gawk
+            pkgs.jq
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script = ''
+            set -euo pipefail
+            url=${url}
+            json() { curl -sS --fail-with-body -H 'Content-Type: application/json' "$@"; }
+
+            # A read-write session as idm_admin: /v1/auth, its id in a header.
+            s=$(curl -sS -D - -o /dev/null -H 'Content-Type: application/json' \
+              -d '{"step":{"init2":{"username":"idm_admin","issue":"token","privileged":true}}}' \
+              "$url/v1/auth" | tr -d '\r' | awk 'tolower($1) == "x-kanidm-auth-session-id:" { print $2 }')
+            step() { json -H "X-KANIDM-AUTH-SESSION-ID: $s" -d "$1" "$url/v1/auth"; }
+            step '{"step":{"begin":"password"}}' >/dev/null
+            token=$(step "$(jq -cn --arg p "$(< ${config.sops.secrets.kanidm_idm_admin_password.path})" '{step: {cred: {password: $p}}}')" | jq -er '.state.success')
+            auth=(-H "Authorization: Bearer $token")
+            # Whether a GET answers 200: the entry has a POSIX token.
+            ok() { [ "$(curl -sS -o /dev/null -w '%{http_code}' "''${auth[@]}" "$1")" = 200 ]; }
+            # An attribute's values, one per line (none for a missing one).
+            attr() { curl -sS "''${auth[@]}" "$url/v1/group/${group}/_attr/$1" | jq -r '(. // [])[]?'; }
+
+            if ! ok "$url/v1/group/${group}/_unix/_token"; then
+              json "''${auth[@]}" -d '{}' "$url/v1/group/${group}/_unix" >/dev/null
+              echo "${group}: POSIX"
+            fi
+            for person in ${lib.escapeShellArgs ark.login.members}; do
+              if ! ok "$url/v1/account/$person/_unix/_token"; then
+                json "''${auth[@]}" -d '{}' "$url/v1/person/$person/_unix" >/dev/null
+                echo "$person: POSIX"
+              fi
+            done
+
+            if ! attr class | grep -qx account_policy; then
+              json "''${auth[@]}" -d '["account_policy"]' "$url/v1/group/${group}/_attr/class" >/dev/null
+              echo "${group}: account policy"
+            fi
+            set_attr() {
+              if [ "$(attr "$1")" != "$2" ]; then
+                json "''${auth[@]}" -X PUT -d "$(jq -cn --arg v "$2" '[$v]')" "$url/v1/group/${group}/_attr/$1" >/dev/null
+                echo "${group}: $1 = $2"
+              fi
+            }
+            set_attr credential_type_minimum passkey
+            set_attr privilege_expiry 900
           '';
         };
     };

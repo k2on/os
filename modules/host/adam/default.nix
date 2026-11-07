@@ -31,6 +31,7 @@ in
       tailnet
       security
       deploy
+      login
     ];
 
     nixos = {

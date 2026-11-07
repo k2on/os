@@ -4,7 +4,6 @@
     { pkgs, config, ... }:
     {
       sops.secrets.admin-password.neededForUsers = true;
-      users.mutableUsers = false;
 
       users.users.admin = {
         isNormalUser = true;
