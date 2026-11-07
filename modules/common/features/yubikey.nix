@@ -6,7 +6,6 @@
       environment.systemPackages = with pkgs; [
         yubioath-flutter # gui
         yubikey-manager # `ykman`
-        pam_u2f # yubikey with sudo
       ];
 
       services.pcscd.enable = true;
@@ -14,22 +13,7 @@
 
       services.yubikey-agent.enable = true;
 
-      security.pam = {
-        sshAgentAuth.enable = true;
-        u2f = {
-          enable = true;
-          settings = {
-            cue = true;
-            authFile = "/home/max/.config/Yubico/u2f_keys";
-          };
-        };
-        services = {
-          login.u2fAuth = true;
-          sudo = {
-            u2fAuth = true;
-            sshAgentAuth = true;
-          };
-        };
-      };
+      # Signing in and sudo are by password only: no YubiKey (pam_u2f) and
+      # no ssh agent key in PAM.
     };
 }

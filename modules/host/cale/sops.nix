@@ -15,11 +15,6 @@
         validateSopsFiles = false;
 
         secrets = {
-          "yubico/u2f_keys" = {
-            owner = config.users.users.max.name;
-            inherit (config.users.users.max) group;
-            path = "/home/max/.config/Yubico/u2f_keys";
-          };
           "waka_config" = {
             owner = config.users.users.max.name;
             inherit (config.users.users.max) group;
