@@ -44,16 +44,6 @@ in
         # Who may sign in, and how: aspects/login.nix.
         services.openssh.enable = true;
 
-        users.users.vps = {
-          isNormalUser = true;
-          extraGroups = [ "wheel" ];
-          initialHashedPassword = "$y$j9T$2DyEjQxPoIjTkt8zCoWl.0$3mHxH.fqkCgu53xa0vannyu4Cue3Q7xL4CrUhMxREKC"; # Password.123
-
-          openssh.authorizedKeys.keys = [
-            (builtins.readFile ../../aspects/key.pub)
-          ];
-        };
-
         # 2 GB and it builds its own system: compressed swap in memory, so a
         # big compile slows down rather than crashes.
         zramSwap.enable = true;
