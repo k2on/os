@@ -125,6 +125,9 @@ impl Vm {
     fn ssh(&self) -> Command {
         let mut cmd = Command::new("ssh");
         cmd.args(["-o", "StrictHostKeyChecking=accept-new"]);
+        // One connection per minute, so a command's several ssh calls cost
+        // one YubiKey touch.
+        cmd.args(["-o", "ControlMaster=auto", "-o", "ControlPath=~/.ssh/ark-%C", "-o", "ControlPersist=60"]);
         cmd
     }
 

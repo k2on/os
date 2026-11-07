@@ -36,7 +36,12 @@
 #   ark service sivrad signal register +15557654321
 #
 # then commit secrets/ and deploy adam.
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  root,
+  ...
+}:
 let
   ark = config.ark;
   container = import ./_container.nix;
@@ -149,6 +154,10 @@ in
           }
         ];
         containers.sivrad.specialArgs = {
+          # Who may ssh in (`ark service sivrad`): your keys, as everywhere.
+          sshKeys = lib.filter (l: l != "") (
+            lib.splitString "\n" (lib.fileContents (root + "/modules/keys/max.pub"))
+          );
           # Who may use sivrad, for the channel's people.json (./_guest.nix):
           # { "<username>": { "signal": "+..." } }.
           people = lib.mapAttrs (_: p: { inherit (p) signal; }) people;

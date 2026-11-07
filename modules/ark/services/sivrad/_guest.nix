@@ -66,6 +66,7 @@
   signalProfile,
   bot,
   browserPage,
+  sshKeys,
   ...
 }:
 let
@@ -95,8 +96,6 @@ let
   peopleJson = pkgs.writeText "sivrad-people.json" (builtins.toJSON people);
 
   channel = pkgs.callPackage ../../_rust.nix { pname = "sivrad-channel"; };
-
-  sshKey = builtins.readFile ../../../aspects/key.pub;
 
   # One command per service the account may use: `home-api /states`, as
   # curl with the token from the file in the right header, so the agent's
@@ -280,7 +279,7 @@ in
     uid = 1000;
     group = user;
     inherit home;
-    openssh.authorizedKeys.keys = [ sshKey ];
+    openssh.authorizedKeys.keys = sshKeys;
   };
   users.groups.${user}.gid = 1000;
   # The channel and the Signal account; what `ark service sivrad` logs in
@@ -291,7 +290,7 @@ in
     home = channelHome;
     shell = pkgs.bashInteractive;
     extraGroups = [ user ];
-    openssh.authorizedKeys.keys = [ sshKey ];
+    openssh.authorizedKeys.keys = sshKeys;
   };
   users.groups.${channelUser} = { };
 
