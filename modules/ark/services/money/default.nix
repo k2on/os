@@ -91,6 +91,14 @@ in
       {
         imports = [ self.inputs.koon-apps.nixosModules.money ];
 
+        # It signs in to Kanidm when it starts, through the vps; if that is
+        # not answering yet (Kanidm restarting, a deploy), it exits. Try
+        # again every 10 s rather than five times in a second and give up.
+        systemd.services.money = {
+          serviceConfig.RestartSec = "10s";
+          startLimitIntervalSec = 0;
+        };
+
         services.money = {
           enable = true;
           port = service.port;

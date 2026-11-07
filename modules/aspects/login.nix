@@ -82,6 +82,14 @@ in
             sshIntegration = true;
             settings = {
               kanidm.pam_allowed_login_groups = [ group ];
+              # The group may read every unit's logs (journalctl), without sudo:
+              # members are put in the local systemd-journal group.
+              kanidm.map_group = [
+                {
+                  local = "systemd-journal";
+                  "with" = group;
+                }
+              ];
               # A local account wins over a Kanidm one of the same name:
               # cale's own max stays the laptop's, admin stays admin.
               allow_local_account_override = lib.attrNames (

@@ -29,6 +29,12 @@ in
       {
         imports = [ self.inputs.koon-apps.nixosModules.default ];
 
+        # As money: it reaches Kanidm when it starts, so keep retrying.
+        systemd.services.harken = {
+          serviceConfig.RestartSec = "10s";
+          startLimitIntervalSec = 0;
+        };
+
         services.harken = {
           enable = true;
           # The browser client at /, which the old harken repo served by
