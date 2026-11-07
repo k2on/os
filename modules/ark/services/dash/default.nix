@@ -131,6 +131,22 @@ in
           };
         };
 
+        # Grafana shows each user's Gravatar, at /avatar/<sha256 of their
+        # lower-cased email>, and cannot take an OIDC picture; so those
+        # addresses go to the picture every service gets instead
+        # (ark.oidc.picture, from Immich: services/photos). A person without
+        # one gets Grafana's broken-image icon.
+        services.nginx.virtualHosts.${service.domain}.locations =
+          lib.optionalAttrs (ark.oidc.picture != null)
+            (
+              lib.mapAttrs' (
+                name: p:
+                lib.nameValuePair "= /avatar/${builtins.hashString "sha256" (lib.toLower (lib.trim p.mail))}" {
+                  return = "302 ${lib.replaceStrings [ "{name}" ] [ name ] ark.oidc.picture}";
+                }
+              ) ark.persons
+            );
+
         sops.templates."alertmanager.env" = {
           content = "SMTP_PASSWORD=${config.sops.placeholder.dash_smtp_password}\n";
           restartUnits = [ "alertmanager.service" ];
