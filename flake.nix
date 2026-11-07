@@ -63,9 +63,16 @@
   # people side of the config (secrets/ark.nix), so it is a module root too.
   # It is only there with `?submodules=1`; without it Nix sees an untracked
   # path, so only reference it once we know it was checked out.
+  #
+  # `root` is this repo as a path, for modules to name files from the top
+  # (root + "/secrets/vars") without going through `self`, whose every use
+  # makes a system depend on the whole repo.
   outputs =
     inputs:
-    inputs.flake-parts.lib.mkFlake { inherit inputs; } (
+    inputs.flake-parts.lib.mkFlake {
+      inherit inputs;
+      specialArgs.root = ./.;
+    } (
       inputs.import-tree (
         [ ./modules ] ++ (if builtins.pathExists ./secrets/ark.nix then [ ./secrets ] else [ ])
       )

@@ -1,26 +1,25 @@
 {
   self,
   lib,
-  config,
   den,
   ...
 }:
+let
+  # This folder's name: the host's, its flake output's and its hostname.
+  name = baseNameOf ./.;
+in
 {
   den.hosts.x86_64-linux = {
-    benj = {
+    ${name} = {
       provider = "hetzner";
       server-type = "cpx11";
       region = "ash";
     };
   };
 
-  # Until benj's comin, configured as vps, has deployed this commit: it
-  # looks for nixosConfigurations.vps, gets benj and follows the new name.
-  flake.nixosConfigurations.vps = config.flake.nixosConfigurations.benj;
-
   # comin deploys benj (aspects/deploy.nix). A fresh server is installed by
   # hand: nixos-anywhere --flake .#benj root@<address>.
-  den.aspects.benj =
+  den.aspects.${name} =
     { ... }:
     {
       includes = [

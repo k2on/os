@@ -1,4 +1,4 @@
-{ self, ... }:
+{ root, ... }:
 {
   flake.nixosModules.koonArkSops =
     { config, ... }:
@@ -8,7 +8,11 @@
       sops = {
         age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 
-        defaultSopsFile = "${self}/secrets/koon/ark/default.yaml";
+        # The file alone, not the repo (see lib/secrets.nix).
+        defaultSopsFile = builtins.path {
+          path = root + "/secrets/koon/ark/default.yaml";
+          name = "adam-default.yaml";
+        };
 
         validateSopsFiles = false;
 

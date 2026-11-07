@@ -1,4 +1,4 @@
-{ self, ... }:
+{ root, ... }:
 {
   flake.nixosModules.koonMaxSops =
     { config, ... }:
@@ -6,7 +6,11 @@
       sops = {
         age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 
-        defaultSopsFile = "${self}/secrets/koon/max/default.yaml";
+        # The file alone, not the repo (see lib/secrets.nix).
+        defaultSopsFile = builtins.path {
+          path = root + "/secrets/koon/max/default.yaml";
+          name = "cale-default.yaml";
+        };
 
         validateSopsFiles = false;
 

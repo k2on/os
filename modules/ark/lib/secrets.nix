@@ -38,15 +38,24 @@
 # These all share one file, secrets/vars/infra.yaml, so loading them costs
 # a single decryption (one yubikey touch) per command.
 {
-  self,
   inputs,
+  root,
   lib,
   config,
   ...
 }:
 let
   varsDir = "secrets/vars";
-  varsFile = key: "${self}/${varsDir}/${key}.yaml";
+  # Where a file is in the repo, to see whether it exists, and the file alone
+  # in the store for sops: never the whole repo, which would make every
+  # host's system change with any commit.
+  varsPath = key: root + "/secrets/vars/${key}.yaml";
+  varsFile =
+    key:
+    builtins.path {
+      path = varsPath key;
+      name = "${key}.yaml";
+    };
 
   alnum = "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48";
 
@@ -115,12 +124,12 @@ let
           // {
             sopsFile = varsFile s.file;
           }
-        ) (lib.filterAttrs (_: s: !s.optional || builtins.pathExists (varsFile s.file)) config.ark.secrets);
+        ) (lib.filterAttrs (_: s: !s.optional || builtins.pathExists (varsPath s.file)) config.ark.secrets);
 
         assertions =
           map
             (file: {
-              assertion = builtins.pathExists (varsFile file);
+              assertion = builtins.pathExists (varsPath file);
               message = "ark: ${varsDir}/${file}.yaml is not in sops yet. Run `ark secrets` and commit it";
             })
             (

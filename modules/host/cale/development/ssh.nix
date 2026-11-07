@@ -15,9 +15,6 @@
           "ephr" = {
             User = "admin";
           };
-          "ark" = {
-            User = "admin";
-          };
           "adam" = {
             User = "admin";
           };

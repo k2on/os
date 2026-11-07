@@ -4,12 +4,16 @@
   den,
   ...
 }:
+let
+  # This folder's name: the host's, its flake output's and its hostname.
+  name = baseNameOf ./.;
+in
 {
-  den.hosts.x86_64-linux.adam = {
+  den.hosts.x86_64-linux.${name} = {
     instantiate = inputs.nixpkgs-unstable.lib.nixosSystem;
   };
 
-  den.aspects.adam = {
+  den.aspects.${name} = {
     includes = with den.aspects; [
       service-audio
       service-cloud

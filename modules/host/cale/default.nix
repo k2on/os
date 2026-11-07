@@ -7,12 +7,16 @@
   den,
   ...
 }:
+let
+  # This folder's name: the host's, its flake output's and its hostname.
+  name = baseNameOf ./.;
+in
 {
-  den.hosts.aarch64-linux.cale = {
+  den.hosts.aarch64-linux.${name} = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
   };
 
-  den.aspects.cale = {
+  den.aspects.${name} = {
     includes = with den.aspects; [
       avatar
       codex

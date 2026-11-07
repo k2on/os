@@ -10,8 +10,8 @@
 # The repo is public and fetched over HTTPS, from Gitea and GitHub alike.
 # Its secrets submodule is not: Nix fetches it (comin evaluates with
 # submodules) as root through ssh, signing in to Gitea with the host's own
-# ssh key, modules/keys/hosts/<name>.pub (named as modules/host/<name>), a
-# read-only deploy key on max/secrets.
+# ssh key, modules/keys/hosts/<host>.pub, a read-only deploy key on
+# max/secrets.
 #
 # There is no order between hosts: each takes main when it sees it. A change
 # that one host depends on another for (a rename) goes in two commits, the
@@ -34,9 +34,7 @@ let
   signers = lib.filter (l: l != "") (lib.splitString "\n" (lib.fileContents ../keys/max.pub));
 in
 {
-  den.aspects.deploy =
-    { host, ... }:
-    {
+  den.aspects.deploy = {
       nixos =
         { pkgs, ... }:
         {
@@ -44,8 +42,6 @@ in
 
           services.comin = {
             enable = true;
-            # The flake's name for this host, which is not its hostName (adam is ark).
-            hostname = host.name;
             submodules = true;
             remotes = [
               {

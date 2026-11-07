@@ -257,7 +257,7 @@ in
 
   # Consumed by the `ark` CLI (`ark hosts`, and service commands that reach
   # their host): every host, how to ssh to it, and the services it runs.
-  #   { adam = { name = "adam"; hostName = "ark"; ssh = "admin@ark.net.example.com"; services = [ "money" ... ]; }; ... }
+  #   { adam = { name = "adam"; hostName = "adam"; ssh = "admin@adam.net.example.com"; services = [ "money" ... ]; }; ... }
   # The ssh target is all derived: the host's one sudo user, at its MagicDNS
   # name on the tailnet (headscale's base_domain, read off the host running
   # headscale). null where that does not add up (no tailscale, no or several

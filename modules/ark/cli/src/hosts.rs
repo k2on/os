@@ -15,7 +15,7 @@ use crate::util;
 pub struct Host {
     /// The den host name, e.g. adam; how the machine is called in this repo.
     pub name: String,
-    /// networking.hostName, e.g. ark.
+    /// networking.hostName, e.g. adam.
     #[serde(rename = "hostName")]
     pub host_name: String,
     /// user@address to ssh to: the host's sudo user at its tailnet name. None

@@ -6,23 +6,29 @@
 # with asahi-fwextract from the all_firmware.tar.gz and kernelcache its
 # installer left on the ESP in /boot/asahi.
 { inputs, den, ... }:
+let
+  # This folder's name: the host's, its flake output's and its hostname.
+  name = baseNameOf ./.;
+in
 {
-  den.hosts.aarch64-linux.ephr = {
+  den.hosts.aarch64-linux.${name} = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
   };
 
-  den.aspects.ephr.includes = [ den.aspects.deploy ];
+  den.aspects.${name} = {
+    includes = [ den.aspects.deploy ];
 
-  den.aspects.ephr.nixos = {
-    imports = [
-      inputs.nixos-apple-silicon.nixosModules.apple-silicon-support
-      ./_hardware-configuration.nix
-      ./_configuration.nix
-    ];
+    nixos = {
+      imports = [
+        inputs.nixos-apple-silicon.nixosModules.apple-silicon-support
+        ./_hardware-configuration.nix
+        ./_configuration.nix
+      ];
 
-    hardware.asahi = {
-      enable = true;
-      peripheralFirmwareDirectory = ./firmware;
+      hardware.asahi = {
+        enable = true;
+        peripheralFirmwareDirectory = ./firmware;
+      };
     };
   };
 }
