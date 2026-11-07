@@ -53,6 +53,13 @@ in
                 url = "https://github.com/k2on/os.git";
               }
             ];
+            # The last 5 deployments stay bootable, as the plain system profile's
+            # (aspects/gc.nix).
+            retention = {
+              deployment_boot_entry_capacity = 5;
+              deployment_successful_capacity = 5;
+              deployment_any_capacity = 5;
+            };
             sshAllowedSignersPath = "${pkgs.writeText "comin-allowed-signers" (
               lib.concatMapStrings (key: "max namespaces=\"git\" ${key}\n") signers
             )}";

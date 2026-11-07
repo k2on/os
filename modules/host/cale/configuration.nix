@@ -30,7 +30,6 @@
 
       # Use the systemd-boot EFI boot loader.
       boot.loader.systemd-boot.enable = true;
-      boot.loader.systemd-boot.configurationLimit = 5;
       boot.loader.efi.canTouchEfiVariables = false;
       boot.loader.systemd-boot.graceful = true; # passes --graceful, ignores EFI-variable errors
 
@@ -245,14 +244,9 @@
         "flakes"
       ];
 
-      # Deduplicate the store and collect garbage weekly, keeping only the
-      # generations still referenced within the last 5 boot entries above.
+      # Deduplicate the store. Garbage collection is every host's
+      # (aspects/gc.nix).
       nix.settings.auto-optimise-store = true;
-      nix.gc = {
-        automatic = true;
-        dates = "weekly";
-        options = "--delete-older-than 30d";
-      };
 
       # Compressed swap in RAM: with no swap at all, a big link and whisper
       # at once ran memory out and the kernel's OOM killer took the

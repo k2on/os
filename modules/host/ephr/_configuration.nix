@@ -7,7 +7,6 @@
   # Use the systemd-boot EFI boot loader. Asahi has no writable EFI
   # variables (as on cale).
   boot.loader.systemd-boot.enable = true;
-  boot.loader.systemd-boot.configurationLimit = 5;
   boot.loader.efi.canTouchEfiVariables = false;
   boot.loader.systemd-boot.graceful = true;
 
