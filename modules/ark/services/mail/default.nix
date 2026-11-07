@@ -503,19 +503,22 @@ in
         resource.scaleway_iam_api_key.mail = {
           application_id = "\${scaleway_iam_application.mail.id}";
           description = "Stalwart's SMTP login on the vps";
+          # Scaleway gives a key a year (this one: until 2027-10-31), and an
+          # expiry cannot be removed, only the key replaced: so the expiry is
+          # left as Scaleway set it. Mail stops relaying when it passes; replace
+          # the key before then (tofu -chdir=infra apply -replace=scaleway_iam_api_key.mail).
+          lifecycle.ignore_changes = [ "expires_at" ];
         };
-        # The login, onto the vps over the ssh nixos-anywhere deploys with
-        # (aspects/nixos-anywhere.nix), after the deploy and in the same
-        # apply: the host is built at plan time, before this key exists, so
-        # going through sops would take a second push. SMTP wants the
-        # project's id and the key's secret. Written again whenever the key
-        # or the server is replaced (a reinstall wipes /var/lib).
+        # The login, onto the vps over root's ssh, in the same apply that
+        # makes the key. SMTP wants the project's id and the key's secret.
+        # Written again whenever the key or the server is replaced. A reinstall
+        # by hand (nixos-anywhere) wipes /var/lib without replacing either:
+        # then `tofu -chdir=infra apply -replace=terraform_data.mail_tem_login`.
         resource.terraform_data.mail_tem_login = {
           triggers_replace = [
             "\${scaleway_iam_api_key.mail.id}"
             (ark.vps.id host)
           ];
-          depends_on = [ "module.deploy" ];
           # The system ssh, as nixos-anywhere uses it (keys from ~/.ssh as
           # well as the agent, and no known_hosts: a reinstall changes the
           # host key), not terraform's own, which knows only the agent. The

@@ -1,25 +1,30 @@
 {
   self,
   lib,
+  config,
   den,
   ...
 }:
 {
   den.hosts.x86_64-linux = {
-    vps = {
+    benj = {
       provider = "hetzner";
       server-type = "cpx11";
       region = "ash";
     };
   };
 
-  den.aspects.vps =
+  # Until benj's comin, configured as vps, has deployed this commit: it
+  # looks for nixosConfigurations.vps, gets benj and follows the new name.
+  flake.nixosConfigurations.vps = config.flake.nixosConfigurations.benj;
+
+  # comin deploys benj (aspects/deploy.nix). A fresh server is installed by
+  # hand: nixos-anywhere --flake .#benj root@<address>.
+  den.aspects.benj =
     { ... }:
     {
       includes = [
         den.batteries.define-user
-        den.batteries.hostname
-        den.aspects.nixos-deploy
         den.aspects.headscale
         den.aspects.mail
         den.aspects.security

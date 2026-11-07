@@ -42,8 +42,6 @@
       # Use the systemd-boot EFI boot loader.
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
-
-      networking.hostName = "ark";
       networking.nameservers = [
         "8.8.8.8"
         "1.1.1.1"

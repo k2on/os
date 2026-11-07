@@ -11,19 +11,19 @@ rebuild:
   just add-secrets
 
   git add .
-  sudo nixos-rebuild switch --flake '.?submodules=1#koonMax'
+  sudo nixos-rebuild switch --flake '.?submodules=1#cale'
 
 rebuild-boot:
   just add-secrets
 
   git add .
-  sudo nixos-rebuild boot --flake '.?submodules=1#koonMax'
+  sudo nixos-rebuild boot --flake '.?submodules=1#cale'
 
 rebuild-offline:
   just add-secrets
 
   git add .
-  sudo nixos-rebuild switch --flake '.?submodules=1#koonMax' --offline
+  sudo nixos-rebuild switch --flake '.?submodules=1#cale' --offline
 
 # ark builds its own system: 4 cores, 8 GB and no swap, most of it in use.
 # One build job on two cores keeps a large build (the Hermes Python tree)

@@ -1,7 +1,6 @@
 # cale: Max's laptop (Apple silicon), as a den host so it can take aspects
-# like the others. Named koonMax, as its NixOS configuration always was
-# (`just rebuild` builds .#koonMax); the machine's own setup stays in
-# koonMaxConfiguration (./configuration.nix).
+# like the others (`just rebuild` builds .#cale); the machine's own setup
+# stays in koonMaxConfiguration (./configuration.nix).
 {
   self,
   inputs,
@@ -9,11 +8,11 @@
   ...
 }:
 {
-  den.hosts.aarch64-linux.koonMax = {
+  den.hosts.aarch64-linux.cale = {
     instantiate = inputs.nixpkgs.lib.nixosSystem;
   };
 
-  den.aspects.koonMax = {
+  den.aspects.cale = {
     includes = with den.aspects; [
       avatar
       codex
