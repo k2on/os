@@ -5,6 +5,7 @@
 //! build.rs finds those, there is no list to maintain. Everything shells out
 //! to the tools already in the dev shell: nix, sops, git.
 mod hosts;
+mod id;
 mod infra;
 mod secrets;
 mod service;
@@ -55,6 +56,16 @@ fn cli() -> Command {
         .subcommand(Command::new("destroy").about("Destroy internet infra"))
         .subcommand(Command::new("hosts").about("List the hosts, how to reach them, and the services each runs"))
         .subcommand(
+            Command::new("id")
+                .about("Your id: the ssh key on your YubiKey, which signs commits and logs in to the hosts")
+                .long_about(
+                    "Your id: the ssh key resident on your YubiKey, which signs commits and logs in to the \
+                     hosts. Waits for the YubiKey, shows its id, and sets up what this machine or the repo \
+                     lacks: ~/.ssh/<key> and modules/keys/<name>.pub.",
+                )
+                .subcommand(Command::new("new").about("Make the id on a YubiKey that has none")),
+        )
+        .subcommand(
             Command::new("secrets")
                 .about("Create missing secrets, rekey the ones whose recipients changed")
                 .long_about(
@@ -98,6 +109,10 @@ fn run() -> Result<()> {
         Some(("push", _)) => infra::run(&ctx, "apply"),
         Some(("destroy", _)) => infra::run(&ctx, "destroy"),
         Some(("hosts", _)) => hosts::list(&ctx),
+        Some(("id", m)) => match m.subcommand() {
+            Some(("new", _)) => id::new(&ctx),
+            _ => id::show(&ctx),
+        },
         Some(("secrets", m)) => secrets::run(&ctx, m.get_flag("dry-run")),
         Some(("sops", m)) => {
             let args: Vec<&String> = m.get_many::<String>("args").expect("num_args(1..)").collect();

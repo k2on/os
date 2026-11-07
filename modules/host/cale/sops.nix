@@ -16,12 +16,6 @@
             inherit (config.users.users.max) group;
             path = "/home/max/.config/Yubico/u2f_keys";
           };
-          "ssh_keys/max" = {
-            owner = config.users.users.max.name;
-            inherit (config.users.users.max) group;
-            path = "/home/max/.ssh/id_maxkey";
-            mode = "0600";
-          };
           "waka_config" = {
             owner = config.users.users.max.name;
             inherit (config.users.users.max) group;

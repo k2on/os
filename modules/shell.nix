@@ -20,6 +20,8 @@
           nix-inspect
 
           age-plugin-yubikey
+          # `ark id`: fido2-token finds the YubiKey; ssh-keygen (the system's) talks to it.
+          libfido2
           opentofu
         ];
       };

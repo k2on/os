@@ -4,7 +4,10 @@
     { lib, ... }:
     let
       publicGitEmail = "22125083+k2on@users.noreply.github.com";
-      publicKey = "/home/max/.ssh/id_maxkey.pub";
+      # Your keys, one per line (`ark id` adds them); signing is with the one on
+      # this machine, which `ark id` keeps at OpenSSH's place for it.
+      keys = lib.filter (l: l != "") (lib.splitString "\n" (lib.fileContents ../../../keys/max.pub));
+      publicKey = "/home/max/.ssh/id_ed25519_sk.pub";
     in
     {
       programs.git = {
@@ -28,8 +31,8 @@
         };
       };
 
-      home.file.".ssh/allowed_signers".text = ''
-        ${publicGitEmail} ${lib.fileContents ./id_maxkey.pub}
-      '';
+      home.file.".ssh/allowed_signers".text = lib.concatMapStrings (
+        key: "${publicGitEmail} ${key}\n"
+      ) keys;
     };
 }

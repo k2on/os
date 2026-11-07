@@ -20,13 +20,9 @@
           };
           "github.com" = {
             User = "git";
-            IdentityFile = "~/.ssh/id_maxkey";
+            IdentityFile = "~/.ssh/id_ed25519_sk";
           };
         };
-      };
-
-      home.file = {
-        ".ssh/id_maxkey.pub".source = ./id_maxkey.pub;
       };
     };
 }
