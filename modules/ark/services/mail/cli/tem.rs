@@ -31,6 +31,25 @@ pub fn domain_ids(ctx: &Ctx, output: &str) -> Result<BTreeMap<String, String>> {
     Ok(ids.into_iter().map(|(name, id)| (name, id.rsplit('/').next().unwrap_or(&id).to_string())).collect())
 }
 
+/// The SMTP login `ark push` made, from the sensitive output `output`: tofu
+/// prints a sensitive value when it is asked for by name.
+pub fn relay_login(ctx: &Ctx, output: &str) -> Result<(String, String)> {
+    #[derive(Deserialize)]
+    struct Login {
+        username: String,
+        password: String,
+    }
+    let out = util::run(
+        Command::new("nix")
+            .args(["run", "--inputs-from", ".", "nixpkgs#opentofu", "--", "-chdir=infra", "output", "-json", output])
+            .current_dir(&ctx.root),
+        &format!("tofu output {output}"),
+    )
+    .with_context(|| format!("no `{output}` in the infra state yet: run `ark push` first"))?;
+    let login: Login = serde_json::from_str(&out).with_context(|| format!("reading tofu output {output}"))?;
+    Ok((login.username, login.password))
+}
+
 /// The domain, as `scw tem domain get` has it.
 #[derive(Deserialize)]
 pub struct Domain {

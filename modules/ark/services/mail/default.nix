@@ -20,9 +20,11 @@
 # does all of it, in one apply: subscribes the project to TEM's Essential
 # plan (a free monthly allowance, then pay per mail), sets TEM up for the
 # domain with its DNS records (DKIM, SPF, DMARC) and an IAM application
-# whose API key may only send mail, and writes that key onto the vps as
-# Stalwart's SMTP login (in /var/lib/mail-relay, not sops: see
-# mail_tem_login below). Scaleway checks the records by itself; `ark
+# whose API key may only send mail, and puts that key in its output
+# mail_relay_login; `ark service mail relay` copies it into sops
+# (secrets/vars/mail_relay.yaml) as Stalwart's SMTP login, which comin then
+# deploys. Until it is there, Stalwart reads the files the vps had before
+# (/var/lib/mail-relay). Scaleway checks the records by itself; `ark
 # service mail status` (./cli) asks it to now if they have not passed yet,
 # and says how much it sent. The Scaleway keys `ark push` uses are infra
 # secrets (SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_ORGANIZATION_ID,
@@ -74,6 +76,9 @@ let
   # Where terraform writes Stalwart's login to TEM on the vps (below).
   relayDir = "/var/lib/mail-relay";
   domainsOutput = "mail_tem_domains";
+  # The SMTP login TEM gives Stalwart, from the infra state into sops.
+  relayOutput = "mail_relay_login";
+  relaySecret = part: "mail_relay_${part}";
 
   # Aliases: Bitwarden's endpoint (public, through nginx), the internal one
   # (the tailnet: pass-vaults on adam, `ark service mail`), and the key the
@@ -101,7 +106,7 @@ in
 
   # For `ark service mail` (./cli).
   config.flake.arkServiceConfig.mail = {
-    inherit region domainsOutput;
+    inherit region domainsOutput relayOutput;
     inherit (config.ark.mail) aliases;
   };
 
@@ -163,6 +168,16 @@ in
           generate = true;
           owner = "stalwart";
           restartUnits = [ "mail-aliases.service" ];
+        }
+      )
+      # Stalwart's SMTP login at TEM, filled in by `ark service mail relay`.
+      // lib.genAttrs' [ "username" "password" ] (
+        part:
+        lib.nameValuePair (relaySecret part) {
+          file = "mail_relay";
+          optional = true;
+          owner = "stalwart";
+          restartUnits = [ "stalwart.service" ];
         }
       )
       # The internal API's key, shared with pass-vaults (services/pass).
@@ -276,16 +291,20 @@ in
             certFile = "${certDir}/fullchain.pem";
             keyFile = "${certDir}/key.pem";
             spamFilter = "file://${config.services.stalwart.package.spam-filter}/spam-filter.toml";
-            # The login is written by terraform right after each deploy that
-            # needs it (below); until then Stalwart logs that the files are
-            # missing and the relay refuses it, which only matters for mail
-            # sent in those seconds.
-            relay = {
-              address = temSmtp;
-              port = 2465;
-              usernameFile = "${relayDir}/username";
-              passwordFile = "${relayDir}/password";
-            };
+            # The login from sops once `ark service mail relay` has put it
+            # there; until then the files terraform wrote onto the vps.
+            relay =
+              let
+                fromSops = config.sops.secrets ? ${relaySecret "password"};
+                file =
+                  part: if fromSops then config.sops.secrets.${relaySecret part}.path else "${relayDir}/${part}";
+              in
+              {
+                address = temSmtp;
+                port = 2465;
+                usernameFile = file "username";
+                passwordFile = file "password";
+              };
           };
         };
 
@@ -506,42 +525,19 @@ in
           # Scaleway gives a key a year (this one: until 2027-10-31), and an
           # expiry cannot be removed, only the key replaced: so the expiry is
           # left as Scaleway set it. Mail stops relaying when it passes; replace
-          # the key before then (tofu -chdir=infra apply -replace=scaleway_iam_api_key.mail).
+          # the key before then (tofu -chdir=infra apply -replace=scaleway_iam_api_key.mail),
+          # then `ark service mail relay` to give Stalwart the new one.
           lifecycle.ignore_changes = [ "expires_at" ];
         };
-        # The login, onto the vps over root's ssh, in the same apply that
-        # makes the key. SMTP wants the project's id and the key's secret.
-        # Written again whenever the key or the server is replaced. A reinstall
-        # by hand (nixos-anywhere) wipes /var/lib without replacing either:
-        # then `tofu -chdir=infra apply -replace=terraform_data.mail_tem_login`.
-        resource.terraform_data.mail_tem_login = {
-          triggers_replace = [
-            "\${scaleway_iam_api_key.mail.id}"
-            (ark.vps.id host)
-          ];
-          # The system ssh, as nixos-anywhere uses it (keys from ~/.ssh as
-          # well as the agent, and no known_hosts: a reinstall changes the
-          # host key), not terraform's own, which knows only the agent. The
-          # login goes over stdin, never on a command line.
-          provisioner.local-exec = {
-            environment = {
-              HOST = ark.vps.ip host;
-              TEM_USERNAME = "\${${temDomain domain}.smtps_auth_user}";
-              TEM_PASSWORD = "\${scaleway_iam_api_key.mail.secret_key}";
-              WRITE_LOGIN = lib.concatStringsSep "; " [
-                "set -e"
-                "install -d -m 0700 -o stalwart -g stalwart ${relayDir}"
-                "umask 077"
-                "IFS= read -r user; IFS= read -r password"
-                "printf %s \"$user\" > ${relayDir}/username"
-                "printf %s \"$password\" > ${relayDir}/password"
-                "chown stalwart:stalwart ${relayDir}/username ${relayDir}/password"
-                "chmod 0400 ${relayDir}/username ${relayDir}/password"
-                "systemctl try-restart stalwart.service"
-              ];
-            };
-            command = ''printf '%s\n%s\n' "$TEM_USERNAME" "$TEM_PASSWORD" | ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 "root@$HOST" "$WRITE_LOGIN"'';
+        # Stalwart's SMTP login: the project's id and the key's secret, for
+        # `ark service mail relay` to copy into sops. Sensitive: tofu shows it
+        # only when asked for it by name.
+        output.${relayOutput} = {
+          value = {
+            username = "\${${temDomain domain}.smtps_auth_user}";
+            password = "\${scaleway_iam_api_key.mail.secret_key}";
           };
+          sensitive = true;
         };
         # For `ark service mail status`: each domain's TEM id.
         output.${domainsOutput}.value = lib.genAttrs domains (d: "\${${temDomain d}.id}");

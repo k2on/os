@@ -34,6 +34,15 @@ fn command() -> Clap {
         .subcommand(
             Clap::new("status").about("Where TEM stands, for each domain: its checks, its reputation, what it sent"),
         )
+        .subcommand(
+            Clap::new("relay")
+                .about("Copy Stalwart's SMTP login at TEM from the infra state into sops")
+                .long_about(
+                    "Copy Stalwart's SMTP login at TEM (the key `ark push` made) from the infra state into \
+                     secrets/vars/mail_relay.yaml, encrypted to the mail host, which comin then deploys. \
+                     After the first `ark push`, and whenever the key is replaced.",
+                ),
+        )
         .subcommand(Clap::new("aliases").about("Every alias: where it goes, who made it, for which site, whether it is on"))
         .subcommand(
             Clap::new("alias")
@@ -59,6 +68,7 @@ fn command() -> Clap {
 struct Config {
     region: String,
     domains_output: String,
+    relay_output: String,
     aliases: aliases::Config,
 }
 
@@ -70,6 +80,7 @@ fn run(ctx: &Ctx, m: &ArgMatches) -> Result<()> {
     let config = config(ctx)?;
     match m.subcommand() {
         Some(("status", _)) => status(ctx, &config),
+        Some(("relay", _)) => relay(ctx, &config),
         Some(("aliases", _)) => aliases::list(ctx, &config.aliases),
         Some(("alias", m)) => aliases::set(
             ctx,
@@ -108,5 +119,17 @@ fn status(ctx: &Ctx, config: &Config) -> Result<()> {
         let s = &domain.statistics;
         println!("  sent:       {} of {} ({} failed)", s.sent_count, s.total_count, s.failed_count);
     }
+    Ok(())
+}
+
+/// The SMTP login from the infra state into sops, both halves in one file.
+fn relay(ctx: &Ctx, config: &Config) -> Result<()> {
+    let (username, password) = tem::relay_login(ctx, &config.relay_output)?;
+    let values = [("mail_relay_username", username), ("mail_relay_password", password)]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    Manifest::load(ctx)?.store(ctx, "mail_relay", &values)?;
+    println!("secrets/vars/mail_relay.yaml: written and staged. Commit the secrets repo, then this one, and push.");
     Ok(())
 }
