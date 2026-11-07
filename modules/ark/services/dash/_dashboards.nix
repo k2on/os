@@ -25,6 +25,9 @@ let
       thresholds ? null,
       mappings ? [ ],
       options ? { },
+      # Per-column settings (a table's), and how to reshape the results.
+      overrides ? [ ],
+      transformations ? [ ],
     }:
     {
       inherit title type datasource;
@@ -37,22 +40,21 @@ let
         format = if type == "table" then "table" else "time_series";
       }) exprs;
       fieldConfig = {
-        defaults =
-          {
-            inherit mappings;
-          }
-          // lib.optionalAttrs (unit != null) { inherit unit; }
-          // lib.optionalAttrs (min != null) { inherit min; }
-          // lib.optionalAttrs (max != null) { inherit max; }
-          // lib.optionalAttrs (thresholds != null) {
-            thresholds = {
-              mode = "absolute";
-              steps = map (s: { inherit (s) color value; }) thresholds;
-            };
+        defaults = {
+          inherit mappings;
+        }
+        // lib.optionalAttrs (unit != null) { inherit unit; }
+        // lib.optionalAttrs (min != null) { inherit min; }
+        // lib.optionalAttrs (max != null) { inherit max; }
+        // lib.optionalAttrs (thresholds != null) {
+          thresholds = {
+            mode = "absolute";
+            steps = map (s: { inherit (s) color value; }) thresholds;
           };
-        overrides = [ ];
+        };
+        inherit overrides;
       };
-      inherit options;
+      inherit options transformations;
     };
 
   # Panels left to right, wrapping at 24 columns; ids in order.
@@ -75,7 +77,9 @@ let
               p
               // {
                 id = lib.length acc.out + 1;
-                gridPos = p.gridPos // { inherit x y; };
+                gridPos = p.gridPos // {
+                  inherit x y;
+                };
               }
             )
           ];
@@ -147,7 +151,17 @@ let
     graphMode = "none";
     textMode = "value_and_name";
   };
-  disks = ''fstype!~"tmpfs|ramfs|squashfs|overlay|vfat"'';
+  # Real disks: not memory, not /boot, and not /nix/store, which NixOS mounts
+  # as a read-only view of the root filesystem (so it would count it twice).
+  # Settings for one column of a table, by its name.
+  column = name: properties: {
+    matcher = {
+      id = "byName";
+      options = name;
+    };
+    inherit properties;
+  };
+  disks = ''fstype!~"tmpfs|ramfs|squashfs|overlay|vfat",mountpoint!="/nix/store"'';
 in
 {
   # Every host at a glance: is it up, did its last deploy work, which commit
@@ -253,38 +267,117 @@ in
         };
         w = 12;
       })
+      # One row per disk: how full (a bar), how much is left, how big.
       (panel {
         title = "Disks";
-        type = "bargauge";
+        type = "table";
         instant = true;
         exprs = [
+          { expr = "1 - node_filesystem_avail_bytes{${disks}} / node_filesystem_size_bytes{${disks}}"; }
+          { expr = "node_filesystem_avail_bytes{${disks}}"; }
+          { expr = "node_filesystem_size_bytes{${disks}}"; }
+        ];
+        transformations = [
           {
-            expr = "1 - node_filesystem_avail_bytes{${disks}} / node_filesystem_size_bytes{${disks}}";
-            legend = "{{host}} {{mountpoint}}";
+            id = "merge";
+            options = { };
+          }
+          {
+            id = "organize";
+            options = {
+              excludeByName = lib.genAttrs [
+                "Time"
+                "__name__"
+                "always_on"
+                "device"
+                "fstype"
+                "instance"
+                "job"
+              ] (_: true);
+              renameByName = {
+                host = "Host";
+                mountpoint = "Mount";
+              };
+              indexByName = {
+                host = 0;
+                mountpoint = 1;
+                "Value #A" = 2;
+                "Value #B" = 3;
+                "Value #C" = 4;
+              };
+            };
           }
         ];
-        unit = "percentunit";
-        min = 0;
-        max = 1;
-        thresholds = [
-          {
-            color = "green";
-            value = null;
-          }
-          {
-            color = "orange";
-            value = 0.75;
-          }
-          {
-            color = "red";
-            value = 0.85;
-          }
+        overrides = [
+          (column "Value #A" [
+            {
+              id = "displayName";
+              value = "Used";
+            }
+            {
+              id = "unit";
+              value = "percentunit";
+            }
+            {
+              id = "min";
+              value = 0;
+            }
+            {
+              id = "max";
+              value = 1;
+            }
+            {
+              id = "custom.cellOptions";
+              value = {
+                type = "gauge";
+                mode = "basic";
+              };
+            }
+            {
+              id = "thresholds";
+              value = {
+                mode = "absolute";
+                steps = [
+                  {
+                    color = "green";
+                    value = null;
+                  }
+                  {
+                    color = "orange";
+                    value = 0.75;
+                  }
+                  {
+                    color = "red";
+                    value = 0.85;
+                  }
+                ];
+              };
+            }
+          ])
+          (column "Value #B" [
+            {
+              id = "displayName";
+              value = "Free";
+            }
+            {
+              id = "unit";
+              value = "bytes";
+            }
+          ])
+          (column "Value #C" [
+            {
+              id = "displayName";
+              value = "Size";
+            }
+            {
+              id = "unit";
+              value = "bytes";
+            }
+          ])
         ];
-        options = {
-          orientation = "horizontal";
-          displayMode = "basic";
-        };
+        options.sortBy = [ { displayName = "Host"; } ];
         w = 24;
+        h = 9;
       })
     ];
   };
