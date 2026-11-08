@@ -31,7 +31,8 @@
         {
           alert = "DiskFilling";
           # Not /nix/store: NixOS mounts it as a view of the root filesystem.
-          expr = ''1 - node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|squashfs|overlay|vfat",mountpoint!="/nix/store"} / node_filesystem_size_bytes > 0.85'';
+          # Only hosts that are always on: a laptop's disk is its own business.
+          expr = ''1 - node_filesystem_avail_bytes{always_on="true",fstype!~"tmpfs|ramfs|squashfs|overlay|vfat",mountpoint!="/nix/store"} / node_filesystem_size_bytes > 0.85'';
           for = "30m";
           labels.severity = "warning";
           annotations.summary = "{{ $labels.host }}: {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full";
