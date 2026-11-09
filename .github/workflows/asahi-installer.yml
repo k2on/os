@@ -1,0 +1,62 @@
+# Builds cale's installer ISO (modules/host/cale/installer.nix) natively on
+# GitHub's arm64 runner and uploads it as the run's artifact.
+#
+# Nothing it builds is secret: it checks out without the secrets submodule,
+# and the flake leaves secrets/ out when it is not there.
+name: asahi-installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - flake.lock
+      - modules/host/cale/installer.nix
+      - .github/workflows/asahi-installer.yml
+  pull_request:
+    paths:
+      - flake.lock
+      - modules/host/cale/installer.nix
+      - .github/workflows/asahi-installer.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asahi-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    # The Asahi kernel and ZFS's kernel module are not in cache.nixos.org,
+    # so both build from source.
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            max-jobs = auto
+            cores = 0
+
+      - name: Build ISO
+        run: |
+          nix build -L .#packages.aarch64-linux.asahi-installer
+          mkdir out
+          cp result/iso/*.iso out/
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asahi-installer
+          path: out/*.iso
+          compression-level: 0
+          retention-days: 30
