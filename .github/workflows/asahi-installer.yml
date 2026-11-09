@@ -29,8 +29,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
-    # The Asahi kernel and ZFS's kernel module are not in cache.nixos.org,
-    # so both build from source.
+    # The Asahi kernel and ZFS's kernel module are not in cache.nixos.org;
+    # without a hit in k2on.cachix.org both build from source.
     timeout-minutes: 360
     steps:
       - name: Free disk space
@@ -46,6 +46,17 @@ jobs:
             experimental-features = nix-command flakes
             max-jobs = auto
             cores = 0
+
+      # Pulls from and pushes to k2on.cachix.org, so the Asahi kernel and
+      # ZFS's module build once per flake.lock bump rather than every run.
+      # Pushing needs the CACHIX_AUTH_TOKEN repo secret; without it (as on a
+      # fork's pull request) the cache is only read. The ISO and its squashfs
+      # are left out: they change with any edit and would fill the cache.
+      - uses: cachix/cachix-action@v16
+        with:
+          name: k2on
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          pushFilter: '(\.iso$|squashfs\.img$|-source$)'
 
       - name: Build ISO
         run: |
