@@ -1,8 +1,11 @@
-# An installer ISO for cale: nixos-apple-silicon's installer with ZFS turned
-# back on (it leaves ZFS out, since it does not always build against the
-# Asahi kernel), plus disko and nixos-facter for installing cale onto LUKS +
-# ZFS. Built on the same nixpkgs as cale, so the installer's ZFS matches the
-# one cale boots with.
+# A generic installer ISO for any Apple Silicon Mac: nixos-apple-silicon's
+# installer with ZFS turned back on (it leaves ZFS out, since it does not
+# always build against the Asahi kernel), plus disko and nixos-facter. It
+# holds nothing host-specific: boot it, then install a host's own profile
+# from this flake, e.g.
+#   disko --mode format,mount --flake '.?submodules=1#cale'
+#   nixos-install --flake '.?submodules=1#cale'
+# Built on this flake's nixpkgs, so its ZFS matches the hosts it installs.
 #
 # .github/workflows/asahi-installer.yml builds it; the ISO is that run's
 # artifact. By hand, on an aarch64-linux machine:

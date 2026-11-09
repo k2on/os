@@ -1,5 +1,5 @@
-# Builds cale's installer ISO (modules/host/cale/installer.nix) natively on
-# GitHub's arm64 runner and uploads it as the run's artifact.
+# Builds the generic Apple Silicon installer ISO (modules/installer/asahi.nix)
+# natively on GitHub's arm64 runner and uploads it as the run's artifact.
 #
 # Nothing it builds is secret: it checks out without the secrets submodule,
 # and the flake leaves secrets/ out when it is not there.
@@ -11,12 +11,12 @@ on:
     branches: [main]
     paths:
       - flake.lock
-      - modules/host/cale/installer.nix
+      - modules/installer/asahi.nix
       - .github/workflows/asahi-installer.yml
   pull_request:
     paths:
       - flake.lock
-      - modules/host/cale/installer.nix
+      - modules/installer/asahi.nix
       - .github/workflows/asahi-installer.yml
 
 permissions:
