@@ -23,7 +23,7 @@ let
   resolvers = map (h: h.name) (
     lib.filter (h: h.dnsResolver) (lib.concatMap lib.attrValues (lib.attrValues config.den.hosts))
   );
-  handOutResolvers = false;
+  handOutResolvers = true;
   tailnetUser = "ark";
 
   # Public names the vps fronts for ark (lib/public.nix): TLS is passed

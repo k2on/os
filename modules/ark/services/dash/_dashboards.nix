@@ -452,7 +452,7 @@ in
     ];
     panels = [
       (sqlPanel {
-        title = "Gambling and porn";
+        title = "Restricted";
         w = 24;
         sql = ''
           SELECT request_ts AS "Time", client_name AS "Device", question_name AS "Site", reason AS "Blocked as"
