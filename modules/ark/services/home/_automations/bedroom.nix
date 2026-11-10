@@ -1,6 +1,12 @@
 # The bedroom: the left panel and the right one, each its side's lamp
 # (panel.nix; the right one flipped), and the morning alarm.
 { d, l }:
+let
+  wakeLamps = [
+    d.lamps.left
+    d.lamps.right
+  ];
+in
 l.panel {
   remote = d.remotes.leftPanel;
   toggle = {
@@ -34,7 +40,7 @@ l.panel {
   {
     id = "1780285441878";
     alias = "Wake Up";
-    description = "At the alarm's time (input_datetime.alarm): the bedroom's lights up over five minutes, and calm radio";
+    description = "At the alarm's time (input_datetime.alarm): the bedroom's lamps up over five minutes, and calm radio";
     triggers = [
       {
         trigger = "time";
@@ -42,9 +48,20 @@ l.panel {
       }
     ];
     actions = [
+      # The alarm's own brightness and colour, not Adaptive Lighting's: the
+      # lamps under manual control first, so it leaves the call alone (as
+      # it rewrote it, it failed). Adaptive again once they're turned off.
+      {
+        action = "adaptive_lighting.set_manual_control";
+        data = {
+          entity_id = d.adaptiveLighting.bedroom;
+          lights = wakeLamps;
+          manual_control = true;
+        };
+      }
       {
         action = "light.turn_on";
-        target.area_id = "bedroom";
+        target.entity_id = wakeLamps;
         data = {
           brightness_pct = 100;
           color_temp_kelvin = 2577;
@@ -60,8 +77,8 @@ l.panel {
         action = "media_player.play_media";
         target.entity_id = d.speakers.bedroom;
         data = {
-          # Calm Radio - Solo Piano & Guitar, through Radio Browser.
-          media_content_id = "media-source://radio_browser/cd150a3d-7ffc-4747-827b-158358d41ebe";
+          # Calm Radio - Solo Piano, through Radio Browser.
+          media_content_id = "media-source://radio_browser/963b8a47-0601-11e8-ae97-52543be04c81";
           media_content_type = "audio/mpeg";
         };
       }
