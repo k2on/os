@@ -463,6 +463,35 @@ in
         '';
       })
       (sqlPanel {
+        title = "Log size";
+        type = "stat";
+        w = 6;
+        h = 5;
+        unit = "bytes";
+        sql = ''
+          SELECT pg_total_relation_size('log_entries') AS "On disk"
+        '';
+      })
+      (sqlPanel {
+        title = "Entries";
+        type = "stat";
+        w = 6;
+        h = 5;
+        sql = ''
+          SELECT count(*) AS "Lookups kept" FROM log_entries
+        '';
+      })
+      (sqlPanel {
+        title = "Oldest kept";
+        type = "stat";
+        w = 12;
+        h = 5;
+        unit = "dateTimeFromNow";
+        sql = ''
+          SELECT extract(epoch FROM min(request_ts)) * 1000 AS "Oldest" FROM log_entries
+        '';
+      })
+      (sqlPanel {
         title = "Lookups per device";
         type = "timeseries";
         sql = ''

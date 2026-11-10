@@ -108,6 +108,9 @@ in
                 # systemd's credentials (Blocky runs as a dynamic user).
                 target = "file:/run/credentials/blocky.service/log";
                 logRetentionDays = 30;
+                # Not the special-use names (reverse lookups, .local, ...), which
+                # devices ask for often and which say nothing about where they go.
+                ignore.sudn = true;
               };
             };
 
