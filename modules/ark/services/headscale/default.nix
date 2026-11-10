@@ -17,6 +17,13 @@
 let
   ark = config.ark;
   preauthKey = "headscale_preauth_key";
+  # The hosts that answer the tailnet's DNS (aspects/dns.nix), by name, and
+  # whether every device is sent to them: off until they have been seen to
+  # answer (dig @<address> <name>).
+  resolvers = map (h: h.name) (
+    lib.filter (h: h.dnsResolver) (lib.concatMap lib.attrValues (lib.attrValues config.den.hosts))
+  );
+  handOutResolvers = false;
   tailnetUser = "ark";
 
   # Public names the vps fronts for ark (lib/public.nix): TLS is passed
@@ -126,6 +133,41 @@ in
               sqlite3 "$db" "insert into pre_auth_keys (key, user_id, reusable, ephemeral, used, created_at) values ('$key', $uid, 1, 0, 0, datetime('now'))"
             fi
           '';
+        };
+
+        # Every device's DNS: the resolvers (aspects/dns.nix), at the addresses
+        # headscale gave them, which only its database knows. So its config is
+        # written when it starts: Nix's, with those addresses as every device's
+        # nameservers, and devices made to use them (override_local_dns) only
+        # when there are some (a fresh tailnet has none yet). A resolver that
+        # joins again with a new address is picked up at the next start.
+        systemd.services.headscale = {
+          # The module's own start, with that config (its configFile is fixed
+          # at build time). sqlite, so nothing else from its script is needed.
+          script = lib.mkForce "exec ${lib.getExe config.services.headscale.package} serve --config /run/headscale/config.yaml";
+          path = [
+            pkgs.sqlite
+            pkgs.jq
+            pkgs.yq-go
+          ];
+          preStart =
+            let
+              base = (pkgs.formats.yaml { }).generate "headscale-base.yaml" config.services.headscale.settings;
+              names = lib.concatMapStringsSep ", " (n: "'${n}'") (lib.optionals handOutResolvers resolvers);
+            in
+            ''
+              db=${config.services.headscale.settings.database.sqlite.path}
+              ips='[]'
+              if [ -n "${names}" ] && [ -s "$db" ]; then
+                ips=$(sqlite3 -readonly "$db" \
+                  "SELECT ipv4 FROM nodes WHERE given_name IN (${names}) AND ipv4 <> ''' ORDER BY given_name;" \
+                  | jq -Rnc '[inputs]')
+              fi
+              IPS="$ips" yq -o yaml \
+                '.dns.nameservers.global = env(IPS) | .dns.override_local_dns = (env(IPS) | length > 0)' \
+                ${base} > /run/headscale/config.yaml
+              echo "dns: $ips"
+            '';
         };
 
         services.headscale = {

@@ -15,6 +15,13 @@
           annotations.summary = "{{ $labels.host }} is not answering";
         }
         {
+          alert = "DnsResolverDown";
+          expr = ''up{job="blocky"} == 0'';
+          for = "5m";
+          labels.severity = "critical";
+          annotations.summary = "The DNS resolver on {{ $labels.host }} is not answering: devices still have the other";
+        }
+        {
           alert = "DeployFailing";
           expr = ''max by (host) ({__name__=~"comin_last_(fetch|eval|build|deployment)_failed"}) == 1'';
           for = "15m";

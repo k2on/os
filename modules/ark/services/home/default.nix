@@ -20,6 +20,7 @@ in
     nixos =
       {
         pkgs,
+        lib,
         service,
         config,
         ...
@@ -35,11 +36,15 @@ in
 
         virtualisation.oci-containers =
           let
+            devices = import ./_automations/devices.nix;
+            automations = import ./_automations { inherit pkgs lib; };
+            lamps = names: lib.concatMapStrings (n: "\n      - ${n}") names;
             hass_config = pkgs.writeText "configuration.yaml" ''
               # Discovery
               default_config:
 
-              automation: !include automations.yaml
+              # Declared in ./_automations, mounted read-only.
+              automation: !include_dir_merge_list automations
 
               # The package room's code (./_luxer.nix) as an image, the
               # home screen's badge: tapped, the QR code to scan. Read again
@@ -81,17 +86,18 @@ in
               # turned back on a lamp just turned off. A lamp added to a
               # room is added here too.
               # The YAML is re-imported on every start and overrides the UI.
+              # The lamps are ./_automations/devices.nix's.
               adaptive_lighting:
                 - name: Living room
-                  lights:
-                    - light.fan_1 # Left
-                    - light.fan_3 # Right
-                    - light.stairs # Lamp
+                  lights:${lamps devices.lamps.livingRoom}
                 - name: Bedroom
-                  lights:
-                    - light.fan_2 # Max
-                    - light.bathroom_1 # Heather
-                    - light.kitchen # Mirror
+                  lights:${
+                    lamps [
+                      devices.lamps.left
+                      devices.lamps.right
+                      devices.lamps.mirror
+                    ]
+                  }
             '';
           in
           {
@@ -101,6 +107,7 @@ in
                 "home-assistant:/config"
                 # "/data/docker/hass:/config"
                 "${hass_config}:/config/configuration.yaml"
+                "${automations}:/config/automations:ro"
                 "${config.sops.templates."hass-secrets.yaml".path}:/config/secrets.yaml"
                 "${pkgs.home-assistant-custom-components.auth_oidc}/custom_components/auth_oidc:/config/custom_components/auth_oidc:ro"
                 "${pkgs.home-assistant-custom-components.adaptive_lighting}/custom_components/adaptive_lighting:/config/custom_components/adaptive_lighting:ro"

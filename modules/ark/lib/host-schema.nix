@@ -37,6 +37,11 @@ let
         default = true;
         description = "Whether the host is meant to be up all the time: monitoring (services/dash) alerts when one is down. false for a laptop.";
       };
+      options.dnsResolver = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Whether the host answers the tailnet's DNS (aspects/dns.nix). Headscale finds its address in its own database (services/headscale).";
+      };
     };
 
   # How root is reached when Kanidm logins cannot be (aspects/login.nix).

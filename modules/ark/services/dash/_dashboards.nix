@@ -57,6 +57,44 @@ let
       inherit options transformations;
     };
 
+  # A panel that asks the DNS log (PostgreSQL, aspects/dns.nix) in SQL.
+  sqlPanel =
+    {
+      title,
+      sql,
+      type ? "table",
+      w ? 12,
+      h ? 10,
+      unit ? null,
+      options ? { },
+    }:
+    let
+      source = {
+        type = "grafana-postgresql-datasource";
+        uid = "dns";
+      };
+    in
+    {
+      inherit title type options;
+      datasource = source;
+      gridPos = { inherit w h; };
+      targets = [
+        {
+          refId = "A";
+          datasource = source;
+          editorMode = "code";
+          rawQuery = true;
+          rawSql = sql;
+          format = if type == "table" then "table" else "time_series";
+        }
+      ];
+      fieldConfig = {
+        defaults = lib.optionalAttrs (unit != null) { inherit unit; };
+        overrides = [ ];
+      };
+      transformations = [ ];
+    };
+
   # Panels left to right, wrapping at 24 columns; ids in order.
   grid =
     panels:
@@ -378,6 +416,88 @@ in
         options.sortBy = [ { displayName = "Host"; } ];
         w = 24;
         h = 9;
+      })
+    ];
+  };
+
+  # The DNS log: what each device looked up (aspects/dns.nix). Device names
+  # are tailnet names (cale.net.<domain>, phone.heather.net.<domain>).
+  dns = dashboard {
+    uid = "dns";
+    title = "DNS";
+    variables = [
+      {
+        name = "device";
+        label = "Device";
+        type = "query";
+        datasource = {
+          type = "grafana-postgresql-datasource";
+          uid = "dns";
+        };
+        query = "SELECT DISTINCT client_name FROM log_entries WHERE request_ts > now() - interval '30 days' ORDER BY 1";
+        refresh = 2;
+        multi = true;
+        includeAll = true;
+        current = {
+          text = "All";
+          value = "$__all";
+        };
+      }
+      {
+        name = "site";
+        label = "Site contains";
+        type = "textbox";
+        query = "";
+      }
+    ];
+    panels = [
+      (sqlPanel {
+        title = "Gambling and porn";
+        w = 24;
+        sql = ''
+          SELECT request_ts AS "Time", client_name AS "Device", question_name AS "Site", reason AS "Blocked as"
+          FROM log_entries
+          WHERE $__timeFilter(request_ts) AND reason ~ 'BLOCKED \((.*[ ,])?(gambling|porn)\M'
+          ORDER BY request_ts DESC
+          LIMIT 500
+        '';
+      })
+      (sqlPanel {
+        title = "Lookups per device";
+        type = "timeseries";
+        sql = ''
+          SELECT $__timeGroupAlias(request_ts, '15m'), client_name AS metric, count(*) AS value
+          FROM log_entries
+          WHERE $__timeFilter(request_ts)
+          GROUP BY 1, 2
+          ORDER BY 1
+        '';
+      })
+      (sqlPanel {
+        title = "Most blocked";
+        sql = ''
+          SELECT question_name AS "Site", reason AS "Blocked as", count(*) AS "Lookups"
+          FROM log_entries
+          WHERE $__timeFilter(request_ts) AND response_type = 'BLOCKED'
+          GROUP BY 1, 2
+          ORDER BY 3 DESC
+          LIMIT 25
+        '';
+      })
+      (sqlPanel {
+        title = "All lookups";
+        w = 24;
+        h = 16;
+        sql = ''
+          SELECT request_ts AS "Time", client_name AS "Device", question_name AS "Site",
+                 question_type AS "Type", response_type AS "Answer", reason AS "Why"
+          FROM log_entries
+          WHERE $__timeFilter(request_ts)
+            AND client_name IN (''${device:sqlstring})
+            AND question_name ILIKE '%' || ''${site:sqlstring} || '%'
+          ORDER BY request_ts DESC
+          LIMIT 1000
+        '';
       })
     ];
   };

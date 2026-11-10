@@ -13,6 +13,7 @@ in
     ${name} = {
       provider = "hetzner";
       color = "#fab387"; # orange
+      dnsResolver = true;
       server-type = "cpx11";
       region = "ash";
     };

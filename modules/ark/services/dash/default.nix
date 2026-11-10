@@ -50,6 +50,12 @@ in
         generate = true;
         owner = "grafana";
       };
+      # The DNS log's password (aspects/dns.nix), to set for its role.
+      dns_log_password_postgres = {
+        key = ark.dnsLog.passwordSecret;
+        owner = "postgres";
+        restartUnits = [ "dns-log-db.service" ];
+      };
       # The sender's password, as Stalwart has it.
       dash_smtp_password = {
         key = ark.mail.senderSecret sender;
@@ -89,6 +95,13 @@ in
             {
               job_name = "comin";
               static_configs = targets 4243;
+            }
+            {
+              job_name = "blocky";
+              static_configs = map (h: {
+                targets = [ "${h.name}.${tailnet}:4000" ];
+                labels.host = h.name;
+              }) (lib.filter (h: h.dnsResolver) hosts);
             }
           ];
           ruleFiles = [ (pkgs.writeText "ark-alerts.json" (builtins.toJSON (import ./_alerts.nix))) ];
@@ -147,6 +160,50 @@ in
               ) ark.persons
             );
 
+        # The DNS log (aspects/dns.nix): every resolver writes its lookups into
+        # this database over the tailnet, as its own role with a password;
+        # Grafana reads them through the local socket as a role that may only
+        # read. Blocky makes its table and deletes rows older than 30 days.
+        services.postgresql = {
+          enableTCPIP = true;
+          ensureDatabases = [ ark.dnsLog.database ];
+          ensureUsers = [
+            {
+              name = ark.dnsLog.user;
+              ensureDBOwnership = true;
+            }
+            { name = "grafana"; }
+          ];
+          authentication = lib.mkAfter ''
+            host ${ark.dnsLog.database} ${ark.dnsLog.user} 100.64.0.0/10 scram-sha-256
+          '';
+        };
+        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 5432 ];
+        systemd.services.dns-log-db = {
+          description = "The DNS log's role password and Grafana's right to read it";
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "postgresql.service" ];
+          after = [
+            "postgresql.service"
+            "postgresql-setup.service"
+          ];
+          path = [ config.services.postgresql.package ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            User = "postgres";
+          };
+          script = ''
+            psql -v ON_ERROR_STOP=1 -d ${ark.dnsLog.database} <<SQL
+            ALTER ROLE ${ark.dnsLog.user} WITH LOGIN PASSWORD '$(cat ${config.sops.secrets.dns_log_password_postgres.path})';
+            GRANT CONNECT ON DATABASE ${ark.dnsLog.database} TO grafana;
+            GRANT USAGE ON SCHEMA public TO grafana;
+            GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana;
+            ALTER DEFAULT PRIVILEGES FOR ROLE ${ark.dnsLog.user} IN SCHEMA public GRANT SELECT ON TABLES TO grafana;
+            SQL
+          '';
+        };
+
         sops.templates."alertmanager.env" = {
           content = "SMTP_PASSWORD=${config.sops.placeholder.dash_smtp_password}\n";
           restartUnits = [ "alertmanager.service" ];
@@ -196,6 +253,20 @@ in
                 uid = "prometheus";
                 url = "http://127.0.0.1:${toString prometheusPort}";
                 isDefault = true;
+                editable = false;
+              }
+              {
+                name = "DNS log";
+                type = "grafana-postgresql-datasource";
+                uid = "dns";
+                # The local socket, as the grafana role: it may only read.
+                url = "/run/postgresql";
+                user = "grafana";
+                jsonData = {
+                  database = ark.dnsLog.database;
+                  sslmode = "disable";
+                  postgresVersion = 1600;
+                };
                 editable = false;
               }
             ];
