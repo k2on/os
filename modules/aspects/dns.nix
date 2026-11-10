@@ -118,6 +118,21 @@ in
               restartUnits = [ "blocky.service" ];
             };
 
+            # The module checks the config while building, with Blocky's own
+            # validator, which also opens the log's `file:` secret: only there
+            # on a running host. So that check is off, and this one validates
+            # the same config without the log.
+            services.blocky.enableConfigCheck = false;
+            system.checks = [
+              (pkgs.runCommand "check-blocky-config" { } ''
+                ${lib.getExe config.services.blocky.package} --config ${
+                  (pkgs.formats.yaml { }).generate "blocky-config-to-check.yaml" (
+                    builtins.removeAttrs config.services.blocky.settings [ "queryLog" ]
+                  )
+                } validate && touch $out
+              '')
+            ];
+
             systemd.services.blocky = {
               serviceConfig = {
                 LoadCredential = lib.mkIf (logHost != null) [ "log:${config.sops.templates."blocky-log".path}" ];
