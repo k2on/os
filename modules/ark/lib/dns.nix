@@ -15,8 +15,19 @@ let
       pd = builtins.filter (d: d.provider == pname) config.ark.domains;
       records = builtins.filter (r: builtins.any (d: d.domain == r.domain) pd) dns_records;
       # The terraform resource name: the record's name, or its `id` where
-      # two records share a name (an MX beside an A at the apex).
-      recordId = r: r.id or (if r.name == "" then "apex" else r.name);
+      # two records share a name (an MX beside an A at the apex). A name a
+      # level down (apple.devices) has its dots made underscores: terraform
+      # names take only letters, digits, underscores and dashes.
+      recordId =
+        r:
+        r.id or (
+          if r.name == "" then
+            "apex"
+          else
+            lib.concatMapStrings (c: if builtins.match "[A-Za-z0-9_-]" c != null then c else "_") (
+              lib.stringToCharacters r.name
+            )
+        );
       ids = map recordId records;
       dup = lib.filter (i: lib.count (j: j == i) ids > 1) (lib.unique ids);
       recordAttrs =
