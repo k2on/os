@@ -145,6 +145,26 @@ in
       '';
     };
 
+    profiles = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.listOf (lib.types.attrsOf lib.types.anything));
+      default = { };
+      example = lib.literalExpression ''
+        {
+          restrictions = [
+            {
+              PayloadType = "com.apple.applicationaccess";
+              blockedAppBundleIDs = [ "com.apple.tips" ];
+            }
+          ];
+        }
+      '';
+      description = ''
+        Profiles every device gets, by name, as lists of payloads (without
+        PayloadUUID/PayloadVersion/PayloadIdentifier, which are added): for
+        settings with no declaration of their own, like restrictions. Public.
+      '';
+    };
+
     apps = lib.mkOption {
       type = lib.types.attrsOf (
         lib.types.submodule {
@@ -414,30 +434,36 @@ in
             s = start: len: lib.substring start len h;
           in
           lib.toUpper "${s 0 8}-${s 8 4}-4${s 13 3}-8${s 17 3}-${s 20 12}";
-        # Each app's payloads as one profile.
+        # Payloads as one profile, under identifier id.
+        mkProfile = id: name: payloads: {
+          content = toPlist {
+            PayloadType = "Configuration";
+            PayloadVersion = 1;
+            PayloadIdentifier = id;
+            PayloadUUID = uuid id;
+            PayloadDisplayName = "${apple.organization}: ${name}";
+            PayloadOrganization = apple.organization;
+            PayloadScope = "System";
+            PayloadContent = lib.imap0 (
+              i: p:
+              {
+                PayloadVersion = 1;
+                PayloadIdentifier = "${id}.${toString i}";
+                PayloadUUID = uuid "${id}.${toString i}";
+              }
+              // p
+            ) payloads;
+          };
+        };
+        # Each app's payloads as one profile, and ark.devices.apple.profiles.
         appProfiles = lib.mapAttrs' (
-          name: app:
-          lib.nameValuePair (profileId name) {
-            content = toPlist {
-              PayloadType = "Configuration";
-              PayloadVersion = 1;
-              PayloadIdentifier = profileId name;
-              PayloadUUID = uuid (profileId name);
-              PayloadDisplayName = "${apple.organization}: ${name}";
-              PayloadOrganization = apple.organization;
-              PayloadScope = "System";
-              PayloadContent = lib.imap0 (
-                i: p:
-                {
-                  PayloadVersion = 1;
-                  PayloadIdentifier = "${profileId name}.${toString i}";
-                  PayloadUUID = uuid "${profileId name}.${toString i}";
-                }
-                // p
-              ) app.payloads;
-            };
-          }
+          name: app: lib.nameValuePair (profileId name) (mkProfile (profileId name) name app.payloads)
         ) (lib.filterAttrs (_: app: app.payloads != [ ]) apps);
+        deviceProfiles = lib.mapAttrs' (
+          name: payloads:
+          lib.nameValuePair "${prefix}.profile.${name}" (mkProfile "${prefix}.profile.${name}" name payloads)
+        ) apple.profiles;
+        allProfiles = appProfiles // deviceProfiles;
         appDeclarations = lib.mapAttrs' (
           name: app:
           lib.nameValuePair (appId name) {
@@ -458,7 +484,7 @@ in
             (apple.sets.default or [ ])
             ++ lib.attrNames appDeclarations
             ++ lib.attrNames appConfigs
-            ++ lib.attrNames appProfiles;
+            ++ lib.attrNames allProfiles;
         };
         # A configuration does nothing until an activation names it
         # (Info.NotReferencedByActivation): one per set, naming every
@@ -471,7 +497,7 @@ in
             # Profiles are declared by nanohub (com.apple.configuration.legacy).
             payload.StandardConfigurations = lib.filter (
               id:
-              appProfiles ? ${id}
+              allProfiles ? ${id}
               || allDeclarations ? ${id} && lib.hasPrefix "com.apple.configuration." allDeclarations.${id}.type
             ) ids;
           }
@@ -547,7 +573,7 @@ in
           declarations = allDeclarations // activations;
           sets = lib.mapAttrs (set: ids: ids ++ [ (activationId set) ]) sets;
           dataAssets = appConfigs;
-          profiles = appProfiles;
+          profiles = allProfiles;
           dataAssetsURL = "https://${domain}/assets";
           # Each device's own configs: through nanohub, which checks it is
           # the device, to nginx on loopback (below).
