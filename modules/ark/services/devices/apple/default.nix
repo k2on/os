@@ -149,6 +149,14 @@ in
       type = lib.types.attrsOf (
         lib.types.submodule {
           options = {
+            enable = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = ''
+                false: off every device. Its declarations are deleted, so the
+                device removes the app and the profile that came with it.
+              '';
+            };
             storeId = lib.mkOption {
               type = lib.types.str;
               example = "1470499037";
@@ -214,6 +222,8 @@ in
     # The tailnet, joined as the device's owner with their pre-auth key
     # (services/headscale), named after the device. tailscale.com/kb/1315/mdm-keys
     apps.tailscale = {
+      # Off for now: removed from the phone, to try a clean install.
+      enable = false;
       storeId = "1470499037";
       config =
         device:
@@ -395,7 +405,7 @@ in
         appId = name: "${prefix}.app.${name}";
         configId = name: "${appId name}.config";
         profileId = name: "${appId name}.profile";
-        apps = lib.optionalAttrs hasVpp apple.apps;
+        apps = lib.optionalAttrs hasVpp (lib.filterAttrs (_: app: app.enable) apple.apps);
 
         # A stable UUID per name, so a new profile replaces the old one.
         uuid =
