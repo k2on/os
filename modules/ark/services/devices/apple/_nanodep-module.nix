@@ -288,7 +288,8 @@ in
               ${lib.concatStrings (
                 lib.mapAttrsToList (name: _: ''
                   ${lib.getExe pkgs.openssl} x509 -in "$CREDENTIALS_DIRECTORY/pki-cert-${name}" -out ${kvDir}/cert_staging.${name}
-                  ${lib.getExe pkgs.openssl} pkey -in "$CREDENTIALS_DIRECTORY/pki-key-${name}" -out ${kvDir}/key_staging.${name}
+                  # PKCS#1 ("RSA PRIVATE KEY"): depserver reads no other.
+                  ${lib.getExe pkgs.openssl} pkey -traditional -in "$CREDENTIALS_DIRECTORY/pki-key-${name}" -out ${kvDir}/key_staging.${name}
                 '') withPKI
               )}
               NANODEP_API=$(cat "$CREDENTIALS_DIRECTORY/api-key")
