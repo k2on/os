@@ -46,6 +46,7 @@
         "com.apple.GenerativePlaygroundApp" # Image Playground
         "com.apple.Health" # Health
         "com.apple.Music" # Music
+        "com.apple.news" # News
       ];
     }
   ];
