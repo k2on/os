@@ -31,8 +31,21 @@
       PayloadDisplayName = "Restrictions";
       # Apple's own apps that can't be deleted are hidden instead
       # (supervised only): gone from the home screen and App Library.
+      # IDs: support.apple.com/guide/deployment/depece748c41 (case matters).
       blockedAppBundleIDs = [
-        "com.apple.tips"
+        "com.apple.tips" # Tips
+        "com.apple.tv" # TV
+        "com.apple.games" # Games
+        "com.apple.MobileStore" # iTunes Store
+        "com.apple.podcasts" # Podcasts
+        "com.apple.Home" # Home
+        "com.apple.iBooks" # Books
+        "com.apple.Fitness" # Fitness
+        "com.apple.Bridge" # Watch
+        "com.apple.journal" # Journal
+        "com.apple.GenerativePlaygroundApp" # Image Playground
+        "com.apple.Health" # Health
+        "com.apple.Music" # Music
       ];
     }
   ];
