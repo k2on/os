@@ -55,35 +55,6 @@ in
   # Black, Lock Screen and Home Screen, kept by the restriction below.
   ark.devices.apple.wallpaper.color = "black";
 
-  # The Home Screen, all of it: the Dock, then the first page. Apps left out
-  # aren't on these pages. Supervised only.
-  ark.devices.apple.profiles.homescreen =
-    let
-      app = id: {
-        Type = "Application";
-        BundleID = id;
-      };
-    in
-    [
-      {
-        PayloadType = "com.apple.homescreenlayout";
-        PayloadDisplayName = "Home Screen";
-        Dock = map app [
-          "com.apple.mobilephone" # Phone
-          "com.apple.MobileSMS" # Messages
-          "org.whispersystems.signal" # Signal
-          "com.apple.camera" # Camera
-        ];
-        Pages = [
-          (map app [
-            "app.alextran.immich" # Immich
-            "com.apple.mobilemail" # Mail
-            "com.google.Maps" # Google Maps (Apple's: com.apple.Maps)
-          ])
-        ];
-      }
-    ];
-
   ark.devices.apple.profiles.restrictions = [
     {
       PayloadType = "com.apple.applicationaccess";
@@ -108,6 +79,8 @@ in
         "com.apple.Health" # Health
         "com.apple.Music" # Music
         "com.apple.news" # News
+        # Apple TV Remote: the app only; the Control Center button stays.
+        "com.apple.TVRemote"
       ];
     }
   ];
