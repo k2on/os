@@ -2,8 +2,33 @@
 # ./default.nix), every device alike. Declarations' schemas:
 # github.com/apple/device-management, declarative/declarations; profile
 # payloads': mdm/profiles there.
-{ ... }:
+{ config, ... }:
+let
+  ark = config.ark;
+in
 {
+  # More apps, licensed in Apple Business (Apps and Books) like Tailscale
+  # (./default.nix). App Store IDs: the number in an app's apps.apple.com
+  # URL, or itunes.apple.com/lookup?id=<id>.
+  ark.devices.apple.apps = {
+    # Opens already pointed at the vault (services/pass); signing in is
+    # still yours. bitwarden.com/help/deploy-clients
+    bitwarden = {
+      storeId = "1137397744";
+      config.baseEnvironmentUrl = "https://${ark.serviceDomain "pass" ark.services.pass}";
+    };
+    # None of these take settings from MDM. Nextcloud's code reads a server
+    # from it, but only in rebranded builds (use_AppConfig, Brand/NCBrand.swift
+    # in nextcloud/ios), not the App Store's: its server is chosen in the app.
+    home-assistant.storeId = "1099568401";
+    immich.storeId = "1613945652";
+    nextcloud.storeId = "1125420102";
+    signal.storeId = "874139669";
+    privacy.storeId = "1040298266"; # Privacy.com
+    google-maps.storeId = "585027354";
+    bible.storeId = "282935706"; # YouVersion, Life.Church
+  };
+
   # Apps' notifications, enforced: they can't be changed on the device. One
   # payload of this type per device, so every app's go in this one list.
   ark.devices.apple.profiles.notifications = [

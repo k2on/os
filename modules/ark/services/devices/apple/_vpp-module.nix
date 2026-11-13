@@ -47,9 +47,13 @@ let
 
       jq -c '.[]' ${assignments} | while read -r a; do
         id=$(jq -r .adamId <<<"$a")
-        event=$(jq -c '{assets: [{adamId, pricingParam: "STDQ"}], serialNumbers}' <<<"$a" \
+        # One app refused (no licenses bought for it, say) doesn't stop the rest.
+        if ! event=$(jq -c '{assets: [{adamId, pricingParam: "STDQ"}], serialNumbers}' <<<"$a" \
           | call -X POST -H 'Content-Type: application/json' --data-binary @- ${api}/assets/associate \
-          | jq -er .eventId)
+          | jq -er .eventId); then
+          echo "$id: not associated (are there licenses for it?)"
+          continue
+        fi
         # Apple does it in the background; it takes seconds.
         for _ in $(seq 60); do
           status=$(call "${api}/status?eventId=$event")
