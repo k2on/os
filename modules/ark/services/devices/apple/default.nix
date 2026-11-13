@@ -58,7 +58,9 @@
 # devices-apple-vpp.yaml`: devices-apple_vpp_token). apple-vpp-sync
 # (./_vpp-module.nix) then gives each device a license, and nanohub's
 # declarations install the app, managed, with its config: a plist at
-# apple.devices.<mainDomain>/assets/<sha256>.plist (dataAssets).
+# apple.devices.<mainDomain>/assets/<sha256>.plist (dataAssets). Installed
+# this way, as required, an app can't be deleted from the device ("required
+# by your organization").
 { lib, config, ... }:
 let
   ark = config.ark;
@@ -203,6 +205,8 @@ in
         "device.model.identifier"
         "device.operating-system.version"
         "device.operating-system.build-version"
+        # Its managed apps as they change: installing, managed, failed.
+        "app.managed.list"
       ];
     };
     sets.default = [ "${prefix}.status" ];
@@ -641,10 +645,12 @@ in
                 port = assetPort;
               }
             ];
-            locations."~ ^/authproxy/assets/([A-Za-z0-9._-]+)$".extraConfig = ''
+            # A named capture: the regex in the `if` resets $1, which made
+            # the path the device's directory, and nginx redirected (301).
+            locations."~ ^/authproxy/assets/(?<asset>[A-Za-z0-9._-]+)$".extraConfig = ''
               if ($http_x_enrollment_id !~ "^[A-Za-z0-9-]+$") { return 403; }
               default_type application/x-plist;
-              alias ${config.services.nanohub.privateDataAssetsDir}/$http_x_enrollment_id/$1;
+              alias ${config.services.nanohub.privateDataAssetsDir}/$http_x_enrollment_id/$asset;
             '';
           };
 

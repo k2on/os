@@ -564,6 +564,17 @@ in
       description = "The data assets' files, to serve at dataAssetsURL.";
     };
 
+    webhookURL = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "http://127.0.0.1:9006/webhook";
+      description = ''
+        Where nanohub POSTs every check-in and command result, as
+        MicroMDM's webhook events (-webhook-url): declarative management
+        status reports among them.
+      '';
+    };
+
     authProxyURL = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -790,6 +801,10 @@ in
                 cfg.storage.backend
                 "-storage-dsn"
                 cfg.storage.dsn
+              ]
+              ++ lib.optionals (cfg.webhookURL != null) [
+                "-webhook-url"
+                cfg.webhookURL
               ]
               ++ lib.optionals (cfg.authProxyURL != null) [
                 "-auth-proxy-url"
