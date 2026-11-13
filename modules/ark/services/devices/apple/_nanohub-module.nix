@@ -151,7 +151,38 @@ let
   };
 
   managesDDM = declarations != { } || cfg.sets != { } || cfg.enrollmentSets != { };
-  needsSync = managesDDM || cfg.pushCertificate != null;
+  needsSync = managesDDM || cfg.pushCertificate != null || cfg.wallpaper != null;
+
+  # The Settings command that sets the wallpaper, with the image in it
+  # (<data> is base64); @UUID@ is the command's, filled in when sent.
+  wallpaperCommand = pkgs.runCommand "nanohub-wallpaper.plist" { } ''
+    cat > $out <<EOF
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+      <key>CommandUUID</key>
+      <string>@UUID@</string>
+      <key>Command</key>
+      <dict>
+        <key>RequestType</key>
+        <string>Settings</string>
+        <key>Settings</key>
+        <array>
+          <dict>
+            <key>Item</key>
+            <string>Wallpaper</string>
+            <key>Where</key>
+            <integer>${toString cfg.wallpaper.where}</integer>
+            <key>Image</key>
+            <data>$(${pkgs.coreutils}/bin/base64 -w0 ${cfg.wallpaper.image})</data>
+          </dict>
+        </array>
+      </dict>
+    </dict>
+    </plist>
+    EOF
+  '';
 
   # A stable UUID per payload, so installing a new profile replaces the old.
   uuid =
@@ -282,6 +313,25 @@ let
             has "$s" <<<"$want" || call -X DELETE "$ddm/enrollment-sets/$id?set=$s"
           done
         done
+
+        ${lib.optionalString (cfg.wallpaper != null) ''
+          # The wallpaper: a command, not a declaration, so sent to every
+          # declared enrollment each time; the same image again changes
+          # nothing, and a new or erased device gets it here.
+          jq -r '.enrollmentSets | keys[]' "$state" | while read -r id; do
+            sed "s/@UUID@/$(cat /proc/sys/kernel/random/uuid)/" ${wallpaperCommand} \
+              | call -X PUT -H 'Content-Type: application/xml' --data-binary @- \
+                  ${api}/api/v1/nanomdm/enqueue/"$id" >/dev/null
+          done
+        ''}
+
+        # The assets, touched: a new token, so devices fetch them again. A
+        # device doesn't retry a URL it once failed on, and a private
+        # asset's URL stays the same when its secrets change; this runs
+        # again when they do (and on refetchTriggers).
+        ${lib.concatMapStrings (id: ''
+          call -X POST "$ddm/declarations/${id}/touch"
+        '') (lib.attrNames assetDeclarations)}
       ''}
     '';
   };
@@ -587,6 +637,45 @@ in
       description = "The data assets' files, to serve at dataAssetsURL.";
     };
 
+    wallpaper = lib.mkOption {
+      type = lib.types.nullOr (
+        lib.types.submodule {
+          options = {
+            image = lib.mkOption {
+              type = lib.types.path;
+              description = "A PNG or JPG.";
+            };
+            where = lib.mkOption {
+              type = lib.types.enum [
+                1
+                2
+                3
+              ];
+              default = 3;
+              description = "1 the Lock Screen, 2 the Home Screen, 3 both.";
+            };
+          };
+        }
+      );
+      default = null;
+      description = ''
+        The wallpaper of every enrollment in enrollmentSets (supervised iOS):
+        a Settings command, sent each time nanohub-sync runs. Pair it with
+        the allowWallpaperModification = false restriction to keep it.
+      '';
+    };
+
+    refetchTriggers = lib.mkOption {
+      type = lib.types.listOf lib.types.unspecified;
+      default = [ ];
+      example = lib.literalExpression ''[ config.services.nginx.virtualHosts."mdm.example.com".locations."/assets/" ]'';
+      description = ''
+        Anything whose change should make devices fetch every data asset
+        again (nanohub-sync touches them): how they are served, say, so a
+        fix there reaches a device that failed to fetch one.
+      '';
+    };
+
     webhookURL = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -876,9 +965,11 @@ in
       description = "Make NanoHUB's push certificate and declarations match the configuration";
       wantedBy = [ "multi-user.target" ];
       requires = [ "nanohub.service" ];
-      after = [ "nanohub.service" ];
-      partOf = [ "nanohub.service" ];
-      restartTriggers = [ sync ];
+      # Restarted with the private assets: their secrets changed, so they
+      # are touched (above).
+      after = [ "nanohub.service" ] ++ lib.optional (privateAssets != { }) "nanohub-assets.service";
+      partOf = [ "nanohub.service" ] ++ lib.optional (privateAssets != { }) "nanohub-assets.service";
+      restartTriggers = [ sync ] ++ cfg.refetchTriggers;
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

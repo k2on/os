@@ -157,6 +157,31 @@ in
       '';
     };
 
+    wallpaper = lib.mkOption {
+      type = lib.types.nullOr (
+        lib.types.submodule {
+          options = {
+            color = lib.mkOption {
+              type = lib.types.str;
+              example = "black";
+              description = "A solid colour, as ImageMagick names it (black, #1e1e2e, ...).";
+            };
+            where = lib.mkOption {
+              type = lib.types.enum [
+                1
+                2
+                3
+              ];
+              default = 3;
+              description = "1 the Lock Screen, 2 the Home Screen, 3 both.";
+            };
+          };
+        }
+      );
+      default = null;
+      description = "Every enrolled device's wallpaper (services.nanohub.wallpaper).";
+    };
+
     profiles = lib.mkOption {
       type = lib.types.attrsOf (lib.types.listOf (lib.types.attrsOf lib.types.anything));
       default = { };
@@ -678,6 +703,19 @@ in
           authProxyURL = "http://127.0.0.1:${toString assetPort}";
           privateDataAssetsURL = "https://${domain}/authproxy/assets";
           privateDataAssetsGroup = "nginx";
+          # How the assets are served (below): a fix there makes devices
+          # fetch them again.
+          # A solid colour, made at build time: an iPhone screen's size.
+          wallpaper = lib.mkIf (apple.wallpaper != null) {
+            image = pkgs.runCommand "wallpaper.png" { nativeBuildInputs = [ pkgs.imagemagick ]; } ''
+              magick -size 1290x2796 xc:${lib.escapeShellArg apple.wallpaper.color} png:$out
+            '';
+            inherit (apple.wallpaper) where;
+          };
+          refetchTriggers = map builtins.toJSON [
+            config.services.nginx.virtualHosts.${domain}.locations."/assets/"
+            config.services.nginx.virtualHosts.devices-apple-assets.locations
+          ];
           enrollmentSets = lib.listToAttrs (
             lib.mapAttrsToList (
               _: d:
