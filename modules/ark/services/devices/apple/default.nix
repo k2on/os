@@ -73,6 +73,18 @@ let
     lib.concatStringsSep "." (lib.reverseList (lib.splitString "." ark.mainDomain)) + ".devices";
   # Each device with its name, as the apps' config functions see it.
   deviceList = lib.mapAttrsToList (name: d: d // { inherit name; }) apple.devices;
+
+  # People whose enrolled devices get their own things (their mail account):
+  # a set each, person-<name>, that their devices are in besides default.
+  owners = lib.unique (
+    map (d: d.owner) (lib.filter (d: d.owner != null && d.udid != null) deviceList)
+  );
+  personSet = p: "person-${p}";
+  # Their mailbox (services/mail): IMAP and SMTP over TLS, user name the
+  # person's username, password their mail_password_<person>.
+  hasMail = ark.services ? mail;
+  mailHost = "mail.${ark.mainDomain}";
+  mailPassword = p: "mail_password_${p}";
 in
 {
   options.ark.devices.apple = {
@@ -383,7 +395,17 @@ in
         ))
         (_: {
           restartUnits = [ "nanohub-assets.service" ];
-        });
+        })
+    # Device owners' mail passwords, for their mail accounts (the mail
+    # host's secrets, shared).
+    // lib.optionalAttrs hasMail (
+      lib.genAttrs' owners (
+        p:
+        lib.nameValuePair (mailPassword p) {
+          restartUnits = [ "nanohub-assets.service" ];
+        }
+      )
+    );
 
     backup = {
       paths = [
@@ -478,14 +500,90 @@ in
             // lib.optionalAttrs (app.config != { }) { LegacyAppConfigAssetReference = configId name; };
           }
         ) apps;
-        allDeclarations = apple.declarations // appDeclarations;
-        sets = apple.sets // {
-          default =
-            (apple.sets.default or [ ])
-            ++ lib.attrNames appDeclarations
-            ++ lib.attrNames appConfigs
-            ++ lib.attrNames allProfiles;
-        };
+        # Each owner's identity and mail account, their password a private
+        # asset given only to their devices.
+        personId = p: "${prefix}.person.${p}";
+        personDeclarations = lib.optionalAttrs hasMail (
+          lib.concatMapAttrs (
+            p: person:
+            lib.optionalAttrs (lib.elem p owners) {
+              "${personId p}.identity" = {
+                type = "com.apple.asset.useridentity";
+                payload = {
+                  FullName = person.displayName;
+                  EmailAddress = person.mail;
+                };
+              };
+              "${personId p}.mail" = {
+                type = "com.apple.configuration.account.mail";
+                payload =
+                  let
+                    server = port: {
+                      HostName = mailHost;
+                      Port = port;
+                      AuthenticationMethod = "Password";
+                      AuthenticationCredentialsAssetReference = "${personId p}.mail.credential";
+                    };
+                  in
+                  {
+                    VisibleName = person.mail;
+                    UserIdentityAssetReference = "${personId p}.identity";
+                    IncomingServer = server 993 // {
+                      ServerType = "IMAP";
+                    };
+                    OutgoingServer = server 465;
+                  };
+              };
+            }
+          ) ark.persons
+        );
+        personAssets = lib.optionalAttrs hasMail (
+          lib.listToAttrs (
+            map (
+              p:
+              lib.nameValuePair "${personId p}.mail.credential" {
+                type = "com.apple.asset.credential.userpassword";
+                contentType = "application/json";
+                extension = "json";
+                escape = "json";
+                enrollments = lib.listToAttrs (
+                  map (
+                    d:
+                    lib.nameValuePair d.udid {
+                      content = builtins.toJSON {
+                        UserName = p;
+                        Password = "@password@";
+                      };
+                      substitutions.password = config.sops.secrets.${mailPassword p}.path;
+                    }
+                  ) (lib.filter (d: d.owner == p && d.udid != null) deviceList)
+                );
+              }
+            ) owners
+          )
+        );
+        personSets = lib.optionalAttrs hasMail (
+          lib.genAttrs' owners (
+            p:
+            lib.nameValuePair (personSet p) [
+              "${personId p}.identity"
+              "${personId p}.mail"
+              "${personId p}.mail.credential"
+            ]
+          )
+        );
+
+        allDeclarations = apple.declarations // appDeclarations // personDeclarations;
+        sets =
+          apple.sets
+          // personSets
+          // {
+            default =
+              (apple.sets.default or [ ])
+              ++ lib.attrNames appDeclarations
+              ++ lib.attrNames appConfigs
+              ++ lib.attrNames allProfiles;
+          };
         # A configuration does nothing until an activation names it
         # (Info.NotReferencedByActivation): one per set, naming every
         # configuration in it. Assets are not named; what refers to them is.
@@ -572,7 +670,7 @@ in
 
           declarations = allDeclarations // activations;
           sets = lib.mapAttrs (set: ids: ids ++ [ (activationId set) ]) sets;
-          dataAssets = appConfigs;
+          dataAssets = appConfigs // personAssets;
           profiles = allProfiles;
           dataAssetsURL = "https://${domain}/assets";
           # Each device's own configs: through nanohub, which checks it is
@@ -581,9 +679,14 @@ in
           privateDataAssetsURL = "https://${domain}/authproxy/assets";
           privateDataAssetsGroup = "nginx";
           enrollmentSets = lib.listToAttrs (
-            lib.mapAttrsToList (_: d: lib.nameValuePair d.udid (lib.unique ([ "default" ] ++ d.sets))) (
-              lib.filterAttrs (_: d: d.udid != null) apple.devices
-            )
+            lib.mapAttrsToList (
+              _: d:
+              lib.nameValuePair d.udid (
+                lib.unique (
+                  [ "default" ] ++ lib.optional (hasMail && d.owner != null) (personSet d.owner) ++ d.sets
+                )
+              )
+            ) (lib.filterAttrs (_: d: d.udid != null) apple.devices)
           );
 
           enrollmentProfile = {

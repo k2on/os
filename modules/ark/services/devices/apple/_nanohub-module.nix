@@ -64,7 +64,7 @@ let
     payload.ProfileURL = "${cfg.dataAssetsURL}/${profileFile p}";
   }) cfg.profiles;
   assetDeclarations = lib.mapAttrs (_: a: {
-    type = "com.apple.asset.data";
+    inherit (a) type;
     payload = {
       Reference = {
         DataURL = "${if isPrivate a then cfg.privateDataAssetsURL else cfg.dataAssetsURL}/${assetFile a}";
@@ -107,13 +107,21 @@ let
       # bash 5.2 would read & in a replacement as the match.
       shopt -u patsub_replacement
       creds=''${CREDENTIALS_DIRECTORY:-}
-      # A value as plist/XML text.
+      # A value escaped for its asset: $1 the credential, $2 xml, json or none.
       value() {
         local v
         v=$(cat "$creds/$1")
-        v=''${v//&/&amp;}
-        v=''${v//</&lt;}
-        v=''${v//>/&gt;}
+        case $2 in
+          xml)
+            v=''${v//&/&amp;}
+            v=''${v//</&lt;}
+            v=''${v//>/&gt;}
+            ;;
+          json)
+            v=''${v//\\/\\\\}
+            v=''${v//\"/\\\"}
+            ;;
+        esac
         printf '%s' "$v"
       }
       umask 027
@@ -131,7 +139,7 @@ let
                     credName {
                       inherit id enrollment placeholder;
                     }
-                  })}
+                  } ${a.escape})}
                 '') e.substitutions
               )}
               printf '%s' "$t" > ${privateDir}/${lib.escapeShellArg enrollment}/${assetFile a}
@@ -508,6 +516,21 @@ in
               type = lib.types.str;
               default = "plist";
               description = "File name extension, for whoever reads the URL.";
+            };
+            type = lib.mkOption {
+              type = lib.types.str;
+              default = "com.apple.asset.data";
+              example = "com.apple.asset.credential.userpassword";
+              description = "The asset's declaration type: any asset fetched from a URL.";
+            };
+            escape = lib.mkOption {
+              type = lib.types.enum [
+                "xml"
+                "json"
+                "none"
+              ];
+              default = "xml";
+              description = "How substituted values are escaped: for a plist, for JSON, or not at all.";
             };
           };
         }
