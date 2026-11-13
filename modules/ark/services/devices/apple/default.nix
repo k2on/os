@@ -276,6 +276,11 @@ in
           challengePasswordFile = secrets.devices-apple_scep_challenge.path;
           # As long as the CA, so a device never has to enroll again.
           certificateValidity = 3650;
+          # Every device asks for the same subject, so a second enrollment
+          # (a device erased, or another one) would be refused: "DN ...
+          # already exists". nanohub tells devices apart by their
+          # certificate's hash, not its subject.
+          allowRenewal = 0;
         };
 
         services.nanohub = {
