@@ -1,8 +1,9 @@
 # Underscore: import-tree loads every other .nix under modules/ as a flake module.
 #
 # nanohub (github.com/micromdm/nanohub), the MDM server for the household's
-# Apple devices: NanoMDM's protocol handling with its command queue,
-# declarative management (KMFDDM) and the DEP sync bundled into one binary.
+# Apple devices: NanoMDM (the MDM protocol), NanoCMD (command workflows)
+# and KMFDDM (declarative management) in one binary. Not DEP/ABM: that is
+# NanoDEP, separately.
 # Not in nixpkgs, so built here.
 { buildGoModule, fetchFromGitHub }:
 buildGoModule rec {

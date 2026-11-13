@@ -13,6 +13,7 @@ members = [
   "services/pass/vaults",
   "services/mail/aliases",
   "services/photos/avatars",
+  "services/devices/apple/enroll",
 ]
 
 [workspace.package]

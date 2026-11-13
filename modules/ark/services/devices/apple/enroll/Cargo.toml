@@ -1,0 +1,8 @@
+[package]
+name = "apple-enroll"
+description = "Hands nanohub's enrollment profile to the Apple devices declared for Automated Device Enrollment, by their serial number"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
