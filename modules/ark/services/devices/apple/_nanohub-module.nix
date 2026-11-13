@@ -46,12 +46,23 @@ let
     "${builtins.hashString "sha256" hashed}${lib.optionalString (a.extension != "") ".${a.extension}"}";
   publicAssets = lib.filterAttrs (_: a: !isPrivate a) cfg.dataAssets;
   privateAssets = lib.filterAttrs (_: a: isPrivate a) cfg.dataAssets;
+  profileFile = p: "${builtins.hashString "sha256" p.content}.mobileconfig";
   dataAssetsDir = pkgs.linkFarm "nanohub-data-assets" (
     lib.mapAttrsToList (_: a: {
       name = assetFile a;
       path = pkgs.writeText (assetFile a) a.content;
     }) publicAssets
+    ++ lib.mapAttrsToList (_: p: {
+      name = profileFile p;
+      path = pkgs.writeText (profileFile p) p.content;
+    }) cfg.profiles
   );
+  # Each profile as a legacy configuration: the device downloads it from
+  # its URL and installs it, as if MDM had sent InstallProfile.
+  profileDeclarations = lib.mapAttrs (_: p: {
+    type = "com.apple.configuration.legacy";
+    payload.ProfileURL = "${cfg.dataAssetsURL}/${profileFile p}";
+  }) cfg.profiles;
   assetDeclarations = lib.mapAttrs (_: a: {
     type = "com.apple.asset.data";
     payload = {
@@ -62,7 +73,7 @@ let
       Authentication.Type = if isPrivate a then "MDM" else "None";
     };
   }) cfg.dataAssets;
-  declarations = cfg.declarations // assetDeclarations;
+  declarations = cfg.declarations // assetDeclarations // profileDeclarations;
 
   # The private assets' files, built at start: <dir>/<enrollment ID>/<file>,
   # each @placeholder@ in a template replaced by its file's contents.
@@ -519,6 +530,25 @@ in
       '';
     };
 
+    profiles = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options.content = lib.mkOption {
+            type = lib.types.str;
+            description = "The .mobileconfig (a Configuration plist). Public: served to anyone with its URL.";
+          };
+        }
+      );
+      default = { };
+      description = ''
+        Configuration profiles, by Identifier, each declared as
+        com.apple.configuration.legacy: the way to anything with no
+        declaration of its own (a VPN, Wi-Fi). Served from dataAssetsDir at
+        dataAssetsURL like the public data assets; put each in a set, and
+        name it in an activation, like any configuration.
+      '';
+    };
+
     dataAssetsURL = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -714,7 +744,7 @@ in
         message = "services.nanohub.enrollmentProfile: the profile's topic comes from pushCertificate.";
       }
       {
-        assertion = publicAssets != { } -> cfg.dataAssetsURL != null;
+        assertion = publicAssets != { } || cfg.profiles != { } -> cfg.dataAssetsURL != null;
         message = "services.nanohub.dataAssets: needs dataAssetsURL, where they are served.";
       }
       {

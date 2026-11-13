@@ -170,6 +170,15 @@ in
               default = _: { };
               description = "Per device: the sops secret whose value replaces each @placeholder@ in its config.";
             };
+            payloads = lib.mkOption {
+              type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
+              default = [ ];
+              description = ''
+                Profile payloads that go with the app (its VPN, say), without
+                PayloadUUID/PayloadVersion/PayloadIdentifier, which are added:
+                one profile per app, the same for every device. Public.
+              '';
+            };
           };
         }
       );
@@ -208,11 +217,37 @@ in
           LoginURL = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
           ManagedByOrganizationName = apple.organization;
           Hostname = device.name;
+          # Always on: no disconnecting or quitting in the app, and no
+          # changing its On Demand (the profile below holds it on).
+          "AlwaysOn.Enabled" = true;
+          VPNOnDemandSettings = "hide";
         }
         // lib.optionalAttrs (device.owner != null) { AuthKey = "@authkey@"; };
       secrets =
         device:
         lib.optionalAttrs (device.owner != null) { authkey = "headscale_preauth_key_${device.owner}"; };
+      # Its VPN, there before the app first opens (so no "add VPN
+      # configurations" prompt) and connected by iOS whenever there is a
+      # network (On Demand). tailscale.com/docs/integrations/mdm/ios
+      payloads = [
+        {
+          PayloadType = "com.apple.vpn.managed";
+          PayloadDisplayName = "Tailscale";
+          UserDefinedName = "Tailscale";
+          VPNType = "VPN";
+          VPNSubType = "io.tailscale.ipn.ios";
+          VPN = {
+            RemoteAddress = "Tailscale Mesh";
+            AuthenticationMethod = "Password";
+            ProviderBundleIdentifier = "io.tailscale.ipn.ios.network-extension";
+            OnDemandEnabled = 1;
+            OnDemandRules = [ { Action = "Connect"; } ];
+            # Settings' Connect On Demand toggle, greyed out: no turning it
+            # off there either.
+            OnDemandUserOverrideDisabled = 1;
+          };
+        }
+      ];
     };
   };
 
@@ -355,7 +390,41 @@ in
         hasVpp = secrets ? devices-apple_vpp_token;
         appId = name: "${prefix}.app.${name}";
         configId = name: "${appId name}.config";
+        profileId = name: "${appId name}.profile";
         apps = lib.optionalAttrs hasVpp apple.apps;
+
+        # A stable UUID per name, so a new profile replaces the old one.
+        uuid =
+          name:
+          let
+            h = builtins.hashString "sha256" "${prefix}.${name}";
+            s = start: len: lib.substring start len h;
+          in
+          lib.toUpper "${s 0 8}-${s 8 4}-4${s 13 3}-8${s 17 3}-${s 20 12}";
+        # Each app's payloads as one profile.
+        appProfiles = lib.mapAttrs' (
+          name: app:
+          lib.nameValuePair (profileId name) {
+            content = toPlist {
+              PayloadType = "Configuration";
+              PayloadVersion = 1;
+              PayloadIdentifier = profileId name;
+              PayloadUUID = uuid (profileId name);
+              PayloadDisplayName = "${apple.organization}: ${name}";
+              PayloadOrganization = apple.organization;
+              PayloadScope = "System";
+              PayloadContent = lib.imap0 (
+                i: p:
+                {
+                  PayloadVersion = 1;
+                  PayloadIdentifier = "${profileId name}.${toString i}";
+                  PayloadUUID = uuid "${profileId name}.${toString i}";
+                }
+                // p
+              ) app.payloads;
+            };
+          }
+        ) (lib.filterAttrs (_: app: app.payloads != [ ]) apps);
         appDeclarations = lib.mapAttrs' (
           name: app:
           lib.nameValuePair (appId name) {
@@ -372,7 +441,11 @@ in
         ) apps;
         allDeclarations = apple.declarations // appDeclarations;
         sets = apple.sets // {
-          default = (apple.sets.default or [ ]) ++ lib.attrNames appDeclarations ++ lib.attrNames appConfigs;
+          default =
+            (apple.sets.default or [ ])
+            ++ lib.attrNames appDeclarations
+            ++ lib.attrNames appConfigs
+            ++ lib.attrNames appProfiles;
         };
         # A configuration does nothing until an activation names it
         # (Info.NotReferencedByActivation): one per set, naming every
@@ -382,8 +455,11 @@ in
           set: ids:
           lib.nameValuePair (activationId set) {
             type = "com.apple.activation.simple";
+            # Profiles are declared by nanohub (com.apple.configuration.legacy).
             payload.StandardConfigurations = lib.filter (
-              id: allDeclarations ? ${id} && lib.hasPrefix "com.apple.configuration." allDeclarations.${id}.type
+              id:
+              appProfiles ? ${id}
+              || allDeclarations ? ${id} && lib.hasPrefix "com.apple.configuration." allDeclarations.${id}.type
             ) ids;
           }
         ) sets;
@@ -458,6 +534,7 @@ in
           declarations = allDeclarations // activations;
           sets = lib.mapAttrs (set: ids: ids ++ [ (activationId set) ]) sets;
           dataAssets = appConfigs;
+          profiles = appProfiles;
           dataAssetsURL = "https://${domain}/assets";
           # Each device's own configs: through nanohub, which checks it is
           # the device, to nginx on loopback (below).
