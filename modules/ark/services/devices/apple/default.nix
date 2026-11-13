@@ -370,6 +370,24 @@ in
             // lib.optionalAttrs (app.config != { }) { LegacyAppConfigAssetReference = configId name; };
           }
         ) apps;
+        allDeclarations = apple.declarations // appDeclarations;
+        sets = apple.sets // {
+          default = (apple.sets.default or [ ]) ++ lib.attrNames appDeclarations ++ lib.attrNames appConfigs;
+        };
+        # A configuration does nothing until an activation names it
+        # (Info.NotReferencedByActivation): one per set, naming every
+        # configuration in it. Assets are not named; what refers to them is.
+        activationId = set: "${prefix}.activation.${set}";
+        activations = lib.mapAttrs' (
+          set: ids:
+          lib.nameValuePair (activationId set) {
+            type = "com.apple.activation.simple";
+            payload.StandardConfigurations = lib.filter (
+              id: allDeclarations ? ${id} && lib.hasPrefix "com.apple.configuration." allDeclarations.${id}.type
+            ) ids;
+          }
+        ) sets;
+
         toPlist = lib.generators.toPlist { escape = true; };
         # A config per device goes to enrolled devices (with a UDID) only.
         appConfigs = lib.mapAttrs' (
@@ -437,10 +455,8 @@ in
             keyFile = secrets.devices-apple_push_key.path;
           };
 
-          declarations = apple.declarations // appDeclarations;
-          sets = apple.sets // {
-            default = (apple.sets.default or [ ]) ++ lib.attrNames appDeclarations ++ lib.attrNames appConfigs;
-          };
+          declarations = allDeclarations // activations;
+          sets = lib.mapAttrs (set: ids: ids ++ [ (activationId set) ]) sets;
           dataAssets = appConfigs;
           dataAssetsURL = "https://${domain}/assets";
           # Each device's own configs: through nanohub, which checks it is
