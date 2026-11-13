@@ -27,6 +27,8 @@ in
     privacy.storeId = "1040298266"; # Privacy.com
     google-maps.storeId = "585027354";
     bible.storeId = "282935706"; # YouVersion, Life.Church
+    # For betas, installed by hand from it: those aren't managed.
+    testflight.storeId = "899247664";
   };
 
   # Apps' notifications, enforced: they can't be changed on the device. One

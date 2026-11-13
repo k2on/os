@@ -797,7 +797,20 @@ in
             "/scep".proxyPass = "http://127.0.0.1:${toString scepPort}";
             "/api/".return = "404";
             # Apps' configs (data assets): public, named by their hash.
-            "/assets/".alias = "${config.services.nanohub.dataAssetsDir}/";
+            # Each with the media type its declaration names, which the
+            # device checks: nginx's own types would make a plist
+            # application/octet-stream, and the device refuses it.
+            "/assets/" = {
+              alias = "${config.services.nanohub.dataAssetsDir}/";
+              extraConfig = ''
+                types {
+                  application/x-plist plist;
+                  application/json json;
+                  application/x-apple-aspen-config mobileconfig;
+                }
+                default_type application/octet-stream;
+              '';
+            };
             # Setup Assistant, for ADE: apple-enroll decides who gets it.
             "= /enroll" =
               if hasPush then { proxyPass = "http://127.0.0.1:${toString enrollPort}"; } else { return = "404"; };
