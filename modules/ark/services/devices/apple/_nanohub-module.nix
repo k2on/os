@@ -8,6 +8,11 @@
 #   - declarations, sets and enrollmentSets: declarative device management
 #     (KMFDDM), made to match on every start and every change — what is
 #     declared is added, what is not is removed;
+#   - dataAssets: files the declarations refer to (an app's managed
+#     configuration), declared alongside them, for a web server to serve:
+#     public ones from the store, or private ones, each device's own with
+#     secrets filled in at start, fetched with the device's MDM identity
+#     through nanohub's auth proxy;
 #   - enrollmentProfile: the .mobileconfig a device installs to enroll,
 #     built from the push certificate (its topic) and a SCEP server (the
 #     device's identity; services.scep), optionally signed.
@@ -28,7 +33,105 @@ let
     if cfg.listenAddress == "" then "127.0.0.1" else cfg.listenAddress
   }:${toString cfg.port}";
 
-  managesDDM = cfg.declarations != { } || cfg.sets != { } || cfg.enrollmentSets != { };
+  # Each data asset as a file named after its content, so a change is a new
+  # URL (and so a new declaration), and as the declaration pointing at it.
+  # A private one (per enrollment) is named after all its templates, and is
+  # fetched with the device's MDM identity, through the auth proxy.
+  isPrivate = a: a.enrollments != { };
+  assetFile =
+    a:
+    let
+      hashed = if isPrivate a then builtins.toJSON a.enrollments else a.content;
+    in
+    "${builtins.hashString "sha256" hashed}${lib.optionalString (a.extension != "") ".${a.extension}"}";
+  publicAssets = lib.filterAttrs (_: a: !isPrivate a) cfg.dataAssets;
+  privateAssets = lib.filterAttrs (_: a: isPrivate a) cfg.dataAssets;
+  dataAssetsDir = pkgs.linkFarm "nanohub-data-assets" (
+    lib.mapAttrsToList (_: a: {
+      name = assetFile a;
+      path = pkgs.writeText (assetFile a) a.content;
+    }) publicAssets
+  );
+  assetDeclarations = lib.mapAttrs (_: a: {
+    type = "com.apple.asset.data";
+    payload = {
+      Reference = {
+        DataURL = "${if isPrivate a then cfg.privateDataAssetsURL else cfg.dataAssetsURL}/${assetFile a}";
+        ContentType = a.contentType;
+      };
+      Authentication.Type = if isPrivate a then "MDM" else "None";
+    };
+  }) cfg.dataAssets;
+  declarations = cfg.declarations // assetDeclarations;
+
+  # The private assets' files, built at start: <dir>/<enrollment ID>/<file>,
+  # each @placeholder@ in a template replaced by its file's contents.
+  privateDir = "/run/nanohub-assets";
+  substitutions = lib.concatLists (
+    lib.mapAttrsToList (
+      id: a:
+      lib.concatLists (
+        lib.mapAttrsToList (
+          enrollment: e:
+          lib.mapAttrsToList (placeholder: file: {
+            inherit
+              id
+              enrollment
+              placeholder
+              file
+              ;
+          }) e.substitutions
+        ) a.enrollments
+      )
+    ) privateAssets
+  );
+  credName =
+    s:
+    "sub-${
+      builtins.substring 0 16 (builtins.hashString "sha256" "${s.id}/${s.enrollment}/${s.placeholder}")
+    }";
+  buildAssets = pkgs.writeShellApplication {
+    name = "nanohub-assets";
+    text = ''
+      # bash 5.2 would read & in a replacement as the match.
+      shopt -u patsub_replacement
+      creds=''${CREDENTIALS_DIRECTORY:-}
+      # A value as plist/XML text.
+      value() {
+        local v
+        v=$(cat "$creds/$1")
+        v=''${v//&/&amp;}
+        v=''${v//</&lt;}
+        v=''${v//>/&gt;}
+        printf '%s' "$v"
+      }
+      umask 027
+      find ${privateDir} -mindepth 1 -delete
+      ${lib.concatStrings (
+        lib.mapAttrsToList (
+          id: a:
+          lib.concatStrings (
+            lib.mapAttrsToList (enrollment: e: ''
+              mkdir -p ${privateDir}/${lib.escapeShellArg enrollment}
+              t=$(cat ${pkgs.writeText "asset" e.content})
+              ${lib.concatStrings (
+                lib.mapAttrsToList (placeholder: _: ''
+                  t=''${t//${lib.escapeShellArg "@${placeholder}@"}/$(value ${
+                    credName {
+                      inherit id enrollment placeholder;
+                    }
+                  })}
+                '') e.substitutions
+              )}
+              printf '%s' "$t" > ${privateDir}/${lib.escapeShellArg enrollment}/${assetFile a}
+            '') a.enrollments
+          )
+        ) privateAssets
+      )}
+    '';
+  };
+
+  managesDDM = declarations != { } || cfg.sets != { } || cfg.enrollmentSets != { };
   needsSync = managesDDM || cfg.pushCertificate != null;
 
   # A stable UUID per payload, so installing a new profile replaces the old.
@@ -100,7 +203,7 @@ let
         Identifier = id;
         Type = d.type;
         Payload = d.payload;
-      }) cfg.declarations;
+      }) declarations;
       inherit (cfg) sets enrollmentSets;
     }
   );
@@ -345,6 +448,130 @@ in
       '';
     };
 
+    dataAssets = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            content = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = "The data, the same for every device. Public: served to anyone with its URL.";
+            };
+            enrollments = lib.mkOption {
+              type = lib.types.attrsOf (
+                lib.types.submodule {
+                  options = {
+                    content = lib.mkOption {
+                      type = lib.types.str;
+                      description = "This enrollment's data, with @placeholders@ for secrets.";
+                    };
+                    substitutions = lib.mkOption {
+                      type = lib.types.attrsOf fileType;
+                      default = { };
+                      example = {
+                        authkey = "/run/secrets/tailscale-authkey";
+                      };
+                      description = ''
+                        Files whose contents replace @<name>@ in content, at start
+                        (escaped for XML). Read through systemd credentials.
+                      '';
+                    };
+                  };
+                }
+              );
+              default = { };
+              description = ''
+                Instead of content: each enrollment's own data, by enrollment
+                ID. Then the asset is private: built at start into
+                privateDataAssetsDir, and fetched by each device with its MDM
+                identity through the auth proxy (authProxyURL), which tells
+                the server behind it the device's ID (X-Enrollment-ID).
+              '';
+            };
+            contentType = lib.mkOption {
+              type = lib.types.str;
+              default = "application/x-plist";
+              description = "Its media type, which the device checks.";
+            };
+            extension = lib.mkOption {
+              type = lib.types.str;
+              default = "plist";
+              description = "File name extension, for whoever reads the URL.";
+            };
+          };
+        }
+      );
+      default = { };
+      example = lib.literalExpression ''
+        {
+          "com.example.app.config" = {
+            content = lib.generators.toPlist { escape = true; } { LoginURL = "https://vpn.example.com"; };
+          };
+        }
+      '';
+      description = ''
+        Data assets (com.apple.asset.data) by Identifier, e.g. an app's
+        managed configuration for com.apple.configuration.app.managed's
+        LegacyAppConfigAssetReference. Each is declared like the
+        declarations above, and its file is in dataAssetsDir for a web
+        server to serve at dataAssetsURL. Put it in the same set as what
+        refers to it.
+      '';
+    };
+
+    dataAssetsURL = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "https://mdm.example.com/assets";
+      description = "Where dataAssetsDir is served, without a trailing slash (https://).";
+    };
+
+    dataAssetsDir = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      default = dataAssetsDir;
+      defaultText = lib.literalMD "the data assets' files";
+      description = "The data assets' files, to serve at dataAssetsURL.";
+    };
+
+    authProxyURL = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "http://127.0.0.1:9005";
+      description = ''
+        Where nanohub's /authproxy/ sends a request once the device's MDM
+        identity checks out (-auth-proxy-url): the path is kept, and
+        X-Enrollment-ID says which device it is.
+      '';
+    };
+
+    privateDataAssetsURL = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "https://mdm.example.com/authproxy/assets";
+      description = ''
+        Where the private data assets are fetched, under nanohub's
+        /authproxy/, without a trailing slash. The server at authProxyURL
+        answers /authproxy/assets/<file> with
+        privateDataAssetsDir/<X-Enrollment-ID>/<file>.
+      '';
+    };
+
+    privateDataAssetsDir = lib.mkOption {
+      type = lib.types.str;
+      readOnly = true;
+      default = privateDir;
+      description = "Where the private data assets are built: <enrollment ID>/<file>.";
+    };
+
+    privateDataAssetsGroup = lib.mkOption {
+      type = lib.types.str;
+      default = cfg.group;
+      defaultText = lib.literalExpression "config.services.nanohub.group";
+      example = "nginx";
+      description = "Group that can read the private data assets: the server at authProxyURL.";
+    };
+
     enrollmentProfile = {
       enable = lib.mkEnableOption "building the enrollment profile, at enrollmentProfile.path";
 
@@ -486,6 +713,14 @@ in
         assertion = profile.enable -> cfg.pushCertificate != null;
         message = "services.nanohub.enrollmentProfile: the profile's topic comes from pushCertificate.";
       }
+      {
+        assertion = publicAssets != { } -> cfg.dataAssetsURL != null;
+        message = "services.nanohub.dataAssets: needs dataAssetsURL, where they are served.";
+      }
+      {
+        assertion = privateAssets != { } -> cfg.privateDataAssetsURL != null && cfg.authProxyURL != null;
+        message = "services.nanohub.dataAssets: per-enrollment ones need authProxyURL and privateDataAssetsURL.";
+      }
     ];
 
     users.users = lib.mkIf (cfg.user == "nanohub") {
@@ -526,6 +761,10 @@ in
                 "-storage-dsn"
                 cfg.storage.dsn
               ]
+              ++ lib.optionals (cfg.authProxyURL != null) [
+                "-auth-proxy-url"
+                cfg.authProxyURL
+              ]
               ++ cfg.extraArgs
             )
           } ${lib.optionalString (cfg.caFile != null) ''-ca "$CREDENTIALS_DIRECTORY/ca.pem"''}
@@ -545,6 +784,23 @@ in
           "AF_INET6"
           "AF_UNIX"
         ];
+      };
+    };
+
+    systemd.services.nanohub-assets = lib.mkIf (privateAssets != { }) {
+      description = "Build NanoHUB's private data assets";
+      wantedBy = [ "multi-user.target" ];
+      restartTriggers = [ buildAssets ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        User = cfg.user;
+        Group = cfg.privateDataAssetsGroup;
+        RuntimeDirectory = "nanohub-assets";
+        RuntimeDirectoryMode = "0750";
+        RuntimeDirectoryPreserve = true;
+        LoadCredential = map (s: "${credName s}:${s.file}") substitutions;
+        ExecStart = lib.getExe buildAssets;
       };
     };
 

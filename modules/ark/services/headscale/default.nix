@@ -17,6 +17,8 @@
 let
   ark = config.ark;
   preauthKey = "headscale_preauth_key";
+  # A person's own pre-auth key: their devices join as them.
+  personKey = name: "${preauthKey}_${name}";
   # The hosts that answer the tailnet's DNS (aspects/dns.nix), by name, and
   # whether every device is sent to them: off until they have been seen to
   # answer (dig @<address> <name>).
@@ -73,10 +75,22 @@ in
     };
 
     # headscale's copy of the members' key; see den.aspects.tailnet below
-    secrets."${preauthKey}_headscale" = {
-      key = preauthKey;
-      owner = "headscale";
-    };
+    secrets = {
+      "${preauthKey}_headscale" = {
+        key = preauthKey;
+        owner = "headscale";
+      };
+    }
+    # Everyone's own key, for their devices to join as them with no one
+    # signing in (services/devices/apple gives a phone its owner's).
+    // lib.mapAttrs' (
+      name: _:
+      lib.nameValuePair "${personKey name}_headscale" {
+        key = personKey name;
+        owner = "headscale";
+        generate = true;
+      }
+    ) ark.persons;
 
     nixos =
       {
@@ -132,6 +146,24 @@ in
             if [ -z "$(sqlite3 "$db" "select id from pre_auth_keys where key = '$key'")" ]; then
               sqlite3 "$db" "insert into pre_auth_keys (key, user_id, reusable, ephemeral, used, created_at) values ('$key', $uid, 1, 0, 0, datetime('now'))"
             fi
+
+            # Everyone's own key, for the user Kanidm signed them in as: by
+            # email, or by name. Not made here for someone who has never
+            # signed in, which would be a second user beside the one Kanidm
+            # makes; their key is added on the first boot after they have.
+            ${lib.concatStrings (
+              lib.mapAttrsToList (name: person: ''
+                uid=$(sqlite3 "$db" "select id from users where email = '${person.mail}' or name = '${name}' order by id limit 1")
+                if [ -z "$uid" ]; then
+                  echo "${name} has not signed in to headscale yet: no key for their devices"
+                else
+                  key=$(cat ${config.sops.secrets."${personKey name}_headscale".path})
+                  if [ -z "$(sqlite3 "$db" "select id from pre_auth_keys where key = '$key'")" ]; then
+                    sqlite3 "$db" "insert into pre_auth_keys (key, user_id, reusable, ephemeral, used, created_at) values ('$key', $uid, 1, 0, 0, datetime('now'))"
+                  fi
+                fi
+              '') ark.persons
+            )}
           '';
         };
 

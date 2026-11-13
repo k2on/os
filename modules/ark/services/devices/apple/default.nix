@@ -49,6 +49,16 @@
 # apple.devices.<mainDomain>/enroll, where apple-enroll (./enroll) hands
 # back the enrollment profile, to declared serial numbers only. The token
 # lasts a year, like the push certificate.
+#
+# Apps (ark.devices.apple.apps; Tailscale, pointed at headscale): App Store
+# apps every device with a serial number gets, with no Apple ID. In ABM,
+# Apps and Books: "buy" licenses for the app (free apps cost nothing, but
+# Payments and Billing needs a payment method, "None" will do), then
+# download the location's content token into sops (`ark sops
+# devices-apple-vpp.yaml`: devices-apple_vpp_token). apple-vpp-sync
+# (./_vpp-module.nix) then gives each device a license, and nanohub's
+# declarations install the app, managed, with its config: a plist at
+# apple.devices.<mainDomain>/assets/<sha256>.plist (dataAssets).
 { lib, config, ... }:
 let
   ark = config.ark;
@@ -59,6 +69,8 @@ let
   # Reverse-DNS prefix for the profile's and declarations' identifiers.
   prefix =
     lib.concatStringsSep "." (lib.reverseList (lib.splitString "." ark.mainDomain)) + ".devices";
+  # Each device with its name, as the apps' config functions see it.
+  deviceList = lib.mapAttrsToList (name: d: d // { inherit name; }) apple.devices;
 in
 {
   options.ark.devices.apple = {
@@ -96,6 +108,11 @@ in
               default = null;
               description = "The device's serial number: with one, Automated Device Enrollment gives it the ADE profile and the enrollment profile.";
             };
+            owner = lib.mkOption {
+              type = lib.types.nullOr (lib.types.enum (lib.attrNames ark.persons));
+              default = null;
+              description = "Whose device it is (ark.persons): apps that sign in, like Tailscale, sign in as them.";
+            };
             sets = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               default = [ ];
@@ -125,6 +142,45 @@ in
         apple.devices.<mainDomain>/enroll.
       '';
     };
+
+    apps = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            storeId = lib.mkOption {
+              type = lib.types.str;
+              example = "1470499037";
+              description = "The app's App Store ID: the number in its apps.apple.com URL.";
+            };
+            config = lib.mkOption {
+              type = lib.types.either (lib.types.attrsOf lib.types.anything) (
+                lib.types.functionTo (lib.types.attrsOf lib.types.anything)
+              );
+              default = { };
+              description = ''
+                Its managed app configuration (what the app's vendor documents
+                for MDM). Either the same for every device, public; or a
+                function of the device ({ name, owner, udid, serial, ... }),
+                each device's own, given only to it, with @placeholders@ for
+                `secrets`.
+              '';
+            };
+            secrets = lib.mkOption {
+              type = lib.types.functionTo (lib.types.attrsOf lib.types.str);
+              default = _: { };
+              description = "Per device: the sops secret whose value replaces each @placeholder@ in its config.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = ''
+        App Store apps every device with a serial number gets: a device
+        license from Apps and Books (licenses bought in ABM for the
+        content token's location), installed and kept managed, with its
+        config. Only once the content token is in sops.
+      '';
+    };
   };
 
   config.ark.devices.apple = {
@@ -141,6 +197,23 @@ in
       ];
     };
     sets.default = [ "${prefix}.status" ];
+
+    # The tailnet, joined as the device's owner with their pre-auth key
+    # (services/headscale), named after the device. tailscale.com/kb/1315/mdm-keys
+    apps.tailscale = {
+      storeId = "1470499037";
+      config =
+        device:
+        {
+          LoginURL = "https://${ark.serviceDomain "headscale" ark.services.headscale}";
+          ManagedByOrganizationName = apple.organization;
+          Hostname = device.name;
+        }
+        // lib.optionalAttrs (device.owner != null) { AuthKey = "@authkey@"; };
+      secrets =
+        device:
+        lib.optionalAttrs (device.owner != null) { authkey = "headscale_preauth_key_${device.owner}"; };
+    };
   };
 
   config.ark.public."apple.devices" = 443;
@@ -223,7 +296,26 @@ in
         optional = true;
         restartUnits = [ "nanodep-sync.service" ];
       };
-    };
+      # Apps and Books' content token for the location the app licenses
+      # are in (Preferences -> Payments and Billing -> Content Tokens), by
+      # hand: `ark sops devices-apple-vpp.yaml`. Until it is there, no apps.
+      devices-apple_vpp_token = {
+        file = "devices-apple-vpp";
+        optional = true;
+        restartUnits = [ "apple-vpp-sync.service" ];
+      };
+    }
+    # Whatever the apps' configs take from sops (an owner's tailnet key).
+    //
+      lib.genAttrs
+        (lib.unique (
+          lib.concatMap (app: lib.concatMap (d: lib.attrValues (app.secrets d)) deviceList) (
+            lib.attrValues apple.apps
+          )
+        ))
+        (_: {
+          restartUnits = [ "nanohub-assets.service" ];
+        });
 
     backup = {
       paths = [
@@ -255,14 +347,65 @@ in
         scepPort = service.port + 1;
         enrollPort = service.port + 2;
         depPort = service.port + 3;
+        assetPort = service.port + 4;
         serials = lib.filter (s: s != null) (lib.mapAttrsToList (_: d: d.serial) apple.devices);
+
+        # Apps: each a managed-app declaration and its config as a data
+        # asset, in the default set, once licenses can be assigned.
+        hasVpp = secrets ? devices-apple_vpp_token;
+        appId = name: "${prefix}.app.${name}";
+        configId = name: "${appId name}.config";
+        apps = lib.optionalAttrs hasVpp apple.apps;
+        appDeclarations = lib.mapAttrs' (
+          name: app:
+          lib.nameValuePair (appId name) {
+            type = "com.apple.configuration.app.managed";
+            payload = {
+              AppStoreID = app.storeId;
+              InstallBehavior = {
+                Install = "Required";
+                License.Assignment = "Device";
+              };
+            }
+            // lib.optionalAttrs (app.config != { }) { LegacyAppConfigAssetReference = configId name; };
+          }
+        ) apps;
+        toPlist = lib.generators.toPlist { escape = true; };
+        # A config per device goes to enrolled devices (with a UDID) only.
+        appConfigs = lib.mapAttrs' (
+          name: app:
+          lib.nameValuePair (configId name) (
+            if lib.isFunction app.config then
+              {
+                enrollments = lib.listToAttrs (
+                  map (
+                    d:
+                    lib.nameValuePair d.udid {
+                      content = toPlist (app.config d);
+                      substitutions = lib.mapAttrs (_: secret: config.sops.secrets.${secret}.path) (app.secrets d);
+                    }
+                  ) (lib.filter (d: d.udid != null) deviceList)
+                );
+              }
+            else
+              { content = toPlist app.config; }
+          )
+        ) (lib.filterAttrs (_: app: app.config != { }) apps);
       in
       {
         imports = [
           ./_nanohub-module.nix
           ./_scep-module.nix
           ./_nanodep-module.nix
+          ./_vpp-module.nix
         ];
+
+        # Device licenses for the apps, for every device with a serial number.
+        services.apple-vpp = lib.mkIf hasVpp {
+          enable = true;
+          tokenFile = secrets.devices-apple_vpp_token.path;
+          assignments = lib.mapAttrs' (_: app: lib.nameValuePair app.storeId serials) apps;
+        };
 
         # apple.devices.<mainDomain> is a level below the wildcard.
         security.acme.certs.${ark.mainDomain}.extraDomainNames = [ domain ];
@@ -294,7 +437,17 @@ in
             keyFile = secrets.devices-apple_push_key.path;
           };
 
-          inherit (apple) declarations sets;
+          declarations = apple.declarations // appDeclarations;
+          sets = apple.sets // {
+            default = (apple.sets.default or [ ]) ++ lib.attrNames appDeclarations ++ lib.attrNames appConfigs;
+          };
+          dataAssets = appConfigs;
+          dataAssetsURL = "https://${domain}/assets";
+          # Each device's own configs: through nanohub, which checks it is
+          # the device, to nginx on loopback (below).
+          authProxyURL = "http://127.0.0.1:${toString assetPort}";
+          privateDataAssetsURL = "https://${domain}/authproxy/assets";
+          privateDataAssetsGroup = "nginx";
           enrollmentSets = lib.listToAttrs (
             lib.mapAttrsToList (_: d: lib.nameValuePair d.udid (lib.unique ([ "default" ] ++ d.sets))) (
               lib.filterAttrs (_: d: d.udid != null) apple.devices
@@ -386,10 +539,28 @@ in
         };
 
         services.nginx.virtualHosts = {
+          # Behind nanohub's auth proxy, on loopback: the device's own file,
+          # by the enrollment ID nanohub found in its signature.
+          devices-apple-assets = {
+            listen = [
+              {
+                addr = "127.0.0.1";
+                port = assetPort;
+              }
+            ];
+            locations."~ ^/authproxy/assets/([A-Za-z0-9._-]+)$".extraConfig = ''
+              if ($http_x_enrollment_id !~ "^[A-Za-z0-9-]+$") { return 403; }
+              default_type application/x-plist;
+              alias ${config.services.nanohub.privateDataAssetsDir}/$http_x_enrollment_id/$1;
+            '';
+          };
+
           # Public: what devices talk to. "/" is nanohub (lib/services.nix).
           ${domain}.locations = {
             "/scep".proxyPass = "http://127.0.0.1:${toString scepPort}";
             "/api/".return = "404";
+            # Apps' configs (data assets): public, named by their hash.
+            "/assets/".alias = "${config.services.nanohub.dataAssetsDir}/";
             # Setup Assistant, for ADE: apple-enroll decides who gets it.
             "= /enroll" =
               if hasPush then { proxyPass = "http://127.0.0.1:${toString enrollPort}"; } else { return = "404"; };
