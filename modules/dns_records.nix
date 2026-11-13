@@ -18,6 +18,12 @@ in
         type = "A";
         content = ip;
       }
+      {
+        domain = "koon.us";
+        name = "industries";
+        type = "TXT";
+        content = "apple-domain-verification=NUm30sbwUStoV2MD";
+      }
     ];
   };
 }

@@ -20,6 +20,7 @@ in
       service-audio
       service-cloud
       service-dash
+      service-devices-apple
       service-git
       service-harken
       service-home

@@ -17,6 +17,8 @@
           sops
           just
           jq
+          # `ark secrets` generates the Apple devices' SCEP CA with it (services/devices/apple).
+          openssl
           nix-inspect
 
           age-plugin-yubikey
