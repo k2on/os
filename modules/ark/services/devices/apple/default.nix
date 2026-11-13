@@ -222,8 +222,7 @@ in
     # The tailnet, joined as the device's owner with their pre-auth key
     # (services/headscale), named after the device. tailscale.com/kb/1315/mdm-keys
     apps.tailscale = {
-      # Off for now: removed from the phone, to try a clean install.
-      enable = false;
+      enable = true;
       storeId = "1470499037";
       config =
         device:
