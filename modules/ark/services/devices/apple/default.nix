@@ -85,16 +85,14 @@ let
   hasMail = ark.services ? mail;
   mailHost = "mail.${ark.mainDomain}";
   mailPassword = p: "mail_password_${p}";
-  # Their calendars (services/radicale): theirs, and each group's they're in,
-  # its own login (a group's set, group-<name>, holds its account).
+  # Their calendars (services/radicale), under their own login: shared
+  # groups' calendars are among them (ark.radicale.sharedGroups).
   hasCalendar = ark.services ? radicale;
   calendarHost = ark.serviceDomain "radicale" ark.services.radicale;
   calendarPassword = name: "radicale_password_${name}";
-  groupSet = g: "group-${g}";
-  # Groups with a member who has an enrolled device.
-  ownerGroups = lib.optionals hasCalendar (
-    lib.filter (g: lib.any (p: lib.elem p owners) ark.groups.${g}) (lib.attrNames ark.groups)
-  );
+  # Radicale runs on adam too and declares those secrets itself, so this
+  # service's copies have their own names (the same sops key).
+  calendarSecret = name: "${calendarPassword name}_devices";
 in
 {
   options.ark.devices.apple = {
@@ -441,11 +439,12 @@ in
         }
       )
     )
-    # Their calendar passwords, and their groups' (services/radicale's).
+    # Their calendar passwords (services/radicale's).
     // lib.optionalAttrs hasCalendar (
-      lib.genAttrs' (owners ++ ownerGroups) (
+      lib.genAttrs' owners (
         name:
-        lib.nameValuePair (calendarPassword name) {
+        lib.nameValuePair (calendarSecret name) {
+          key = calendarPassword name;
           restartUnits = [ "nanohub-assets.service" ];
         }
       )
@@ -544,11 +543,9 @@ in
             // lib.optionalAttrs (app.config != { }) { LegacyAppConfigAssetReference = configId name; };
           }
         ) apps;
-        # Each owner's identity, mail account and calendar account, and each
-        # group's calendar account for its members' devices. Passwords are
-        # private assets, given only to the devices they're for.
+        # Each owner's identity, mail account and calendar account. Passwords
+        # are private assets, given only to the devices they're for.
         personId = p: "${prefix}.person.${p}";
-        groupId = g: "${prefix}.group.${g}";
         devicesOf = p: lib.filter (d: d.owner == p && d.udid != null) deviceList;
         # A user name and the password in sops secret, for these devices.
         credential = user: secret: devices: {
@@ -624,32 +621,15 @@ in
                 "${personId p}.mail.credential" = credential p (mailPassword p) (devicesOf p);
               }
               // lib.optionalAttrs hasCalendar {
-                "${personId p}.calendar.credential" = credential p (calendarPassword p) (devicesOf p);
+                "${personId p}.calendar.credential" = credential p (calendarSecret p) (devicesOf p);
               };
           };
-        # Each group's, on its members' devices.
-        groupThings = g: {
-          declarations = lib.optionalAttrs hasCalendar {
-            "${groupId g}.calendar" = calendarAccount (lib.toSentenceCase g) "${groupId g}.calendar.credential";
-          };
-          assets = lib.optionalAttrs hasCalendar {
-            "${groupId g}.calendar.credential" = credential g (calendarPassword g) (
-              lib.concatMap devicesOf ark.groups.${g}
-            );
-          };
-        };
-
         people = lib.genAttrs owners personThings;
-        groups = lib.genAttrs ownerGroups groupThings;
-        personDeclarations = lib.concatMapAttrs (_: t: t.declarations) (people // groups);
-        personAssets = lib.concatMapAttrs (_: t: t.assets) (people // groups);
-        personSets =
-          lib.mapAttrs' (
-            p: t: lib.nameValuePair (personSet p) (lib.attrNames t.declarations ++ lib.attrNames t.assets)
-          ) people
-          // lib.mapAttrs' (
-            g: t: lib.nameValuePair (groupSet g) (lib.attrNames t.declarations ++ lib.attrNames t.assets)
-          ) groups;
+        personDeclarations = lib.concatMapAttrs (_: t: t.declarations) people;
+        personAssets = lib.concatMapAttrs (_: t: t.assets) people;
+        personSets = lib.mapAttrs' (
+          p: t: lib.nameValuePair (personSet p) (lib.attrNames t.declarations ++ lib.attrNames t.assets)
+        ) people;
 
         allDeclarations = apple.declarations // appDeclarations // personDeclarations;
         sets =
@@ -776,7 +756,6 @@ in
                 lib.unique (
                   [ "default" ]
                   ++ lib.optional (d.owner != null && (hasMail || hasCalendar)) (personSet d.owner)
-                  ++ map groupSet (lib.filter (g: lib.elem d.owner ark.groups.${g}) ownerGroups)
                   ++ d.sets
                 )
               )
