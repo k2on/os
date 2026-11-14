@@ -48,6 +48,24 @@ in
           BadgesEnabled = true;
           SoundsEnabled = true;
         }
+        {
+          BundleIdentifier = "com.apple.mobilecal";
+          NotificationsEnabled = true;
+          ShowInNotificationCenter = true;
+          ShowInLockScreen = true;
+          AlertType = 1;
+          BadgesEnabled = true;
+          SoundsEnabled = true;
+        }
+        {
+          BundleIdentifier = "org.whispersystems.signal";
+          NotificationsEnabled = true;
+          ShowInNotificationCenter = true;
+          ShowInLockScreen = true;
+          AlertType = 1;
+          BadgesEnabled = true;
+          SoundsEnabled = true;
+        }
       ];
     }
   ];

@@ -85,6 +85,16 @@ let
   hasMail = ark.services ? mail;
   mailHost = "mail.${ark.mainDomain}";
   mailPassword = p: "mail_password_${p}";
+  # Their calendars (services/radicale): theirs, and each group's they're in,
+  # its own login (a group's set, group-<name>, holds its account).
+  hasCalendar = ark.services ? radicale;
+  calendarHost = ark.serviceDomain "radicale" ark.services.radicale;
+  calendarPassword = name: "radicale_password_${name}";
+  groupSet = g: "group-${g}";
+  # Groups with a member who has an enrolled device.
+  ownerGroups = lib.optionals hasCalendar (
+    lib.filter (g: lib.any (p: lib.elem p owners) ark.groups.${g}) (lib.attrNames ark.groups)
+  );
 in
 {
   options.ark.devices.apple = {
@@ -430,6 +440,15 @@ in
           restartUnits = [ "nanohub-assets.service" ];
         }
       )
+    )
+    # Their calendar passwords, and their groups' (services/radicale's).
+    // lib.optionalAttrs hasCalendar (
+      lib.genAttrs' (owners ++ ownerGroups) (
+        name:
+        lib.nameValuePair (calendarPassword name) {
+          restartUnits = [ "nanohub-assets.service" ];
+        }
+      )
     );
 
     backup = {
@@ -525,78 +544,112 @@ in
             // lib.optionalAttrs (app.config != { }) { LegacyAppConfigAssetReference = configId name; };
           }
         ) apps;
-        # Each owner's identity and mail account, their password a private
-        # asset given only to their devices.
+        # Each owner's identity, mail account and calendar account, and each
+        # group's calendar account for its members' devices. Passwords are
+        # private assets, given only to the devices they're for.
         personId = p: "${prefix}.person.${p}";
-        personDeclarations = lib.optionalAttrs hasMail (
-          lib.concatMapAttrs (
-            p: person:
-            lib.optionalAttrs (lib.elem p owners) {
-              "${personId p}.identity" = {
-                type = "com.apple.asset.useridentity";
-                payload = {
-                  FullName = person.displayName;
-                  EmailAddress = person.mail;
-                };
-              };
-              "${personId p}.mail" = {
-                type = "com.apple.configuration.account.mail";
-                payload =
-                  let
-                    server = port: {
-                      HostName = mailHost;
-                      Port = port;
-                      AuthenticationMethod = "Password";
-                      AuthenticationCredentialsAssetReference = "${personId p}.mail.credential";
-                    };
-                  in
-                  {
-                    VisibleName = person.mail;
-                    UserIdentityAssetReference = "${personId p}.identity";
-                    IncomingServer = server 993 // {
-                      ServerType = "IMAP";
-                    };
-                    OutgoingServer = server 465;
-                  };
-              };
-            }
-          ) ark.persons
-        );
-        personAssets = lib.optionalAttrs hasMail (
-          lib.listToAttrs (
+        groupId = g: "${prefix}.group.${g}";
+        devicesOf = p: lib.filter (d: d.owner == p && d.udid != null) deviceList;
+        # A user name and the password in sops secret, for these devices.
+        credential = user: secret: devices: {
+          type = "com.apple.asset.credential.userpassword";
+          contentType = "application/json";
+          extension = "json";
+          escape = "json";
+          enrollments = lib.listToAttrs (
             map (
-              p:
-              lib.nameValuePair "${personId p}.mail.credential" {
-                type = "com.apple.asset.credential.userpassword";
-                contentType = "application/json";
-                extension = "json";
-                escape = "json";
-                enrollments = lib.listToAttrs (
-                  map (
-                    d:
-                    lib.nameValuePair d.udid {
-                      content = builtins.toJSON {
-                        UserName = p;
-                        Password = "@password@";
-                      };
-                      substitutions.password = config.sops.secrets.${mailPassword p}.path;
-                    }
-                  ) (lib.filter (d: d.owner == p && d.udid != null) deviceList)
-                );
+              d:
+              lib.nameValuePair d.udid {
+                content = builtins.toJSON {
+                  UserName = user;
+                  Password = "@password@";
+                };
+                substitutions.password = config.sops.secrets.${secret}.path;
               }
-            ) owners
-          )
-        );
-        personSets = lib.optionalAttrs hasMail (
-          lib.genAttrs' owners (
-            p:
-            lib.nameValuePair (personSet p) [
-              "${personId p}.identity"
-              "${personId p}.mail"
-              "${personId p}.mail.credential"
-            ]
-          )
-        );
+            ) devices
+          );
+        };
+        calendarAccount = name: credentialId: {
+          type = "com.apple.configuration.account.caldav";
+          payload = {
+            VisibleName = name;
+            HostName = calendarHost;
+            Port = 443;
+            AuthenticationCredentialsAssetReference = credentialId;
+          };
+        };
+
+        # Each person's: declarations and assets by identifier.
+        personThings =
+          p:
+          let
+            person = ark.persons.${p};
+          in
+          {
+            declarations =
+              lib.optionalAttrs hasMail {
+                "${personId p}.identity" = {
+                  type = "com.apple.asset.useridentity";
+                  payload = {
+                    FullName = person.displayName;
+                    EmailAddress = person.mail;
+                  };
+                };
+                "${personId p}.mail" = {
+                  type = "com.apple.configuration.account.mail";
+                  payload =
+                    let
+                      server = port: {
+                        HostName = mailHost;
+                        Port = port;
+                        AuthenticationMethod = "Password";
+                        AuthenticationCredentialsAssetReference = "${personId p}.mail.credential";
+                      };
+                    in
+                    {
+                      VisibleName = person.mail;
+                      UserIdentityAssetReference = "${personId p}.identity";
+                      IncomingServer = server 993 // {
+                        ServerType = "IMAP";
+                      };
+                      OutgoingServer = server 465;
+                    };
+                };
+              }
+              // lib.optionalAttrs hasCalendar {
+                "${personId p}.calendar" = calendarAccount person.displayName "${personId p}.calendar.credential";
+              };
+            assets =
+              lib.optionalAttrs hasMail {
+                "${personId p}.mail.credential" = credential p (mailPassword p) (devicesOf p);
+              }
+              // lib.optionalAttrs hasCalendar {
+                "${personId p}.calendar.credential" = credential p (calendarPassword p) (devicesOf p);
+              };
+          };
+        # Each group's, on its members' devices.
+        groupThings = g: {
+          declarations = lib.optionalAttrs hasCalendar {
+            "${groupId g}.calendar" = calendarAccount (lib.toSentenceCase g) "${groupId g}.calendar.credential";
+          };
+          assets = lib.optionalAttrs hasCalendar {
+            "${groupId g}.calendar.credential" = credential g (calendarPassword g) (
+              lib.concatMap devicesOf ark.groups.${g}
+            );
+          };
+        };
+
+        people = lib.genAttrs owners personThings;
+        groups = lib.genAttrs ownerGroups groupThings;
+        personDeclarations = lib.concatMapAttrs (_: t: t.declarations) (people // groups);
+        personAssets = lib.concatMapAttrs (_: t: t.assets) (people // groups);
+        personSets =
+          lib.mapAttrs' (
+            p: t: lib.nameValuePair (personSet p) (lib.attrNames t.declarations ++ lib.attrNames t.assets)
+          ) people
+          // lib.mapAttrs' (
+            g: t: lib.nameValuePair (groupSet g) (lib.attrNames t.declarations ++ lib.attrNames t.assets)
+          ) groups;
 
         allDeclarations = apple.declarations // appDeclarations // personDeclarations;
         sets =
@@ -721,7 +774,10 @@ in
               _: d:
               lib.nameValuePair d.udid (
                 lib.unique (
-                  [ "default" ] ++ lib.optional (hasMail && d.owner != null) (personSet d.owner) ++ d.sets
+                  [ "default" ]
+                  ++ lib.optional (d.owner != null && (hasMail || hasCalendar)) (personSet d.owner)
+                  ++ map groupSet (lib.filter (g: lib.elem d.owner ark.groups.${g}) ownerGroups)
+                  ++ d.sets
                 )
               )
             ) (lib.filterAttrs (_: d: d.udid != null) apple.devices)
