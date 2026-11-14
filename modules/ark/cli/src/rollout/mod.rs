@@ -267,6 +267,10 @@ pub fn watch(source: &mut dyn Source, hosts: &Hosts, commit: &str, subject: &str
                     continue;
                 }
                 Some(Expected::Unknown(why)) => {
+                    // Not known yet what it should run, but it may well be
+                    // deploying it already: its comin log says how far.
+                    let seen = source.host(w.host);
+                    w.log = seen.log.or(w.log.take());
                     w.state = State::Pending(why.clone());
                     continue;
                 }

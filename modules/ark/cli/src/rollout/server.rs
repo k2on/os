@@ -3,8 +3,8 @@
 //! (`arkMonitoring`, metrics.<domain> and logs.<domain>).
 //!
 //! Expected systems are ark-rollout's (services/dash/rollout), worked out on
-//! the monitoring host for each new commit on main; until it has any (ark-rollout not
-//! deployed yet), they're evaluated here, as the direct source does.
+//! the monitoring host for each new commit on main, raced against the same
+//! evaluation here: whichever answers first for a host.
 //! Prometheus scrapes every minute, so this lags the hosts by up to that.
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::direct::{comin_seen, devices_seen};
-use super::{evaluate_here, evaluate_these, DevicesSeen, Expected, HostSeen, Source};
+use super::{evaluate_these, DevicesSeen, Expected, HostSeen, Source};
 use crate::hosts::{Host, Hosts};
 use crate::prom::Sample;
 
@@ -29,9 +29,10 @@ pub struct Server<'a> {
     samples: BTreeMap<String, Vec<Sample>>,
     /// Hosts Prometheus last scraped fine.
     up: BTreeMap<String, bool>,
-    evaluated_here: Option<BTreeMap<String, Expected>>,
-    /// Hosts the monitoring host failed to evaluate, as evaluated here instead.
-    retried: BTreeMap<String, Expected>,
+    /// The commit being evaluated here, in the background (see expected).
+    local: Option<std::thread::JoinHandle<BTreeMap<String, Expected>>>,
+    /// What that evaluation said, once done.
+    here: Option<BTreeMap<String, Expected>>,
 }
 
 /// %-encoding for a query string value.
@@ -65,8 +66,8 @@ impl<'a> Server<'a> {
                 .build(),
             samples: BTreeMap::new(),
             up: BTreeMap::new(),
-            evaluated_here: None,
-            retried: BTreeMap::new(),
+            local: None,
+            here: None,
         }
     }
 
@@ -120,6 +121,27 @@ impl<'a> Server<'a> {
     }
 }
 
+/// What a host should run, from the monitoring host's answer (`there`) and
+/// this machine's (`here`, None while still evaluating). A path from either
+/// settles it. A failure is final only when both failed: either side can
+/// fail where the other doesn't (a host of another system whose evaluation
+/// builds something first: cale, aarch64, on an x86_64 one; or the other
+/// way round on an aarch64 laptop).
+fn merge(monitor: &str, there: Expected, here: Option<&Expected>) -> Expected {
+    match (there, here) {
+        (Expected::Path(p), _) => Expected::Path(p),
+        (_, Some(Expected::Path(p))) => Expected::Path(p.clone()),
+        (Expected::Failed(t), Some(Expected::Failed(h))) => {
+            Expected::Failed(format!("on {monitor}: {t}; here: {h}"))
+        }
+        (Expected::Failed(_), _) => {
+            Expected::Unknown(format!("{monitor} can't evaluate it; evaluating here"))
+        }
+        (Expected::Unknown(why), None) => Expected::Unknown(format!("{why}; evaluating here too")),
+        (unknown, _) => unknown,
+    }
+}
+
 /// A comin log line without its timestamp and level, as comin-log does
 /// (aspects/deploy.nix).
 fn clean(line: &str) -> String {
@@ -155,35 +177,43 @@ impl Source for Server<'_> {
     }
 
     fn expected(&mut self, commit: &str) -> BTreeMap<String, Expected> {
-        if let Some(e) = &self.evaluated_here {
-            return e.clone();
+        // The same commit evaluated here, alongside: whichever answers first
+        // for a host is what it should run (they agree), so the watch never
+        // waits on ark-rollout noticing the commit and evaluating every
+        // host, which can take longer than a host takes to deploy.
+        if self.local.is_none() && self.here.is_none() {
+            let (root, commit) = (self.root.clone(), commit.to_string());
+            let names: Vec<String> = self.hosts.0.keys().cloned().collect();
+            self.local = Some(std::thread::spawn(move || {
+                evaluate_these(&root, &names, &commit)
+            }));
         }
-        // ark-rollout has never published: work it out here instead.
-        if self
-            .query("ark_rollout_commit_timestamp_seconds")
-            .is_some_and(|s| s.is_empty())
-        {
-            return self
-                .evaluated_here
-                .insert(evaluate_here(&self.root, self.hosts, commit))
-                .clone();
+        if self.local.as_ref().is_some_and(|l| l.is_finished()) {
+            self.here = self.local.take().and_then(|l| l.join().ok());
         }
+
         let of = |q: &str| {
             self.query(&format!("{q}{{commit=\"{commit}\"}}"))
                 .unwrap_or_default()
         };
+        // No ark-rollout there at all (not deployed yet): only here counts.
+        let absent = self
+            .query("ark_rollout_commit_timestamp_seconds")
+            .is_some_and(|s| s.is_empty());
         let seen = !of("ark_rollout_commit_timestamp_seconds").is_empty();
         let paths = of("ark_rollout_expected_system");
         let failures = of("ark_rollout_eval_failed");
-        let mut expected: BTreeMap<String, Expected> = self
-            .hosts
+        self.hosts
             .0
             .keys()
             .map(|name| {
                 // target_host: Prometheus keeps "host" for the host it
-                // scraped (the monitoring host), so ark-rollout names the one it means so.
+                // scraped (the monitoring host), so ark-rollout names the
+                // one it means so.
                 let by = |s: &&Sample| s.labels.get("target_host") == Some(name);
-                let e = if let Some(p) = paths.iter().find(by).and_then(|s| s.labels.get("path")) {
+                let there = if absent {
+                    Expected::Failed("ark-rollout isn't running there".into())
+                } else if let Some(p) = paths.iter().find(by).and_then(|s| s.labels.get("path")) {
                     Expected::Path(p.clone())
                 } else if let Some(f) = failures.iter().find(by) {
                     Expected::Failed(f.labels.get("error").cloned().unwrap_or_default())
@@ -192,33 +222,10 @@ impl Source for Server<'_> {
                 } else {
                     Expected::Unknown(format!("waiting for {} to see the commit", self.host))
                 };
-                (name.clone(), e)
+                let here = self.here.as_ref().and_then(|h| h.get(name));
+                (name.clone(), merge(&self.host, there, here))
             })
-            .collect();
-        // What the monitoring host can't evaluate may still evaluate here: a host of
-        // another system whose evaluation builds something first (cale,
-        // aarch64, on an x86_64 one). Each such host once; it fails only if it
-        // fails here too.
-        let unsure: Vec<String> = expected
-            .iter()
-            .filter(|(n, e)| matches!(e, Expected::Failed(_)) && !self.retried.contains_key(*n))
-            .map(|(n, _)| n.clone())
-            .collect();
-        if !unsure.is_empty() {
-            self.retried
-                .extend(evaluate_these(&self.root, &unsure, commit));
-        }
-        for (name, e) in expected.iter_mut() {
-            if let (Expected::Failed(there), Some(here)) = (&*e, self.retried.get(name)) {
-                *e = match here {
-                    Expected::Failed(here) => {
-                        Expected::Failed(format!("on {}: {there}; here: {here}", self.host))
-                    }
-                    other => other.clone(),
-                };
-            }
-        }
-        expected
+            .collect()
     }
 
     fn host(&mut self, host: &Host) -> HostSeen {
@@ -250,6 +257,44 @@ impl Source for Server<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn show(e: &Expected) -> String {
+        match e {
+            Expected::Path(p) => format!("path {p}"),
+            Expected::Failed(f) => format!("failed {f}"),
+            Expected::Unknown(u) => format!("unknown {u}"),
+        }
+    }
+
+    #[test]
+    fn merges_there_and_here() {
+        let path = |p: &str| Expected::Path(p.into());
+        let failed = |f: &str| Expected::Failed(f.into());
+        let unknown = |u: &str| Expected::Unknown(u.into());
+        let cases = [
+            // Whichever has a path first.
+            (path("a"), None, "path a"),
+            (unknown("busy"), Some(path("b")), "path b"),
+            (failed("IFD"), Some(path("b")), "path b"),
+            // Both failed: final, with both reasons.
+            (
+                failed("IFD"),
+                Some(failed("no key")),
+                "failed on m: IFD; here: no key",
+            ),
+            // One side failed: wait for the other.
+            (
+                failed("IFD"),
+                None,
+                "unknown m can't evaluate it; evaluating here",
+            ),
+            (unknown("busy"), Some(failed("no key")), "unknown busy"),
+            (unknown("busy"), None, "unknown busy; evaluating here too"),
+        ];
+        for (there, here, want) in cases {
+            assert_eq!(show(&merge("m", there, here.as_ref())), want);
+        }
+    }
 
     #[test]
     fn encodes() {

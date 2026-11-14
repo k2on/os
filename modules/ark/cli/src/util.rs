@@ -52,16 +52,18 @@ pub fn status(cmd: &mut Command, what: &str) -> Result<()> {
 /// touch covers the other.
 pub fn ssh_sharing() -> Vec<String> {
     // The runtime directory is already private; elsewhere, a private one.
-    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(|| {
-        let dir = std::env::temp_dir().join("ark-ssh");
-        let _ = std::fs::create_dir_all(&dir);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-        }
-        dir
-    });
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let dir = std::env::temp_dir().join("ark-ssh");
+            let _ = std::fs::create_dir_all(&dir);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+            }
+            dir
+        });
     vec![
         "-o".into(),
         "ControlMaster=auto".into(),
