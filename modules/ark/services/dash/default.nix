@@ -9,7 +9,10 @@
 # Those not always on (den.hosts.<…>.alwaysOn = false: a laptop) are scraped
 # but never reported down.
 #
-# Prometheus and Alertmanager listen on adam only; Grafana is behind nginx
+# Loki keeps every host's journal (Alloy ships it, aspects/metrics.nix).
+# Prometheus and Loki answer on the tailnet at metrics.<domain> and
+# logs.<domain> (for `ark push`, and Alloy's pushes); Alertmanager listens
+# on adam only; Grafana is behind nginx
 # like every service. Dashboards and the data source are provisioned
 # read-only: they change here, not in Grafana.
 { config, lib, ... }:
@@ -23,6 +26,11 @@ let
   sender = "alerts";
   prometheusPort = 9090;
   alertmanagerPort = 9093;
+  lokiPort = 3100;
+  # Prometheus and Loki on the tailnet, at their own names (DNS: the
+  # aliases below), for `ark push` on a laptop and Alloy on every host.
+  metricsDomain = "metrics.${ark.mainDomain}";
+  logsDomain = "logs.${ark.mainDomain}";
 
   targets =
     port:
@@ -37,7 +45,28 @@ in
 {
   ark.mailSenders.${sender} = { };
 
+  perSystem =
+    { pkgs, ... }:
+    let
+      ark-rollout = pkgs.callPackage ../../_rust.nix { pname = "ark-rollout"; };
+    in
+    {
+      packages = { inherit ark-rollout; };
+      checks.ark-rollout = pkgs.callPackage ./_rollout-check.nix { inherit ark-rollout; };
+    };
+
+  # Where `ark push` (modules/ark/cli) reads what Grafana shows.
+  flake.arkMonitoring = {
+    prometheus = "https://${metricsDomain}";
+    loki = "https://${logsDomain}";
+  };
+
   ark.services.dash = {
+    aliases = [
+      "metrics"
+      "logs"
+    ];
+
     oidc = {
       callbacks = [ "/login/generic_oauth" ];
       displayName = "Dashboards";
@@ -160,6 +189,93 @@ in
               ) ark.persons
             );
 
+        # What every host should run at the newest commit on main (./rollout),
+        # beside what each runs (ark_system_info): `ark push` and the Deploys
+        # dashboard read both. Root, so nix can fetch the secrets submodule
+        # with the host's own key, as comin does (aspects/deploy.nix).
+        systemd.services.ark-rollout = {
+          description = "What every host should run at the newest commit on main";
+          wantedBy = [ "multi-user.target" ];
+          wants = [ "network-online.target" ];
+          after = [ "network-online.target" ];
+          path = [
+            config.nix.package
+            pkgs.git
+            pkgs.openssh
+          ];
+          environment.HOME = "/var/lib/ark-rollout";
+          serviceConfig = {
+            ExecStart = lib.escapeShellArgs [
+              (lib.getExe (pkgs.callPackage ../../_rust.nix { pname = "ark-rollout"; }))
+              "https://git.${ark.mainDomain}/max/os.git"
+              "${config.ark.metrics.textfileDir}/ark_rollout.prom"
+            ];
+            StateDirectory = "ark-rollout";
+            Restart = "on-failure";
+            # Evaluating every host is heavy; the services come first.
+            Nice = 10;
+            IOSchedulingClass = "idle";
+          };
+        };
+
+        # Logs: every host's journal (Alloy, aspects/metrics.nix), kept 30
+        # days. One process, on disk; Grafana reads it, `ark push` too.
+        services.loki = {
+          enable = true;
+          configuration = {
+            auth_enabled = false;
+            server = {
+              http_listen_address = "127.0.0.1";
+              http_listen_port = lokiPort;
+              grpc_listen_address = "127.0.0.1";
+            };
+            common = {
+              path_prefix = "/var/lib/loki";
+              replication_factor = 1;
+              instance_addr = "127.0.0.1";
+              ring.kvstore.store = "inmemory";
+              storage.filesystem = {
+                chunks_directory = "/var/lib/loki/chunks";
+                rules_directory = "/var/lib/loki/rules";
+              };
+            };
+            schema_config.configs = [
+              {
+                from = "2026-11-01";
+                store = "tsdb";
+                object_store = "filesystem";
+                schema = "v13";
+                index = {
+                  prefix = "index_";
+                  period = "24h";
+                };
+              }
+            ];
+            limits_config.retention_period = "720h";
+            compactor = {
+              working_directory = "/var/lib/loki/compactor";
+              retention_enabled = true;
+              delete_request_store = "filesystem";
+            };
+            analytics.reporting_enabled = false;
+          };
+        };
+
+        # Prometheus and Loki on the tailnet (only: neither name is public,
+        # lib/public.nix): reading for `ark push`, and Loki's push for Alloy.
+        services.nginx.virtualHosts = {
+          ${metricsDomain} = {
+            useACMEHost = ark.mainDomain;
+            forceSSL = true;
+            locations."/".proxyPass = "http://127.0.0.1:${toString prometheusPort}";
+          };
+          ${logsDomain} = {
+            useACMEHost = ark.mainDomain;
+            forceSSL = true;
+            locations."/".proxyPass = "http://127.0.0.1:${toString lokiPort}";
+          };
+        };
+
         # The DNS log (aspects/dns.nix): every resolver writes its lookups into
         # this database over the tailnet, as its own role with a password;
         # Grafana reads them through the local socket as a role that may only
@@ -253,6 +369,13 @@ in
                 uid = "prometheus";
                 url = "http://127.0.0.1:${toString prometheusPort}";
                 isDefault = true;
+                editable = false;
+              }
+              {
+                name = "Logs";
+                type = "loki";
+                uid = "loki";
+                url = "http://127.0.0.1:${toString lokiPort}";
                 editable = false;
               }
               {

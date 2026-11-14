@@ -1,0 +1,8 @@
+[package]
+name = "ark-rollout"
+description = "What every host should run at the newest commit on main, as Prometheus metrics, for ark push and Grafana"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

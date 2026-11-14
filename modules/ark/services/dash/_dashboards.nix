@@ -57,6 +57,39 @@ let
       inherit options transformations;
     };
 
+  # A panel of log lines from Loki (every host's journal: aspects/metrics.nix).
+  logsPanel =
+    {
+      title,
+      expr,
+      w ? 24,
+      h ? 10,
+    }:
+    let
+      source = {
+        type = "loki";
+        uid = "loki";
+      };
+    in
+    {
+      inherit title;
+      type = "logs";
+      datasource = source;
+      gridPos = { inherit w h; };
+      targets = [
+        {
+          refId = "A";
+          datasource = source;
+          inherit expr;
+        }
+      ];
+      options = {
+        showTime = true;
+        wrapLogMessage = true;
+        sortOrder = "Descending";
+      };
+    };
+
   # A panel that asks the DNS log (PostgreSQL, aspects/dns.nix) in SQL.
   sqlPanel =
     {
@@ -711,6 +744,24 @@ in
           showValue = "never";
           mergeValues = true;
         };
+      })
+      (panel {
+        # What ark-rollout (./rollout) says each host should run at the newest
+        # commit on main, less what it runs: the hosts `ark push` waits for.
+        title = "Behind the newest commit";
+        type = "table";
+        instant = true;
+        exprs = [
+          {
+            expr = ''ark_rollout_expected_system unless on (target_host, path) label_replace(ark_system_info, "target_host", "$1", "host", "(.*)")'';
+          }
+        ];
+        w = 12;
+        options.showHeader = true;
+      })
+      (logsPanel {
+        title = "comin on every host";
+        expr = ''{unit="comin.service"} != "dropped event for subscriber"'';
       })
       (panel {
         title = "Deployed commit";

@@ -28,6 +28,8 @@ let
   giteaSsh = "ssh.${ark.mainDomain}";
   # Gitea's own ssh server (services/git), whose key is in its data directory.
   giteaSshPort = 2222;
+  # comin-log (below): its latest log line, beside comin's metrics on 4243.
+  cominLogPort = 4244;
   giteaSshKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDesfZ/Iu620kNIIon3XKFcPM0QE4uzYtYkkgpuixXcyQtRxLufW1tJwWvRxQIB8HIwJTGewxFSo/TpSsr6s/lTTF++mMwI7ft3lPTQOX76RnCMZ5Z3w3Z7DHKxtqEMQZUsEYFs+MlIK1h4Agpk90HSIMMf+xRNiH6DYusDJJmMuuek2PhdA02VGekbBCnaXeVbCIatcIRxmH5gKtwetl7PAmzyluPRQaXGaesD7fk8aYDBKtElFg1DO1llazUbKrKRx2uQxRcPTIEB9uoXJXyv2M3or+ZoxPhVUcb1RH6RmoW1BPkFnDOb1JNFc66eo1IdDs5y/M2ujsbE2JPcEbX7O5BZA09A8fVWon2RYT74o8ary36g9LcV2MoadqgLH6AnAzut9D9XxCW9/zkJlPbAWwllA0NE3wBolEifpJRid/+x3/Quzbedxalsc0xsFJ3IzIYVTFnfJa9wuu1LalGAA61JkFYF/DHPs1ONShMvFxRgVo0KL/RJwKPyzunUVSbvR95THv4QFkMJPvJvn1mxRKoeWudQyOy75T4CcXfrxXRrx3kWAMkHdnu4SnJbe4egSdxnAHMzs/XrBy4FS2eyuGFzpG10Tl96sZgG2CF9N7l8g5LPCDl8anoEFUIc96fr0R8AX/AsmSvFd4Xgq3sQktpS8OMohpXz92T7MCeuFQ==";
 
   # Whose signatures deploy: every key listed in modules/keys/max.pub.
@@ -78,6 +80,49 @@ in
           hostNames = [ "[${giteaSsh}]:${toString giteaSshPort}" ];
           publicKey = giteaSshKey;
         };
+
+        # comin's latest log line over the tailnet, for `ark push` to show by
+        # each host it's waiting on: comin itself serves only metrics over
+        # HTTP. A connection runs journalctl once and gets the line back.
+        systemd.sockets.comin-log = {
+          wantedBy = [ "sockets.target" ];
+          socketConfig = {
+            ListenStream = cominLogPort;
+            Accept = true;
+          };
+        };
+        systemd.services."comin-log@" = {
+          description = "comin's latest log line, for ark push";
+          serviceConfig = {
+            StandardInput = "socket";
+            StandardOutput = "socket";
+            DynamicUser = true;
+            SupplementaryGroups = [ "systemd-journal" ];
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            PrivateTmp = true;
+            NoNewPrivileges = true;
+            RuntimeMaxSec = 10;
+          };
+          path = [
+            pkgs.systemd
+            pkgs.gnugrep
+            pkgs.gnused
+            pkgs.coreutils
+          ];
+          script = ''
+            # The request: read and ignored, there's one answer.
+            read -r -t 2 _ || true
+            # Its message, without comin's prefix, nor its relayed metric
+            # events ("broker: dropped event ...").
+            line=$(journalctl -u comin -n 200 -o cat --no-pager \
+              | grep -v 'dropped event for subscriber' \
+              | sed -E 's/^time="[^"]*" level=[a-z]+ msg=//; s/^"//; s/"$//; s/\\"/"/g' \
+              | tail -n 1)
+            printf 'HTTP/1.0 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\n' "$line"
+          '';
+        };
+        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ cominLogPort ];
       };
   };
 }

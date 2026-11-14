@@ -15,6 +15,7 @@ members = [
   "services/photos/avatars",
   "services/devices/apple/enroll",
   "services/devices/apple/metrics",
+  "services/dash/rollout",
 ]
 
 [workspace.package]

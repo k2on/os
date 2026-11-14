@@ -9,6 +9,7 @@ mod id;
 mod infra;
 mod prom;
 mod push;
+mod rollout;
 mod secrets;
 mod service;
 mod usb;
@@ -60,9 +61,28 @@ fn cli() -> Command {
                 .about("Push the signed commit on main to both remotes, and watch it deploy to every host and device")
                 .long_about(
                     "Push the signed commit on main, and the secrets submodule's new commits, to both remotes comin \
-                     deploys from; work out what each host should run at it (nix eval); then watch every host's \
-                     exporters over the tailnet until each runs that, and each device has caught up. Needs \
-                     nothing but the hosts themselves: works with monitoring down.",
+                     deploys from; then watch it until every host runs what it builds and every device has caught \
+                     up. Watches from adam's Prometheus and Loki when they answer (what Grafana shows), from the \
+                     hosts themselves when they don't.",
+                )
+                .arg(
+                    Arg::new("server")
+                        .long("server")
+                        .action(ArgAction::SetTrue)
+                        .conflicts_with("direct")
+                        .help("Watch from adam's monitoring, failing if it doesn't answer"),
+                )
+                .arg(
+                    Arg::new("direct")
+                        .long("direct")
+                        .action(ArgAction::SetTrue)
+                        .help("Watch the hosts themselves, even if adam's monitoring answers"),
+                )
+                .arg(
+                    Arg::new("no-push")
+                        .long("no-push")
+                        .action(ArgAction::SetTrue)
+                        .help("Only watch the commit already pushed"),
                 ),
         )
         .subcommand(Command::new("destroy").about("Destroy internet infra"))
@@ -119,7 +139,16 @@ fn run() -> Result<()> {
     match matches.subcommand() {
         Some(("plan", _)) => infra::run(&ctx, "plan"),
         Some(("apply", _)) => infra::run(&ctx, "apply"),
-        Some(("push", _)) => push::run(&ctx),
+        Some(("push", m)) => {
+            let via = if m.get_flag("server") {
+                push::Via::Server
+            } else if m.get_flag("direct") {
+                push::Via::Direct
+            } else {
+                push::Via::Auto
+            };
+            push::run(&ctx, via, !m.get_flag("no-push"))
+        }
         Some(("destroy", _)) => infra::run(&ctx, "destroy"),
         Some(("hosts", _)) => hosts::list(&ctx),
         Some(("id", m)) => match m.subcommand() {
