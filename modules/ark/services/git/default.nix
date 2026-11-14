@@ -1,9 +1,18 @@
-{ self, config, ... }:
+{
+  self,
+  config,
+  root,
+  ...
+}:
 let
   ark = config.ark;
   bot = import ../sivrad/_bot.nix;
 in
 {
+  # For `ark push` (modules/ark/cli): whether Gitea pushes on to GitHub
+  # (./_mirror.nix, once its token is in sops), so it needn't itself.
+  flake.arkPush.githubMirror = builtins.pathExists (root + "/secrets/vars/git-github.yaml");
+
   ark.services.git = {
     aliases = [ "ssh" ];
     oidc = {
@@ -12,6 +21,12 @@ in
       # XXX: PKCE is currently not supported by gitea/forgejo,
       # see https://github.com/go-gitea/gitea/issues/21376.
       pkce = false;
+    };
+    # GitHub's token for Gitea's push mirror (./_mirror.nix), by hand.
+    secrets.git_github_mirror_token = {
+      file = "git-github";
+      optional = true;
+      restartUnits = [ "gitea-github-mirror.service" ];
     };
     secrets.git_runner_token = {
       # gitea insists a registration token is exactly 40 characters
@@ -73,7 +88,16 @@ in
       in
       {
         # Its access token for the sivrad account (../sivrad/_bot.nix).
-        imports = [ (import ./_tokens.nix { mail = bot.mail ark.mainDomain; }) ];
+        imports = [
+          (import ./_tokens.nix { mail = bot.mail ark.mainDomain; })
+          # The os repository, pushed on to GitHub as it is pushed here.
+          (import ./_mirror.nix {
+            owner = "max";
+            repo = "os";
+            github = "https://github.com/k2on/os.git";
+            githubUser = "k2on";
+          })
+        ];
 
         sops.templates."gitea-runner.env" = {
           content = ''

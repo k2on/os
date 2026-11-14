@@ -32,3 +32,40 @@ pub fn status(cmd: &mut Command, what: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// ssh options that share one connection per server (OpenSSH's
+/// ControlMaster), kept 10 minutes after its last use: everything ark runs
+/// that signs in somewhere (git push, nix fetching the secrets submodule,
+/// ssh to a host) does it once, so the YubiKey is touched once per server,
+/// and not again for a second ark command soon after.
+pub fn ssh_sharing() -> Vec<String> {
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ark-ssh");
+    let _ = std::fs::create_dir_all(&dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    vec![
+        "-o".into(),
+        "ControlMaster=auto".into(),
+        "-o".into(),
+        format!("ControlPath={}/%C", dir.display()),
+        "-o".into(),
+        "ControlPersist=10m".into(),
+    ]
+}
+
+/// Has git, and nix's git fetches, go through `ssh_sharing`: set for this
+/// process, so every command ark runs inherits it. A GIT_SSH_COMMAND
+/// already set is left alone.
+pub fn share_ssh() {
+    if std::env::var_os("GIT_SSH_COMMAND").is_none() {
+        let opts = ssh_sharing().join(" ");
+        // SAFETY: set before any thread is started.
+        unsafe { std::env::set_var("GIT_SSH_COMMAND", format!("ssh {opts}")) };
+    }
+}

@@ -111,8 +111,12 @@ in
             pkgs.coreutils
           ];
           script = ''
-            # The request: read and ignored, there's one answer.
-            read -r -t 2 _ || true
+            # The request, read to its blank line and ignored (there's one
+            # answer): exiting with any of it unread would reset the
+            # connection, and the client could lose the answer.
+            while IFS= read -r -t 2 header; do
+              [ -z "''${header%$'\r'}" ] && break
+            done || true
             # Its message, without comin's prefix, nor its relayed metric
             # events ("broker: dropped event ...").
             line=$(journalctl -u comin -n 200 -o cat --no-pager \

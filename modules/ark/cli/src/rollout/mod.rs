@@ -87,6 +87,24 @@ pub trait Source {
 /// revision, not the working tree, whose uncommitted changes would make a
 /// system no host ever runs.
 pub fn evaluate_here(root: &Path, hosts: &Hosts, commit: &str) -> BTreeMap<String, Expected> {
+    // All at once: one nix, one fetch of the secrets submodule (so one
+    // YubiKey touch). If any host fails that, one by one, to say which.
+    let flake = format!("git+file://{}?submodules=1&rev={commit}#nixosConfigurations", root.display());
+    let names = hosts.0.keys().map(|n| format!("{n:?} = true;")).collect::<String>();
+    let apply = format!("cs: builtins.mapAttrs (_: c: c.config.system.build.toplevel.outPath) (builtins.intersectAttrs {{ {names} }} cs)");
+    if let Ok(out) = util::run(Command::new("nix").args(["eval", "--json", &flake, "--apply", &apply]).current_dir(root), "nix eval")
+    {
+        if let Ok(paths) = serde_json::from_str::<BTreeMap<String, String>>(&out) {
+            return hosts
+                .0
+                .keys()
+                .map(|n| {
+                    let e = paths.get(n).map_or_else(|| Expected::Failed("no such nixosConfiguration".into()), |p| Expected::Path(p.clone()));
+                    (n.clone(), e)
+                })
+                .collect();
+        }
+    }
     std::thread::scope(|s| {
         let jobs: Vec<_> = hosts
             .0

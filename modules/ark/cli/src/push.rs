@@ -45,12 +45,17 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
             eprintln!("ark: there are uncommitted changes; they aren't part of {short}");
         }
         eprintln!("ark: pushing {short} {subject}");
-        // Gitea (origin) with the secrets submodule's commits, then GitHub.
+        // Gitea (origin) with the secrets submodule's commits; GitHub too,
+        // unless Gitea mirrors there itself (services/git/_mirror.nix), which
+        // saves signing in to it.
         util::status(
             Command::new("git").args(["push", "--recurse-submodules=on-demand", "origin", "main"]).current_dir(&ctx.root),
             "git push origin",
         )?;
-        util::status(Command::new("git").args(["push", "github", "main"]).current_dir(&ctx.root), "git push github")?;
+        let mirrored = ctx.nix_eval("arkPush").ok().and_then(|v| v.get("githubMirror")?.as_bool()).unwrap_or(false);
+        if !mirrored {
+            util::status(Command::new("git").args(["push", "github", "main"]).current_dir(&ctx.root), "git push github")?;
+        }
     }
 
     let hosts = ctx.hosts()?;

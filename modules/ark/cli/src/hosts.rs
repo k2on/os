@@ -49,7 +49,7 @@ impl Host {
     fn command(&self) -> Result<(Command, &str)> {
         let target = self.target()?;
         let mut cmd = Command::new("ssh");
-        cmd.args(["-o", "StrictHostKeyChecking=accept-new"]);
+        cmd.args(["-o", "StrictHostKeyChecking=accept-new"]).args(util::ssh_sharing());
         Ok((cmd, target))
     }
 

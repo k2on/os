@@ -135,6 +135,8 @@ fn cli() -> Command {
 
 fn run() -> Result<()> {
     let matches = cli().get_matches();
+    // One YubiKey touch per server, whatever the command does there.
+    util::share_ssh();
     let ctx = Ctx::discover()?;
     match matches.subcommand() {
         Some(("plan", _)) => infra::run(&ctx, "plan"),
