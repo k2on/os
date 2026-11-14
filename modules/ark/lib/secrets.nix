@@ -33,7 +33,7 @@
 #
 # The same key on a terranix aspect (a provider needing an API token)
 # declares an admin-only secret: encrypted to ark.adminKeys alone and
-# exported into the environment of `ark plan/push/destroy` under its name.
+# exported into the environment of `ark plan/apply/destroy` under its name.
 # It reaches the manifest through a terranix-class consumer on infra-base.
 # These all share one file, secrets/vars/infra.yaml, so loading them costs
 # a single decryption (one yubikey touch) per command.

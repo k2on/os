@@ -10,6 +10,8 @@ pub struct Declaration {
     pub active: bool,
     /// "valid", "invalid" or "unknown".
     pub valid: String,
+    /// Whether the device has its current version (nanohub's server token).
+    pub current: bool,
 }
 
 pub struct DeviceStatus {
@@ -63,6 +65,7 @@ pub fn parse_status(udid: &str, declarations: &Value, values: &Value) -> DeviceS
                     identifier: s(d, "identifier")?,
                     active: d.get("active").and_then(Value::as_bool).unwrap_or(false),
                     valid: s(d, "valid").unwrap_or_else(|| "unknown".into()),
+                    current: d.get("current").and_then(Value::as_bool).unwrap_or(false),
                 })
             })
             .collect(),
@@ -113,7 +116,7 @@ mod tests {
     #[test]
     fn parses() {
         let declarations = json!({ "U": [
-            { "identifier": "a.status", "active": true, "valid": "valid" },
+            { "identifier": "a.status", "active": true, "valid": "valid", "current": true },
             { "identifier": "a.app", "active": false, "valid": "invalid" }
         ]});
         let values = json!({ "U": [

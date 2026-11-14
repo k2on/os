@@ -16,7 +16,7 @@
 # Mail to the internet leaves through Scaleway Transactional Email (TEM),
 # which signs it (DKIM) and sends it from addresses mail providers trust;
 # the vps's own port 25 out is blocked anyway. (Amazon SES was the first
-# choice, but AWS would not take the account out of its sandbox.) `ark push`
+# choice, but AWS would not take the account out of its sandbox.) `ark apply`
 # does all of it, in one apply: subscribes the project to TEM's Essential
 # plan (a free monthly allowance, then pay per mail), sets TEM up for the
 # domain with its DNS records (DKIM, SPF, DMARC) and an IAM application
@@ -26,7 +26,7 @@
 # deploys. Until it is there, Stalwart reads the files the vps had before
 # (/var/lib/mail-relay). Scaleway checks the records by itself; `ark
 # service mail status` (./cli) asks it to now if they have not passed yet,
-# and says how much it sent. The Scaleway keys `ark push` uses are infra
+# and says how much it sent. The Scaleway keys `ark apply` uses are infra
 # secrets (SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_ORGANIZATION_ID,
 # SCW_DEFAULT_PROJECT_ID), entered with `ark secrets`, for an API key that
 # may manage TEM and IAM.
@@ -143,7 +143,7 @@ in
   };
 
   # The Scaleway provider, once for the whole infra; its keys are admin-only
-  # infra secrets (lib/secrets.nix), exported to `ark plan/push`.
+  # infra secrets (lib/secrets.nix), exported to `ark plan/apply`.
   config.den.aspects.mail-scaleway = {
     terranix = {
       terraform.required_providers.scaleway = {
@@ -351,7 +351,7 @@ in
           serverAliases = map (d: "mail.${d}") (lib.remove domain domains);
         };
         security.acme.certs.${hostname}.reloadServices = [ "stalwart.service" ];
-        # A first order can come before its name resolves (`ark push` makes
+        # A first order can come before its name resolves (`ark apply` makes
         # the records and deploys together). Keep trying until it does, at
         # the 15 minutes NixOS spaces retries by (Let's Encrypt allows 5
         # failures an hour); Stalwart has a self-signed stand-in until then.

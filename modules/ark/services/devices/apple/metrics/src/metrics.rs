@@ -77,6 +77,7 @@ pub fn render(config: &Config, c: &Collected, answers: &HashMap<String, DeviceIn
     out.help("apple_device_info", "The device's model and OS version, as it last reported them.");
     out.help("apple_device_declaration_active", "Whether a declaration is active on the device.");
     out.help("apple_device_declaration_valid", "Whether the device found a declaration valid (1) or invalid (0).");
+    out.help("apple_device_declarations_pending", "Declarations the device hasn't caught up with yet.");
     out.help("apple_device_battery_level_ratio", "The device's battery, 0 to 1, as it last answered.");
     out.help("apple_device_storage_available_bytes", "The device's free storage, as it last answered.");
     out.help("apple_device_storage_total_bytes", "The device's storage, as it last answered.");
@@ -92,6 +93,8 @@ pub fn render(config: &Config, c: &Collected, answers: &HashMap<String, DeviceIn
                 let os = s.os_version.as_deref().unwrap_or("");
                 let model = s.model.as_deref().unwrap_or("");
                 out.line("apple_device_info", &[id[0], id[1], ("os_version", os), ("model", model)], 1);
+                let pending = s.declarations.iter().filter(|d| !d.current).count();
+                out.line("apple_device_declarations_pending", &id, pending);
                 for decl in &s.declarations {
                     let l = [id[0], id[1], ("declaration", decl.identifier.as_str())];
                     out.line("apple_device_declaration_active", &l, u8::from(decl.active));
@@ -163,7 +166,7 @@ mod tests {
     #[test]
     fn renders() {
         let status = DeviceStatus {
-            declarations: vec![Declaration { identifier: "a.\"app\"".into(), active: false, valid: "invalid".into() }],
+            declarations: vec![Declaration { identifier: "a.\"app\"".into(), active: false, valid: "invalid".into(), current: false }],
             last_report: Some(100),
             os_version: Some("26.1".into()),
             model: None,
@@ -182,6 +185,7 @@ mod tests {
             r#"apple_device_info{device="max-iphone",owner="max",os_version="26.1",model=""} 1"#,
             r#"apple_device_declaration_active{device="max-iphone",owner="max",declaration="a.\"app\""} 0"#,
             r#"apple_device_declaration_valid{device="max-iphone",owner="max",declaration="a.\"app\""} 0"#,
+            r#"apple_device_declarations_pending{device="max-iphone",owner="max"} 1"#,
             r#"apple_device_battery_level_ratio{device="max-iphone",owner="max"} 0.5"#,
             r#"apple_device_storage_available_bytes{device="max-iphone",owner="max"} 1500000000"#,
             "apple_devices_metrics_errors 1",

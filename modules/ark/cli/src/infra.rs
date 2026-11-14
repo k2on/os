@@ -1,4 +1,4 @@
-//! `ark plan | push | destroy`: terranix through tofu, with the provider
+//! `ark plan | apply | destroy`: terranix through tofu, with the provider
 //! tokens in the environment.
 use std::fs;
 

@@ -35,49 +35,49 @@ let
 in
 {
   den.aspects.deploy = {
-      nixos =
-        { pkgs, ... }:
-        {
-          imports = [ inputs.comin.nixosModules.comin ];
+    nixos =
+      { pkgs, ... }:
+      {
+        imports = [ inputs.comin.nixosModules.comin ];
 
-          services.comin = {
-            enable = true;
-            submodules = true;
-            remotes = [
-              {
-                name = "gitea";
-                url = "https://${gitea}/max/os.git";
-              }
-              {
-                name = "github";
-                url = "https://github.com/k2on/os.git";
-              }
-            ];
-            # The last 5 deployments stay bootable, as the plain system profile's
-            # (aspects/gc.nix).
-            retention = {
-              deployment_boot_entry_capacity = 5;
-              deployment_successful_capacity = 5;
-              deployment_any_capacity = 5;
-            };
-            sshAllowedSignersPath = "${pkgs.writeText "comin-allowed-signers" (
-              lib.concatMapStrings (key: "max namespaces=\"git\" ${key}\n") signers
-            )}";
+        services.comin = {
+          enable = true;
+          submodules = true;
+          remotes = [
+            {
+              name = "gitea";
+              url = "https://${gitea}/max/os.git";
+            }
+            {
+              name = "github";
+              url = "https://github.com/k2on/os.git";
+            }
+          ];
+          # The last 5 deployments stay bootable, as the plain system profile's
+          # (aspects/gc.nix).
+          retention = {
+            deployment_boot_entry_capacity = 5;
+            deployment_successful_capacity = 5;
+            deployment_any_capacity = 5;
           };
-
-          # Nix fetches the submodule with git; comin's unit has only nix and ssh.
-          systemd.services.comin.path = [ pkgs.git ];
-
-          # Root's way into Gitea for the submodule: the host key, nobody else's.
-          programs.ssh.extraConfig = ''
-            Match host ${giteaSsh} localuser root
-              IdentityFile /etc/ssh/ssh_host_ed25519_key
-              IdentitiesOnly yes
-          '';
-          programs.ssh.knownHosts.gitea = {
-            hostNames = [ "[${giteaSsh}]:${toString giteaSshPort}" ];
-            publicKey = giteaSshKey;
-          };
+          sshAllowedSignersPath = "${pkgs.writeText "comin-allowed-signers" (
+            lib.concatMapStrings (key: "max namespaces=\"git\" ${key}\n") signers
+          )}";
         };
-    };
+
+        # Nix fetches the submodule with git; comin's unit has only nix and ssh.
+        systemd.services.comin.path = [ pkgs.git ];
+
+        # Root's way into Gitea for the submodule: the host key, nobody else's.
+        programs.ssh.extraConfig = ''
+          Match host ${giteaSsh} localuser root
+            IdentityFile /etc/ssh/ssh_host_ed25519_key
+            IdentitiesOnly yes
+        '';
+        programs.ssh.knownHosts.gitea = {
+          hostNames = [ "[${giteaSsh}]:${toString giteaSshPort}" ];
+          publicKey = giteaSshKey;
+        };
+      };
+  };
 }

@@ -7,6 +7,8 @@
 mod hosts;
 mod id;
 mod infra;
+mod prom;
+mod push;
 mod secrets;
 mod service;
 mod usb;
@@ -52,7 +54,17 @@ fn cli() -> Command {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(Command::new("plan").about("Plan out internet infra"))
-        .subcommand(Command::new("push").about("Generate internet infra"))
+        .subcommand(Command::new("apply").about("Generate internet infra"))
+        .subcommand(
+            Command::new("push")
+                .about("Push the signed commit on main to both remotes, and watch it deploy to every host and device")
+                .long_about(
+                    "Push the signed commit on main, and the secrets submodule's new commits, to both remotes comin \
+                     deploys from; work out what each host should run at it (nix eval); then watch every host's \
+                     exporters over the tailnet until each runs that, and each device has caught up. Needs \
+                     nothing but the hosts themselves: works with monitoring down.",
+                ),
+        )
         .subcommand(Command::new("destroy").about("Destroy internet infra"))
         .subcommand(Command::new("hosts").about("List the hosts, how to reach them, and the services each runs"))
         .subcommand(
@@ -106,7 +118,8 @@ fn run() -> Result<()> {
     let ctx = Ctx::discover()?;
     match matches.subcommand() {
         Some(("plan", _)) => infra::run(&ctx, "plan"),
-        Some(("push", _)) => infra::run(&ctx, "apply"),
+        Some(("apply", _)) => infra::run(&ctx, "apply"),
+        Some(("push", _)) => push::run(&ctx),
         Some(("destroy", _)) => infra::run(&ctx, "destroy"),
         Some(("hosts", _)) => hosts::list(&ctx),
         Some(("id", m)) => match m.subcommand() {

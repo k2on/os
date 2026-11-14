@@ -138,6 +138,9 @@ let
       title,
       panels,
       variables ? [ ],
+      # Marks on every panel's time axis, each from a query: a series that
+      # starts is an event, titled from its labels.
+      annotations ? [ ],
     }:
     {
       inherit uid title;
@@ -151,6 +154,17 @@ let
       };
       refresh = "1m";
       templating.list = variables;
+      annotations.list = map (a: {
+        inherit (a) name expr;
+        inherit datasource;
+        enable = true;
+        iconColor = a.color or "blue";
+        step = "1m";
+        titleFormat = a.title;
+        textFormat = a.text or "";
+        tagKeys = a.tags or "host";
+        useValueForTime = false;
+      }) annotations;
       panels = grid panels;
     };
 
@@ -621,4 +635,321 @@ in
       })
     ];
   };
+
+  # Deploys over time: each host's (comin, aspects/deploy.nix) and each
+  # Apple device catching up with its declarations after. `ark push` shows a
+  # rollout live; this is the history.
+  deploys = dashboard {
+    uid = "deploys";
+    title = "Deploys";
+    annotations = [
+      {
+        name = "Deployments";
+        # A commit's deployment info is a new series on the host.
+        expr = "comin_deployment_info unless comin_deployment_info offset 2m";
+        title = "{{host}}: {{commit_id}}";
+        text = "{{status}}";
+        color = "green";
+      }
+      {
+        name = "Failures";
+        expr = ''max by (host) ({__name__=~"comin_last_(eval|build|deployment)_failed"}) == 1 unless max by (host) ({__name__=~"comin_last_(eval|build|deployment)_failed"} offset 2m) == 1'';
+        title = "{{host}}: deploy failed";
+        color = "red";
+      }
+    ];
+    panels = [
+      (panel {
+        title = "Deploys by host";
+        type = "state-timeline";
+        exprs = [
+          {
+            expr = ''max by (host) ({__name__=~"comin_last_(eval|build|deployment)_failed"})'';
+            legend = "{{host}}";
+          }
+        ];
+        mappings = okFailed;
+        w = 24;
+        h = 7;
+        options = {
+          showValue = "never";
+          mergeValues = true;
+        };
+      })
+      (panel {
+        title = "Devices catching up";
+        type = "state-timeline";
+        exprs = [
+          {
+            expr = "apple_device_declarations_pending";
+            legend = "{{device}}";
+          }
+        ];
+        mappings = [
+          {
+            type = "value";
+            options."0" = {
+              text = "current";
+              color = "green";
+            };
+          }
+          {
+            type = "range";
+            options = {
+              from = 1;
+              to = 1000;
+              result = {
+                text = "fetching";
+                color = "yellow";
+              };
+            };
+          }
+        ];
+        w = 24;
+        h = 5;
+        options = {
+          showValue = "never";
+          mergeValues = true;
+        };
+      })
+      (panel {
+        title = "Deployed commit";
+        type = "table";
+        instant = true;
+        exprs = [ { expr = "comin_deployment_info"; } ];
+        w = 12;
+        options.showHeader = true;
+      })
+      (panel {
+        title = "Declarations a device rejects";
+        type = "table";
+        instant = true;
+        exprs = [ { expr = "apple_device_declaration_valid == 0"; } ];
+        w = 12;
+        options.showHeader = true;
+      })
+    ];
+  };
+
+  # The Apple devices (services/devices/apple): what each is and how it's
+  # doing, and the three Apple tokens that keep them managed.
+  devices =
+    let
+      daysLeft = [
+        {
+          color = "red";
+          value = null;
+        }
+        {
+          color = "orange";
+          value = 14;
+        }
+        {
+          color = "green";
+          value = 30;
+        }
+      ];
+      expiry =
+        title: expr:
+        (panel {
+          inherit title;
+          type = "stat";
+          instant = true;
+          exprs = [
+            {
+              expr = "(${expr} - time()) / 86400";
+              legend = title;
+            }
+          ];
+          unit = "d";
+          thresholds = daysLeft;
+          options = colored // {
+            textMode = "value";
+          };
+          w = 8;
+          h = 4;
+        });
+    in
+    dashboard {
+      uid = "devices";
+      title = "Devices";
+      panels = [
+        (expiry "Push certificate" "apple_mdm_push_certificate_expiry_timestamp_seconds")
+        (expiry "ABM token" "apple_abm_token_expiry_timestamp_seconds")
+        (expiry "Apps and Books token" "apple_vpp_token_expiry_timestamp_seconds")
+        (panel {
+          title = "Devices";
+          type = "table";
+          instant = true;
+          exprs = [ { expr = "apple_device_info"; } ];
+          transformations = [
+            {
+              id = "organize";
+              options.excludeByName = {
+                Time = true;
+                Value = true;
+                __name__ = true;
+                instance = true;
+                job = true;
+                host = true;
+                always_on = true;
+              };
+            }
+          ];
+          w = 12;
+          h = 6;
+          options.showHeader = true;
+        })
+        (panel {
+          title = "Battery";
+          type = "bargauge";
+          instant = true;
+          exprs = [
+            {
+              expr = "apple_device_battery_level_ratio";
+              legend = "{{device}}";
+            }
+          ];
+          unit = "percentunit";
+          min = 0;
+          max = 1;
+          thresholds = [
+            {
+              color = "red";
+              value = null;
+            }
+            {
+              color = "orange";
+              value = 0.2;
+            }
+            {
+              color = "green";
+              value = 0.4;
+            }
+          ];
+          w = 6;
+          h = 6;
+        })
+        (panel {
+          title = "Storage used";
+          type = "bargauge";
+          instant = true;
+          exprs = [
+            {
+              expr = "1 - apple_device_storage_available_bytes / apple_device_storage_total_bytes";
+              legend = "{{device}}";
+            }
+          ];
+          unit = "percentunit";
+          min = 0;
+          max = 1;
+          thresholds = [
+            {
+              color = "green";
+              value = null;
+            }
+            {
+              color = "orange";
+              value = 0.8;
+            }
+            {
+              color = "red";
+              value = 0.9;
+            }
+          ];
+          w = 6;
+          h = 6;
+        })
+        (panel {
+          title = "Battery over time";
+          exprs = [
+            {
+              expr = "apple_device_battery_level_ratio";
+              legend = "{{device}}";
+            }
+          ];
+          unit = "percentunit";
+          min = 0;
+          max = 1;
+          w = 12;
+        })
+        (panel {
+          title = "Since it last answered";
+          type = "stat";
+          instant = true;
+          exprs = [
+            {
+              expr = "time() - apple_device_information_timestamp_seconds";
+              legend = "{{device}}";
+            }
+          ];
+          unit = "s";
+          thresholds = [
+            {
+              color = "green";
+              value = null;
+            }
+            {
+              color = "orange";
+              value = 7200;
+            }
+            {
+              color = "red";
+              value = 86400;
+            }
+          ];
+          options = colored;
+          w = 6;
+        })
+        (panel {
+          title = "Declarations to fetch";
+          type = "stat";
+          instant = true;
+          exprs = [
+            {
+              expr = "apple_device_declarations_pending";
+              legend = "{{device}}";
+            }
+          ];
+          thresholds = [
+            {
+              color = "green";
+              value = null;
+            }
+            {
+              color = "yellow";
+              value = 1;
+            }
+          ];
+          options = colored;
+          w = 6;
+        })
+        (panel {
+          title = "Declarations a device rejects";
+          type = "table";
+          instant = true;
+          exprs = [ { expr = "apple_device_declaration_valid == 0"; } ];
+          w = 12;
+          h = 6;
+          options.showHeader = true;
+        })
+        (panel {
+          title = "Metrics";
+          type = "stat";
+          instant = true;
+          exprs = [
+            {
+              expr = "apple_devices_metrics_errors";
+              legend = "sources failing";
+            }
+            {
+              expr = "time() - apple_devices_metrics_timestamp_seconds";
+              legend = "since written (s)";
+            }
+          ];
+          w = 12;
+          h = 6;
+        })
+      ];
+    };
 }

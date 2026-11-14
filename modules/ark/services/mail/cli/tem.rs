@@ -1,4 +1,4 @@
-//! Scaleway Transactional Email from the laptop: the domains `ark push` made
+//! Scaleway Transactional Email from the laptop: the domains `ark apply` made
 //! (their ids read from the infra state) and their checks (through the
 //! Scaleway CLI, with the infra keys). Both tools come from nixpkgs through
 //! `nix run`, so this works outside the dev shell too.
@@ -13,7 +13,7 @@ use crate::secrets::Manifest;
 use crate::service::Ctx;
 use crate::util;
 
-/// The infra secrets `ark push` gives the Scaleway provider (../default.nix).
+/// The infra secrets `ark apply` gives the Scaleway provider (../default.nix).
 const KEYS: [&str; 4] = ["SCW_ACCESS_KEY", "SCW_SECRET_KEY", "SCW_DEFAULT_ORGANIZATION_ID", "SCW_DEFAULT_PROJECT_ID"];
 
 /// Each domain's id, by name, from the terraform output `output`, without
@@ -25,13 +25,13 @@ pub fn domain_ids(ctx: &Ctx, output: &str) -> Result<BTreeMap<String, String>> {
             .current_dir(&ctx.root),
         &format!("tofu output {output}"),
     )
-    .with_context(|| format!("no `{output}` in the infra state yet: run `ark push` first"))?;
+    .with_context(|| format!("no `{output}` in the infra state yet: run `ark apply` first"))?;
     let ids: BTreeMap<String, String> =
         serde_json::from_str(&out).with_context(|| format!("reading tofu output {output}"))?;
     Ok(ids.into_iter().map(|(name, id)| (name, id.rsplit('/').next().unwrap_or(&id).to_string())).collect())
 }
 
-/// The SMTP login `ark push` made, from the sensitive output `output`: tofu
+/// The SMTP login `ark apply` made, from the sensitive output `output`: tofu
 /// prints a sensitive value when it is asked for by name.
 pub fn relay_login(ctx: &Ctx, output: &str) -> Result<(String, String)> {
     #[derive(Deserialize)]
@@ -45,7 +45,7 @@ pub fn relay_login(ctx: &Ctx, output: &str) -> Result<(String, String)> {
             .current_dir(&ctx.root),
         &format!("tofu output {output}"),
     )
-    .with_context(|| format!("no `{output}` in the infra state yet: run `ark push` first"))?;
+    .with_context(|| format!("no `{output}` in the infra state yet: run `ark apply` first"))?;
     let login: Login = serde_json::from_str(&out).with_context(|| format!("reading tofu output {output}"))?;
     Ok((login.username, login.password))
 }

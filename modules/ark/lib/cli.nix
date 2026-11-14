@@ -2,7 +2,7 @@
 # and, through the home module below, installed for the people who run it so
 # their zsh finds its completions.
 #
-# Repo-wide commands (plan/push/destroy/secrets) live in ../cli/src. A service
+# Repo-wide commands (plan/apply/destroy/push/secrets) live in ../cli/src. A service
 # adds `ark service <name> ...` by shipping ../services/<name>/cli/mod.rs with
 # a `pub static SERVICE`; ../cli/build.rs finds it, nothing is registered by
 # hand. Service commands read what they need from the flake through

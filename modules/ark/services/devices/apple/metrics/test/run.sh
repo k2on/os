@@ -6,7 +6,7 @@ cd "$TMPDIR"
 
 mkdir -p api/api/v1/ddm/declaration-status api/api/v1/ddm/status-values api/v1/tokens out
 cat > api/api/v1/ddm/declaration-status/UDID-1 <<'J'
-{"UDID-1":[{"identifier":"us.koon.devices.status","active":true,"valid":"valid"},
+{"UDID-1":[{"identifier":"us.koon.devices.status","active":true,"valid":"valid","current":true},
            {"identifier":"us.koon.devices.app.signal","active":false,"valid":"invalid"}]}
 J
 cat > api/api/v1/ddm/status-values/UDID-1 <<'J'
@@ -51,4 +51,5 @@ expect "a failing declaration" 'apple_device_declaration_valid{device="max-iphon
 expect "last report" "apple_device_last_report_timestamp_seconds{device=\"max-iphone\",owner=\"max\"} $(date -d 2026-11-14T15:00:00Z +%s)"
 expect "battery" 'apple_device_battery_level_ratio{device="max-iphone",owner="max"} 0.5'
 expect "free storage" 'apple_device_storage_available_bytes{device="max-iphone",owner="max"} 40500000000'
+expect "pending declarations" 'apple_device_declarations_pending{device="max-iphone",owner="max"} 1'
 expect "no errors" "apple_devices_metrics_errors 0"

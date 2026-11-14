@@ -1,7 +1,7 @@
 //! `ark service mail ...`: mail's way out, Scaleway Transactional Email,
 //! and its aliases (../default.nix says how it fits together).
 //!
-//! TEM: `ark push` makes all of it, the login on the vps included; here is
+//! TEM: `ark apply` makes all of it, the login on the vps included; here is
 //! whether Scaleway has passed each domain's records, and asking it to
 //! check them again (tem.rs).
 //!
@@ -38,9 +38,9 @@ fn command() -> Clap {
             Clap::new("relay")
                 .about("Copy Stalwart's SMTP login at TEM from the infra state into sops")
                 .long_about(
-                    "Copy Stalwart's SMTP login at TEM (the key `ark push` made) from the infra state into \
+                    "Copy Stalwart's SMTP login at TEM (the key `ark apply` made) from the infra state into \
                      secrets/vars/mail_relay.yaml, encrypted to the mail host, which comin then deploys. \
-                     After the first `ark push`, and whenever the key is replaced.",
+                     After the first `ark apply`, and whenever the key is replaced.",
                 ),
         )
         .subcommand(Clap::new("aliases").about("Every alias: where it goes, who made it, for which site, whether it is on"))
