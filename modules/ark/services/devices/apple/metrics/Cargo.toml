@@ -1,0 +1,10 @@
+[package]
+name = "apple-devices-metrics"
+description = "Apple devices, their MDM and its Apple tokens, as Prometheus metrics in node_exporter's textfile directory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+ureq.workspace = true

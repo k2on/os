@@ -335,10 +335,14 @@ in
     { pkgs, ... }:
     let
       apple-enroll = pkgs.callPackage ../../../_rust.nix { pname = "apple-enroll"; };
+      apple-devices-metrics = pkgs.callPackage ../../../_rust.nix { pname = "apple-devices-metrics"; };
     in
     {
-      packages = { inherit apple-enroll; };
+      packages = { inherit apple-enroll apple-devices-metrics; };
       checks.apple-enroll = pkgs.callPackage ./_enroll-check.nix { inherit apple-enroll; };
+      checks.apple-devices-metrics = pkgs.callPackage ./_metrics-check.nix {
+        inherit apple-devices-metrics;
+      };
     };
 
   config.ark.services.devices-apple = {
@@ -481,6 +485,7 @@ in
         enrollPort = service.port + 2;
         depPort = service.port + 3;
         assetPort = service.port + 4;
+        metricsPort = service.port + 5;
         serials = lib.filter (s: s != null) (lib.mapAttrsToList (_: d: d.serial) apple.devices);
 
         # Apps: each a managed-app declaration and its config as a data
@@ -745,6 +750,9 @@ in
             '';
             inherit (apple.wallpaper) where;
           };
+          # Every check-in, to apple-devices-metrics (below), for the
+          # devices' answers about their battery and storage.
+          webhookURL = "http://127.0.0.1:${toString metricsPort}/webhook";
           refetchTriggers = map builtins.toJSON [
             config.services.nginx.virtualHosts.${domain}.locations."/assets/"
             config.services.nginx.virtualHosts.devices-apple-assets.locations
@@ -818,6 +826,66 @@ in
 
         # The enrollment URL of the ADE profile: the enrollment profile, to
         # declared serial numbers only (./enroll).
+        # The devices and their MDM as metrics, in node_exporter's textfile
+        # directory (./metrics): monitoring (services/dash) has them, and
+        # alerts on expiring Apple tokens and silent devices.
+        systemd.services.apple-devices-metrics =
+          let
+            # systemd puts each credential here, by its name below.
+            credential = name: "/run/credentials/apple-devices-metrics.service/${name}";
+            configFile = pkgs.writeText "apple-devices-metrics.json" (
+              builtins.toJSON (
+                {
+                  listen = "127.0.0.1:${toString metricsPort}";
+                  output = "${config.ark.metrics.textfileDir}/apple_devices.prom";
+                  nanohub = "http://127.0.0.1:${toString service.port}";
+                  nanohubKey = credential "nanohub";
+                  devices = map (d: {
+                    inherit (d) name udid;
+                    owner = if d.owner == null then "" else d.owner;
+                  }) (lib.filter (d: d.udid != null) deviceList);
+                }
+                // lib.optionalAttrs hasToken {
+                  depserver = "http://127.0.0.1:${toString depPort}";
+                  depserverKey = credential "depserver";
+                  depNames = [ "abm" ];
+                }
+                // lib.optionalAttrs hasPush { pushCert = credential "push"; }
+                // lib.optionalAttrs hasVpp { vppToken = credential "vpp"; }
+              )
+            );
+          in
+          {
+            description = "Apple devices and their MDM as metrics";
+            wantedBy = [ "multi-user.target" ];
+            after = [ "nanohub.service" ];
+            path = [ pkgs.openssl ];
+            restartTriggers = [ configFile ];
+            serviceConfig = {
+              ExecStart = "${
+                lib.getExe (pkgs.callPackage ../../../_rust.nix { pname = "apple-devices-metrics"; })
+              } ${configFile}";
+              LoadCredential = [
+                "nanohub:${secrets.devices-apple_api_key.path}"
+              ]
+              ++ lib.optional hasToken "depserver:${secrets.devices-apple_dep_api_key.path}"
+              ++ lib.optional hasPush "push:${secrets.devices-apple_push_cert.path}"
+              ++ lib.optional hasVpp "vpp:${secrets.devices-apple_vpp_token.path}";
+              Restart = "on-failure";
+              # Root only to write in the textfile directory, root's.
+              ProtectSystem = "strict";
+              ReadWritePaths = [ config.ark.metrics.textfileDir ];
+              ProtectHome = true;
+              PrivateTmp = true;
+              PrivateDevices = true;
+              NoNewPrivileges = true;
+              RestrictAddressFamilies = [
+                "AF_INET"
+                "AF_INET6"
+              ];
+            };
+          };
+
         systemd.services.apple-enroll = lib.mkIf hasPush {
           description = "Hand the enrollment profile to Apple devices in Setup Assistant";
           wantedBy = [ "multi-user.target" ];
