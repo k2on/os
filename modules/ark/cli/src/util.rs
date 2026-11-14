@@ -47,23 +47,26 @@ pub fn status(cmd: &mut Command, what: &str) -> Result<()> {
 /// ControlMaster), kept 10 minutes after its last use: everything ark runs
 /// that signs in somewhere (git push, nix fetching the secrets submodule,
 /// ssh to a host) does it once, so the YubiKey is touched once per server,
-/// and not again for a second ark command soon after.
+/// and not again for a second ark command soon after. The socket is the one
+/// a plain `ssh` uses too (host/cale/development/ssh.nix), so either one's
+/// touch covers the other.
 pub fn ssh_sharing() -> Vec<String> {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("ark-ssh");
-    let _ = std::fs::create_dir_all(&dir);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    }
+    // The runtime directory is already private; elsewhere, a private one.
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(|| {
+        let dir = std::env::temp_dir().join("ark-ssh");
+        let _ = std::fs::create_dir_all(&dir);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+        }
+        dir
+    });
     vec![
         "-o".into(),
         "ControlMaster=auto".into(),
         "-o".into(),
-        format!("ControlPath={}/%C", dir.display()),
+        format!("ControlPath={}/ssh-%C", dir.display()),
         "-o".into(),
         "ControlPersist=10m".into(),
     ]

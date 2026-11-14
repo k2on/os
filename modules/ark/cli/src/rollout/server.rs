@@ -1,9 +1,9 @@
-//! The rollout as adam sees it: Prometheus and Loki (services/dash), the
+//! The rollout as the monitoring host sees it: Prometheus and Loki (services/dash), the
 //! same facts Grafana shows, through their HTTP APIs on the tailnet
 //! (`arkMonitoring`, metrics.<domain> and logs.<domain>).
 //!
 //! Expected systems are ark-rollout's (services/dash/rollout), worked out on
-//! adam for each new commit on main; until adam has any (ark-rollout not
+//! the monitoring host for each new commit on main; until it has any (ark-rollout not
 //! deployed yet), they're evaluated here, as the direct source does.
 //! Prometheus scrapes every minute, so this lags the hosts by up to that.
 use std::collections::BTreeMap;
@@ -18,6 +18,8 @@ use crate::hosts::{Host, Hosts};
 use crate::prom::Sample;
 
 pub struct Server<'a> {
+    /// The host running services/dash, as messages name it.
+    host: String,
     prometheus: String,
     loki: String,
     root: PathBuf,
@@ -28,7 +30,7 @@ pub struct Server<'a> {
     /// Hosts Prometheus last scraped fine.
     up: BTreeMap<String, bool>,
     evaluated_here: Option<BTreeMap<String, Expected>>,
-    /// Hosts adam failed to evaluate, as evaluated here instead.
+    /// Hosts the monitoring host failed to evaluate, as evaluated here instead.
     retried: BTreeMap<String, Expected>,
 }
 
@@ -45,8 +47,15 @@ fn encode(s: &str) -> String {
 }
 
 impl<'a> Server<'a> {
-    pub fn new(prometheus: String, loki: String, root: PathBuf, hosts: &'a Hosts) -> Self {
+    pub fn new(
+        host: String,
+        prometheus: String,
+        loki: String,
+        root: PathBuf,
+        hosts: &'a Hosts,
+    ) -> Self {
         Server {
+            host,
             prometheus: prometheus.trim_end_matches('/').into(),
             loki: loki.trim_end_matches('/').into(),
             root,
@@ -172,23 +181,23 @@ impl Source for Server<'_> {
             .keys()
             .map(|name| {
                 // target_host: Prometheus keeps "host" for the host it
-                // scraped (adam), so ark-rollout names the one it means so.
+                // scraped (the monitoring host), so ark-rollout names the one it means so.
                 let by = |s: &&Sample| s.labels.get("target_host") == Some(name);
                 let e = if let Some(p) = paths.iter().find(by).and_then(|s| s.labels.get("path")) {
                     Expected::Path(p.clone())
                 } else if let Some(f) = failures.iter().find(by) {
                     Expected::Failed(f.labels.get("error").cloned().unwrap_or_default())
                 } else if seen {
-                    Expected::Unknown("adam is working out what it should run".into())
+                    Expected::Unknown(format!("{} is working out what it should run", self.host))
                 } else {
-                    Expected::Unknown("waiting for adam to see the commit".into())
+                    Expected::Unknown(format!("waiting for {} to see the commit", self.host))
                 };
                 (name.clone(), e)
             })
             .collect();
-        // What adam can't evaluate may still evaluate here: a host of
+        // What the monitoring host can't evaluate may still evaluate here: a host of
         // another system whose evaluation builds something first (cale,
-        // aarch64, on x86_64 adam). Each such host once; it fails only if it
+        // aarch64, on an x86_64 one). Each such host once; it fails only if it
         // fails here too.
         let unsure: Vec<String> = expected
             .iter()
@@ -200,10 +209,10 @@ impl Source for Server<'_> {
                 .extend(evaluate_these(&self.root, &unsure, commit));
         }
         for (name, e) in expected.iter_mut() {
-            if let (Expected::Failed(adam), Some(here)) = (&*e, self.retried.get(name)) {
+            if let (Expected::Failed(there), Some(here)) = (&*e, self.retried.get(name)) {
                 *e = match here {
                     Expected::Failed(here) => {
-                        Expected::Failed(format!("on adam: {adam}; here: {here}"))
+                        Expected::Failed(format!("on {}: {there}; here: {here}", self.host))
                     }
                     other => other.clone(),
                 };

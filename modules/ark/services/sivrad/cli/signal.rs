@@ -61,7 +61,7 @@ pub fn command() -> Clap {
         .long_about(
             "The container's Signal account: register sivrad's own number through the signal-cli daemon in \
              the container (over ssh), then back it up to the secrets repo so a rebuilt container comes back as the \
-             same account. Commit secrets/ and deploy adam afterwards.",
+             same account. Commit secrets/ and `ark push` afterwards.",
         )
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -396,7 +396,7 @@ pub fn backup(ctx: &Ctx, cfg: &Config, vm: &Vm, manifest: &Manifest) -> Result<(
         ],
     )?;
     println!(
-        "Saved as {ACCOUNT} ({} KiB) and {NUMBER}. Commit secrets/ and deploy adam: a rebuilt container \
+        "Saved as {ACCOUNT} ({} KiB) and {NUMBER}. Commit secrets/ and `ark push`: a rebuilt container \
          then restores this account.",
         archive.len().div_ceil(1024)
     );

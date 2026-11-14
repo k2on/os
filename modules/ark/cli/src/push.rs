@@ -3,14 +3,14 @@
 //!
 //! It pushes to both remotes comin deploys from (aspects/deploy.nix: Gitea
 //! and GitHub, which it refuses to follow once they part), the secrets
-//! submodule's new commits too, then watches the rollout from adam's
+//! submodule's new commits too, then watches the rollout from the monitoring host's
 //! Prometheus and Loki when they answer (what Grafana shows), or from the
-//! hosts themselves when they don't (no adam yet, or monitoring is what's
+//! hosts themselves when they don't (no monitoring yet, or it is what's
 //! being deployed). `--server` or `--direct` picks one; `--no-push` only
 //! watches.
 //!
 //! Having pushed, it asks for a resync so nobody waits for comin's next
-//! poll: adam's (services/dash), which makes every host fetch now, or with
+//! poll: the monitoring host's (services/dash), which makes every host fetch now, or with
 //! the direct source each host's comin-fetch itself (aspects/deploy.nix).
 use std::cell::OnceCell;
 use std::process::Command;
@@ -105,7 +105,10 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
             .map(str::to_string)
     };
     let server = match (url("prometheus"), url("loki")) {
-        (Some(p), Some(l)) => Some(Server::new(p, l, ctx.root.clone(), &hosts)),
+        (Some(p), Some(l)) => hosts
+            .running("dash")
+            .ok()
+            .map(|h| Server::new(h.name.clone(), p, l, ctx.root.clone(), &hosts)),
         _ => None,
     };
     let server = match (via, server) {
@@ -116,15 +119,16 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
         }
         (Via::Auto, Some(s)) if s.answers() => Some(s),
         (Via::Auto, _) => {
-            eprintln!("ark: adam's monitoring isn't answering; watching the hosts directly");
+            eprintln!("ark: monitoring isn't answering; watching the hosts directly");
             None
         }
     };
     if push {
-        // Through adam when it's there to ask; each host itself when it isn't,
+        // Through the monitoring host when it's there to ask; each host itself when it isn't,
         // or doesn't take it (a resync it doesn't serve yet).
-        let through_adam = server.is_some() && url("resync").is_some_and(|u| resync_through(&u));
-        if !through_adam {
+        let through_monitoring =
+            server.is_some() && url("resync").is_some_and(|u| resync_through(&u));
+        if !through_monitoring {
             let missed = direct::resync(&hosts, ports()?);
             if !missed.is_empty() {
                 eprintln!(
@@ -141,7 +145,7 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
     rollout::watch(source.as_mut(), &hosts, &commit, &subject)
 }
 
-/// Asks adam to make every host fetch now (services/dash's ark-resync).
+/// Asks the monitoring host to make every host fetch now (services/dash's ark-resync).
 fn resync_through(url: &str) -> bool {
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(15))

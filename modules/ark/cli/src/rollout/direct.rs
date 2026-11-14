@@ -1,5 +1,5 @@
 //! The rollout as every host tells it itself, over the tailnet: nothing
-//! else needed, so it works with no adam, or with monitoring being what's
+//! else needed, so it works with no monitoring host, or with monitoring being what's
 //! deployed. Expected systems are evaluated here.
 //!
 //!   - node_exporter: `ark_system_info`, the system the host runs
@@ -51,7 +51,7 @@ impl<'a> Direct<'a> {
 }
 
 /// Makes every host's comin fetch now (aspects/deploy.nix's comin-fetch),
-/// all at once: what adam's resync does, for when it isn't there to.
+/// all at once: what the monitoring host's resync does, for when it isn't there to.
 /// Returns the hosts that didn't take it.
 pub fn resync(hosts: &Hosts, ports: Ports) -> Vec<String> {
     let agent = ureq::AgentBuilder::new()

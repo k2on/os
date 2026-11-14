@@ -187,21 +187,23 @@ fn init(ctx: &Ctx) -> Result<()> {
         println!(
             "   {TINFOIL_KEY} is missing: the model's API key, from the Tinfoil dashboard \
              (https://tinfoil.sh). Run `ark secrets`, which asks for it, then commit secrets/ and \
-             deploy adam."
+             `ark push`."
         );
     }
     if created {
-        println!("   Commit secrets/ and deploy adam so the container gets them.");
+        println!("   Commit secrets/ and `ark push` so the container gets them.");
     }
 
     println!("2. The container");
     let vm = cfg.vm()?;
     let reach = vm.probe("true")?;
     if !reach.status.success() {
+        let host = ctx.hosts().ok().and_then(|h| h.running("sivrad").ok().map(|h| h.name.clone()));
         bail!(
-            "cannot reach {vm} over ssh ({}). Is adam deployed and the container up on the tailnet? Then run \
+            "cannot reach {vm} over ssh ({}). Is {} deployed and the container up on the tailnet? Then run \
              `ark service sivrad init` again",
-            String::from_utf8_lossy(&reach.stderr).trim()
+            String::from_utf8_lossy(&reach.stderr).trim(),
+            host.as_deref().unwrap_or("its host")
         );
     }
     let status = vm.probe(&format!("systemctl is-active {}", UNITS.join(" ")))?;
@@ -253,8 +255,7 @@ fn print_people(cfg: &Config) {
     if cfg.people.is_empty() {
         println!(
             "   Nobody may use sivrad yet. Give a person in secrets/ark.nix a Signal number:\n\n     \
-             ark.persons.<username>.signal = \"+15551234567\";\n\n   then commit secrets/ and deploy \
-             adam."
+             ark.persons.<username>.signal = \"+15551234567\";\n\n   then commit secrets/ and `ark push`."
         );
     } else {
         println!("   sivrad users: {}", cfg.people.join(", "));
@@ -271,7 +272,7 @@ fn init_secrets(ctx: &Ctx, manifest: &Manifest) -> Result<bool> {
         println!("   {} and {} exist", signal::NUMBER, signal::ACCOUNT);
         return Ok(false);
     }
-    // Empty until an account is registered; adam needs them to build.
+    // Empty until an account is registered; its host needs them to build.
     let values: Vec<(&str, String)> = missing.iter().map(|k| (*k, String::new())).collect();
     signal::store(ctx, manifest, &values)?;
     println!("   created {} (empty for now)", missing.join(" and "));

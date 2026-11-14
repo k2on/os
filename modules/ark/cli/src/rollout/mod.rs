@@ -6,10 +6,10 @@
 //! runs, how its comin is doing, and how each device is catching up; `watch`
 //! turns that into states (pending, done, failed, offline) and draws them.
 //! Sources:
-//!   - `server` (./server.rs): adam's Prometheus and Loki, what Grafana
+//!   - `server` (./server.rs): the monitoring host's Prometheus and Loki, what Grafana
 //!     shows, with what ark-rollout (services/dash/rollout) works out there;
 //!   - `direct` (./direct.rs): every host's own exporters, for when there is
-//!     no adam (or it's what is being deployed).
+//!     no monitoring host (or it's what is being deployed).
 pub mod direct;
 pub mod server;
 
@@ -463,7 +463,7 @@ mod tests {
             names
                 .iter()
                 .map(|n| {
-                    let services = if *n == "adam" {
+                    let services = if *n == "server" {
                         vec!["devices-apple".to_string()]
                     } else {
                         vec![]
@@ -566,14 +566,14 @@ mod tests {
     #[test]
     fn devices_follow_their_host() {
         let mut s = Scripted {
-            expected: expected(&[("adam", Expected::Path("new".into()))]),
+            expected: expected(&[("server", Expected::Path("new".into()))]),
             rounds: [
-                BTreeMap::from([("adam", seen("old", &[]))]),
-                BTreeMap::from([("adam", seen("new", &[]))]),
+                BTreeMap::from([("server", seen("old", &[]))]),
+                BTreeMap::from([("server", seen("new", &[]))]),
             ]
             .into(),
             round: BTreeMap::new(),
-            // Stale (written before adam was done), then fetching, then caught up.
+            // Stale (written before its host was done), then fetching, then caught up.
             devices: [
                 Some((0.0, Some(0))),
                 Some((now() + 60.0, Some(2))),
@@ -581,7 +581,7 @@ mod tests {
             ]
             .into(),
         };
-        assert!(watch(&mut s, &hosts(&["adam"]), "abcdef0", "x").is_ok());
+        assert!(watch(&mut s, &hosts(&["server"]), "abcdef0", "x").is_ok());
         assert!(
             s.devices.len() == 1,
             "the devices were asked until caught up"

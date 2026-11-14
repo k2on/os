@@ -62,7 +62,7 @@ fn cli() -> Command {
                 .long_about(
                     "Push the signed commit on main, and the secrets submodule's new commits, to both remotes comin \
                      deploys from; then watch it until every host runs what it builds and every device has caught \
-                     up. Watches from adam's Prometheus and Loki when they answer (what Grafana shows), from the \
+                     up. Watches from the monitoring host's Prometheus and Loki when they answer (what Grafana shows), from the \
                      hosts themselves when they don't.",
                 )
                 .arg(
@@ -70,13 +70,13 @@ fn cli() -> Command {
                         .long("server")
                         .action(ArgAction::SetTrue)
                         .conflicts_with("direct")
-                        .help("Watch from adam's monitoring, failing if it doesn't answer"),
+                        .help("Watch from the monitoring host (services/dash), failing if it doesn't answer"),
                 )
                 .arg(
                     Arg::new("direct")
                         .long("direct")
                         .action(ArgAction::SetTrue)
-                        .help("Watch the hosts themselves, even if adam's monitoring answers"),
+                        .help("Watch the hosts themselves, even if the monitoring host answers"),
                 )
                 .arg(
                     Arg::new("no-push")
