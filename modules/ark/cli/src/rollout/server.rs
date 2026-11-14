@@ -5,14 +5,16 @@
 //! Expected systems are ark-rollout's (services/dash/rollout), worked out on
 //! the monitoring host for each new commit on main, raced against the same
 //! evaluation here: whichever answers first for a host.
-//! Prometheus scrapes every minute, so this lags the hosts by up to that.
+//! Prometheus scrapes every minute, so which system a host runs (and its
+//! comin state, and the devices') is read from the host itself when it
+//! answers, and from Prometheus when it doesn't.
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::Value;
 
-use super::direct::{comin_seen, devices_seen};
+use super::direct::{address, comin_seen, devices_seen, scrape, switched, Ports};
 use super::{evaluate_these, DevicesSeen, Expected, HostSeen, Source};
 use crate::hosts::{Host, Hosts};
 use crate::prom::Sample;
@@ -22,9 +24,13 @@ pub struct Server<'a> {
     host: String,
     prometheus: String,
     loki: String,
+    /// The hosts' own ports, to read them between scrapes.
+    ports: Option<Ports>,
     root: PathBuf,
     hosts: &'a Hosts,
     agent: ureq::Agent,
+    /// For the hosts themselves: quick to give up on one that isn't there.
+    direct: ureq::Agent,
     /// This round's samples, by host label.
     samples: BTreeMap<String, Vec<Sample>>,
     /// Hosts Prometheus last scraped fine.
@@ -52,6 +58,7 @@ impl<'a> Server<'a> {
         host: String,
         prometheus: String,
         loki: String,
+        ports: Option<Ports>,
         root: PathBuf,
         hosts: &'a Hosts,
     ) -> Self {
@@ -59,16 +66,30 @@ impl<'a> Server<'a> {
             host,
             prometheus: prometheus.trim_end_matches('/').into(),
             loki: loki.trim_end_matches('/').into(),
+            ports,
             root,
             hosts,
             agent: ureq::AgentBuilder::new()
                 .timeout(Duration::from_secs(5))
+                .build(),
+            direct: ureq::AgentBuilder::new()
+                .timeout(Duration::from_secs(2))
                 .build(),
             samples: BTreeMap::new(),
             up: BTreeMap::new(),
             local: None,
             here: None,
         }
+    }
+
+    /// What the host's node_exporter and comin serve right now, when it
+    /// answers on the tailnet (the ports from lib/agents.nix).
+    fn fresh(&self, host: &Host) -> Option<Vec<Sample>> {
+        let ports = self.ports?;
+        let address = address(host)?;
+        let mut samples = scrape(&self.direct, address, ports.node)?;
+        samples.extend(scrape(&self.direct, address, ports.comin).unwrap_or_default());
+        Some(samples)
     }
 
     /// Whether Prometheus answers: what `ark push` picks this source by.
@@ -158,6 +179,7 @@ impl Source for Server<'_> {
         self.samples.clear();
         for q in [
             "ark_system_info",
+            r#"node_textfile_mtime_seconds{file=~".*/ark_system.prom"}"#,
             r#"{__name__=~"comin_last_(eval|build|deployment|fetch)_failed"}"#,
             "comin_deployment_info",
             r#"{__name__=~"apple_device_up|apple_device_declarations_pending|apple_devices_metrics_timestamp_seconds"}"#,
@@ -229,26 +251,32 @@ impl Source for Server<'_> {
     }
 
     fn host(&mut self, host: &Host) -> HostSeen {
-        let samples = self
+        // The host itself when it answers: Prometheus scrapes once a minute,
+        // so a host that has just switched would look behind until then.
+        let fresh = self.fresh(host);
+        let mut seen = HostSeen {
+            reachable: fresh.is_some() || self.up.get(&host.name).copied().unwrap_or(false),
+            ..Default::default()
+        };
+        let scraped = self
             .samples
             .get(&host.name)
             .map(Vec::as_slice)
             .unwrap_or_default();
-        let mut seen = HostSeen {
-            reachable: self.up.get(&host.name).copied().unwrap_or(false),
-            ..Default::default()
-        };
+        let samples = fresh.as_deref().unwrap_or(scraped);
         seen.running = samples
             .iter()
             .find(|s| s.name == "ark_system_info")
             .and_then(|s| s.labels.get("path").cloned());
+        seen.switched = switched(samples);
         comin_seen(samples, &mut seen);
         seen.log = self.log(&host.name);
         seen
     }
 
     fn devices(&mut self, host: &Host) -> Option<DevicesSeen> {
-        let samples = self.samples.get(&host.name)?;
+        let fresh = self.fresh(host);
+        let samples = fresh.as_ref().or(self.samples.get(&host.name))?;
         let seen = devices_seen(samples);
         (!seen.devices.is_empty()).then_some(seen)
     }

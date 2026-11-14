@@ -86,8 +86,16 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
     }
 
     let hosts = ctx.hosts()?;
-    // Evaluated only when the hosts are dialled directly, and once.
+    let monitoring = ctx.nix_eval("arkMonitoring").ok();
+    // The hosts' own ports: with monitoring's output when it has them, else
+    // evaluated only when the hosts are dialled directly, and once.
     let agent_ports = OnceCell::new();
+    if let Some(p) = monitoring
+        .as_ref()
+        .and_then(|m| serde_json::from_value::<Ports>(m.get("agentPorts")?.clone()).ok())
+    {
+        let _ = agent_ports.set(p);
+    }
     let ports = || -> Result<Ports> {
         if let Some(p) = agent_ports.get() {
             return Ok(*p);
@@ -96,7 +104,6 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
             .context("reading the arkAgentPorts flake output (lib/agents.nix)")?;
         Ok(*agent_ports.get_or_init(|| p))
     };
-    let monitoring = ctx.nix_eval("arkMonitoring").ok();
     let url = |k: &str| {
         monitoring
             .as_ref()
@@ -105,10 +112,16 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
             .map(str::to_string)
     };
     let server = match (url("prometheus"), url("loki")) {
-        (Some(p), Some(l)) => hosts
-            .running("dash")
-            .ok()
-            .map(|h| Server::new(h.name.clone(), p, l, ctx.root.clone(), &hosts)),
+        (Some(p), Some(l)) => hosts.running("dash").ok().map(|h| {
+            Server::new(
+                h.name.clone(),
+                p,
+                l,
+                agent_ports.get().copied(),
+                ctx.root.clone(),
+                &hosts,
+            )
+        }),
         _ => None,
     };
     let server = match (via, server) {

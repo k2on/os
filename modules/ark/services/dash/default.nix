@@ -60,6 +60,9 @@ in
     prometheus = "https://${metricsDomain}";
     loki = "https://${logsDomain}";
     resync = "https://${metricsDomain}/resync";
+    # The ports every host serves (lib/agents.nix), for reading a host itself
+    # between scrapes.
+    inherit (ark) agentPorts;
   };
 
   ark.services.dash = {

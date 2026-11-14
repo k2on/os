@@ -48,6 +48,9 @@ pub struct HostSeen {
     pub reachable: bool,
     /// The system it runs (`ark_system_info`, aspects/metrics.nix).
     pub running: Option<String>,
+    /// When it switched to that system (unix seconds): when activation last
+    /// wrote ark_system_info, as node_exporter reports the file.
+    pub switched: Option<f64>,
     /// comin's stages whose last run failed: evaluation, build, deployment.
     pub failed: Vec<&'static str>,
     /// comin's last deployment: commit and status.
@@ -157,6 +160,8 @@ pub fn evaluate_these(root: &Path, names: &[String], commit: &str) -> BTreeMap<S
 enum State {
     Pending(String),
     Done(Duration),
+    /// Running it before the watch began.
+    Already,
     Failed(String),
     Offline,
 }
@@ -169,9 +174,24 @@ impl State {
         match self {
             State::Pending(why) => format!("pending   {why}"),
             State::Done(t) => format!("done      {}", clock(*t)),
+            State::Already => "done      already running it".into(),
             State::Failed(why) => format!("FAILED    {why}"),
             State::Offline => "offline   it deploys when it's back".into(),
         }
+    }
+}
+
+/// A host seen running its expected system: how long it took from the watch
+/// beginning (`begun`) to its switch (unix seconds), or already running it
+/// if it switched before; and when it was done. Without a switch time, how
+/// long the watch has run (`waited`).
+fn done(switched: Option<f64>, begun: SystemTime, waited: Duration) -> (State, SystemTime) {
+    let Some(at) = switched.map(|t| UNIX_EPOCH + Duration::from_secs_f64(t.max(0.0))) else {
+        return (State::Done(waited), SystemTime::now());
+    };
+    match at.duration_since(begun) {
+        Ok(t) => (State::Done(t), at),
+        Err(_) => (State::Already, at),
     }
 }
 
@@ -241,6 +261,7 @@ pub fn watch(source: &mut dyn Source, hosts: &Hosts, commit: &str, subject: &str
     let short = &commit[..7.min(commit.len())];
     let devices_host = hosts.running("devices-apple").ok();
     let started = Instant::now();
+    let begun = SystemTime::now();
     let mut watched: Vec<Watched> = hosts
         .0
         .values()
@@ -289,8 +310,13 @@ pub fn watch(source: &mut dyn Source, hosts: &Hosts, commit: &str, subject: &str
             }
             w.last_seen = Instant::now();
             if seen.running.as_deref() == Some(path.as_str()) {
-                w.state = State::Done(started.elapsed());
-                w.done_at = Some(SystemTime::now());
+                // Timed from when it switched, not from when this noticed: a
+                // host can be seen done well after (its expected system only
+                // just known), and one that switched before the watch began
+                // was already running it (a commit that leaves it as it was).
+                let (state, at) = done(seen.switched, begun, started.elapsed());
+                w.state = state;
+                w.done_at = Some(at);
                 continue;
             }
             let before = w.failed_before.get_or_insert_with(|| seen.failed.clone());
@@ -507,6 +533,20 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs_f64()
+    }
+
+    #[test]
+    fn times_a_host_from_its_switch() {
+        let begun = UNIX_EPOCH + Duration::from_secs(1000);
+        let waited = Duration::from_secs(25);
+        // Switched 40s into the watch, though only seen done later.
+        let (state, at) = done(Some(1040.0), begun, waited);
+        assert!(state == State::Done(Duration::from_secs(40)));
+        assert_eq!(at, UNIX_EPOCH + Duration::from_secs(1040));
+        // Switched before the watch: the commit left it as it was.
+        assert!(done(Some(900.0), begun, waited).0 == State::Already);
+        // No switch time: how long the watch took to see it.
+        assert!(done(None, begun, waited).0 == State::Done(waited));
     }
 
     #[test]

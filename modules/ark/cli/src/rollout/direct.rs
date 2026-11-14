@@ -91,11 +91,24 @@ fn get(agent: &ureq::Agent, url: &str) -> Option<String> {
     agent.get(url).call().ok()?.into_string().ok()
 }
 
-fn scrape(agent: &ureq::Agent, address: &str, port: u16) -> Option<Vec<Sample>> {
+pub(super) fn scrape(agent: &ureq::Agent, address: &str, port: u16) -> Option<Vec<Sample>> {
     Some(prom::parse(&get(
         agent,
         &format!("http://{address}:{port}/metrics"),
     )?))
+}
+
+/// When the host last switched system: node_exporter's mtime of the file
+/// activation writes ark_system_info to (aspects/metrics.nix). Shared with
+/// the server source, whose samples are the same.
+pub fn switched(samples: &[Sample]) -> Option<f64> {
+    prom::named(samples, "node_textfile_mtime_seconds")
+        .find(|s| {
+            s.labels
+                .get("file")
+                .is_some_and(|f| f.ends_with("/ark_system.prom"))
+        })
+        .map(|s| s.value)
 }
 
 /// comin's failed stages and the rest of what its metrics say, shared with
@@ -175,6 +188,7 @@ impl Source for Direct<'_> {
             .as_deref()
             .and_then(|n| prom::named(n, "ark_system_info").next())
             .and_then(|s| s.labels.get("path").cloned());
+        seen.switched = node.as_deref().and_then(switched);
         comin_seen(comin.as_deref().unwrap_or_default(), &mut seen);
         seen.log = get(
             &self.agent,
