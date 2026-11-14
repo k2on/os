@@ -22,6 +22,15 @@ let
 in
 {
   ark.services.radicale = {
+    # Every calendar and address book, nightly: plain files, one folder each
+    # (the groups' links kept as links). Radicale stops for the copy, a
+    # second or two; clients retry. Its caches are rebuilt by themselves.
+    backup = {
+      paths = [ "/var/lib/radicale/collections" ];
+      exclude = [ ".Radicale.cache" ];
+      stop = [ "radicale.service" ];
+    };
+
     secrets = lib.genAttrs' names (
       name:
       lib.nameValuePair (passwordSecret name) {
