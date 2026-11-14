@@ -35,6 +35,8 @@ in
     };
 
   ark.services.photos = {
+    # immich-public-proxy, for share.* (below).
+    ports = [ "share" ];
     oidc.callbacks = [
       "/auth/login"
       "app.immich:///oauth-callback"
@@ -116,7 +118,7 @@ in
         services.immich-public-proxy = {
           enable = true;
           immichUrl = "http://127.0.0.1:${toString service.port}";
-          port = service.port + 1;
+          port = service.ports.share;
         };
         systemd.services.immich-public-proxy = {
           # og: tags on a share page need the public origin, not the tailnet one.

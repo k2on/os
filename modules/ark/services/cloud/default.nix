@@ -4,6 +4,8 @@ let
 in
 {
   ark.services.cloud = {
+    # Collabora, for office.* (below).
+    ports = [ "collabora" ];
     aliases = [ "office" ];
     oidc = {
       callbacks = [ "/apps/user_oidc/code" ];
@@ -56,7 +58,7 @@ in
             useACMEHost = ark.mainDomain;
             forceSSL = true;
             locations."/" = {
-              proxyPass = "http://localhost:${toString (service.port + 1)}";
+              proxyPass = "http://localhost:${toString service.ports.collabora}";
               proxyWebsockets = true;
             };
           };
@@ -70,7 +72,7 @@ in
 
         services.collabora-online = {
           enable = true;
-          port = service.port + 1;
+          port = service.ports.collabora;
           settings = {
             server_name = "office.${ark.mainDomain}";
             ssl = {

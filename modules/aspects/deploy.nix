@@ -28,8 +28,9 @@ let
   giteaSsh = "ssh.${ark.mainDomain}";
   # Gitea's own ssh server (services/git), whose key is in its data directory.
   giteaSshPort = 2222;
-  # comin-log (below): its latest log line, beside comin's metrics on 4243.
-  cominLogPort = 4244;
+  # comin-log and comin-fetch (below), on ports lib/agents.nix fixes.
+  cominLogPort = ark.agentPorts.cominLog;
+  cominFetchPort = ark.agentPorts.cominFetch;
   giteaSshKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDesfZ/Iu620kNIIon3XKFcPM0QE4uzYtYkkgpuixXcyQtRxLufW1tJwWvRxQIB8HIwJTGewxFSo/TpSsr6s/lTTF++mMwI7ft3lPTQOX76RnCMZ5Z3w3Z7DHKxtqEMQZUsEYFs+MlIK1h4Agpk90HSIMMf+xRNiH6DYusDJJmMuuek2PhdA02VGekbBCnaXeVbCIatcIRxmH5gKtwetl7PAmzyluPRQaXGaesD7fk8aYDBKtElFg1DO1llazUbKrKRx2uQxRcPTIEB9uoXJXyv2M3or+ZoxPhVUcb1RH6RmoW1BPkFnDOb1JNFc66eo1IdDs5y/M2ujsbE2JPcEbX7O5BZA09A8fVWon2RYT74o8ary36g9LcV2MoadqgLH6AnAzut9D9XxCW9/zkJlPbAWwllA0NE3wBolEifpJRid/+x3/Quzbedxalsc0xsFJ3IzIYVTFnfJa9wuu1LalGAA61JkFYF/DHPs1ONShMvFxRgVo0KL/RJwKPyzunUVSbvR95THv4QFkMJPvJvn1mxRKoeWudQyOy75T4CcXfrxXRrx3kWAMkHdnu4SnJbe4egSdxnAHMzs/XrBy4FS2eyuGFzpG10Tl96sZgG2CF9N7l8g5LPCDl8anoEFUIc96fr0R8AX/AsmSvFd4Xgq3sQktpS8OMohpXz92T7MCeuFQ==";
 
   # Whose signatures deploy: every key listed in modules/keys/max.pub.
@@ -38,7 +39,7 @@ in
 {
   den.aspects.deploy = {
     nixos =
-      { pkgs, ... }:
+      { pkgs, config, ... }:
       {
         imports = [ inputs.comin.nixosModules.comin ];
 
@@ -126,7 +127,47 @@ in
             printf 'HTTP/1.0 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\n' "$line"
           '';
         };
-        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ cominLogPort ];
+        # A connection makes comin fetch now rather than at its next poll:
+        # how `ark push` (or adam's resync, services/dash) gets a commit
+        # deployed sooner. Safe to leave open on the tailnet: a fetch can't
+        # deploy anything comin wouldn't anyway (only commits Max signed).
+        systemd.sockets.comin-fetch = {
+          wantedBy = [ "sockets.target" ];
+          socketConfig = {
+            ListenStream = cominFetchPort;
+            Accept = true;
+            # A burst of pokes is one fetch's worth.
+            MaxConnections = 4;
+          };
+        };
+        systemd.services."comin-fetch@" = {
+          description = "Make comin fetch now";
+          serviceConfig = {
+            StandardInput = "socket";
+            StandardOutput = "socket";
+            # Root: comin's control socket is root's.
+            ProtectHome = true;
+            PrivateTmp = true;
+            NoNewPrivileges = true;
+            RuntimeMaxSec = 15;
+          };
+          script = ''
+            # The request, read to its blank line (see comin-log).
+            while IFS= read -r -t 2 header; do
+              [ -z "''${header%$'\r'}" ] && break
+            done || true
+            if ${lib.getExe' config.services.comin.package "comin"} fetch >/dev/null 2>&1; then
+              printf 'HTTP/1.0 202 Accepted\r\nContent-Type: text/plain\r\n\r\nfetching\n'
+            else
+              printf 'HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\ncomin did not answer\n'
+            fi
+          '';
+        };
+
+        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [
+          cominLogPort
+          cominFetchPort
+        ];
       };
   };
 }

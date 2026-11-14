@@ -24,9 +24,9 @@ let
   # Who Alertmanager signs in to Stalwart as and sends from: an account
   # that only sends (services/mail), so adam holds no one's mailbox.
   sender = "alerts";
-  prometheusPort = 9090;
-  alertmanagerPort = 9093;
-  lokiPort = 3100;
+  # Every host's comin-fetch (aspects/deploy.nix), which ark-resync (below)
+  # asks.
+  cominFetchPort = ark.agentPorts.cominFetch;
   # Prometheus and Loki on the tailnet, at their own names (DNS: the
   # aliases below), for `ark push` on a laptop and Alloy on every host.
   metricsDomain = "metrics.${ark.mainDomain}";
@@ -59,9 +59,17 @@ in
   flake.arkMonitoring = {
     prometheus = "https://${metricsDomain}";
     loki = "https://${logsDomain}";
+    resync = "https://${metricsDomain}/resync";
   };
 
   ark.services.dash = {
+    # Behind nginx, or for Grafana alone: service.ports.<name>.
+    ports = [
+      "prometheus"
+      "alertmanager"
+      "loki"
+      "resync"
+    ];
     aliases = [
       "metrics"
       "logs"
@@ -113,17 +121,17 @@ in
         services.prometheus = {
           enable = true;
           listenAddress = "127.0.0.1";
-          port = prometheusPort;
+          port = service.ports.prometheus;
           retentionTime = "90d";
           globalConfig.scrape_interval = "1m";
           scrapeConfigs = [
             {
               job_name = "node";
-              static_configs = targets 9100;
+              static_configs = targets ark.agentPorts.node;
             }
             {
               job_name = "comin";
-              static_configs = targets 4243;
+              static_configs = targets ark.agentPorts.comin;
             }
             {
               job_name = "blocky";
@@ -135,13 +143,13 @@ in
           ];
           ruleFiles = [ (pkgs.writeText "ark-alerts.json" (builtins.toJSON (import ./_alerts.nix))) ];
           alertmanagers = [
-            { static_configs = [ { targets = [ "127.0.0.1:${toString alertmanagerPort}" ]; } ]; }
+            { static_configs = [ { targets = [ "127.0.0.1:${toString service.ports.alertmanager}" ]; } ]; }
           ];
 
           alertmanager = {
             enable = true;
             listenAddress = "127.0.0.1";
-            port = alertmanagerPort;
+            port = service.ports.alertmanager;
             environmentFile = config.sops.templates."alertmanager.env".path;
             configuration = {
               global = {
@@ -209,6 +217,8 @@ in
               (lib.getExe (pkgs.callPackage ../../_rust.nix { pname = "ark-rollout"; }))
               "https://git.${ark.mainDomain}/max/os.git"
               "${config.ark.metrics.textfileDir}/ark_rollout.prom"
+              # Seconds between looks at main: cheap, it's Gitea on this host.
+              "10"
             ];
             StateDirectory = "ark-rollout";
             Restart = "on-failure";
@@ -226,7 +236,7 @@ in
             auth_enabled = false;
             server = {
               http_listen_address = "127.0.0.1";
-              http_listen_port = lokiPort;
+              http_listen_port = service.ports.loki;
               grpc_listen_address = "127.0.0.1";
             };
             common = {
@@ -261,18 +271,62 @@ in
           };
         };
 
+        # Every host's comin fetches now (comin-fetch, aspects/deploy.nix),
+        # and ark-rollout looks at main: what `ark push` asks for after a
+        # push, through metrics.<domain>/resync. A fetch only means sooner;
+        # comin still deploys only what Max signed.
+        systemd.sockets.ark-resync = {
+          wantedBy = [ "sockets.target" ];
+          socketConfig = {
+            ListenStream = "127.0.0.1:${toString service.ports.resync}";
+            Accept = true;
+            MaxConnections = 4;
+          };
+        };
+        systemd.services."ark-resync@" = {
+          description = "Have every host fetch now";
+          path = [ pkgs.curl ];
+          serviceConfig = {
+            StandardInput = "socket";
+            StandardOutput = "socket";
+            DynamicUser = true;
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            PrivateTmp = true;
+            NoNewPrivileges = true;
+            RuntimeMaxSec = 15;
+          };
+          script = ''
+            while IFS= read -r -t 2 header; do
+              [ -z "''${header%$'\r'}" ] && break
+            done || true
+            printf 'HTTP/1.0 202 Accepted\r\nContent-Type: text/plain\r\n\r\n'
+            ${lib.concatMapStrings (h: ''
+              if curl -fsS -m 5 -o /dev/null -X POST http://${h.name}.${tailnet}:${toString cominFetchPort}/; then
+                echo "${h.name}: fetching"
+              else
+                echo "${h.name}: didn't answer"
+              fi &
+            '') hosts}
+            wait
+          '';
+        };
+
         # Prometheus and Loki on the tailnet (only: neither name is public,
         # lib/public.nix): reading for `ark push`, and Loki's push for Alloy.
         services.nginx.virtualHosts = {
           ${metricsDomain} = {
             useACMEHost = ark.mainDomain;
             forceSSL = true;
-            locations."/".proxyPass = "http://127.0.0.1:${toString prometheusPort}";
+            locations."/".proxyPass = "http://127.0.0.1:${toString service.ports.prometheus}";
+            # `ark push` asks this after pushing: every host fetches now
+            # (ark-resync, below), not at its next poll.
+            locations."= /resync".proxyPass = "http://127.0.0.1:${toString service.ports.resync}";
           };
           ${logsDomain} = {
             useACMEHost = ark.mainDomain;
             forceSSL = true;
-            locations."/".proxyPass = "http://127.0.0.1:${toString lokiPort}";
+            locations."/".proxyPass = "http://127.0.0.1:${toString service.ports.loki}";
           };
         };
 
@@ -367,7 +421,7 @@ in
                 name = "Prometheus";
                 type = "prometheus";
                 uid = "prometheus";
-                url = "http://127.0.0.1:${toString prometheusPort}";
+                url = "http://127.0.0.1:${toString service.ports.prometheus}";
                 isDefault = true;
                 editable = false;
               }
@@ -375,7 +429,7 @@ in
                 name = "Logs";
                 type = "loki";
                 uid = "loki";
-                url = "http://127.0.0.1:${toString lokiPort}";
+                url = "http://127.0.0.1:${toString service.ports.loki}";
                 editable = false;
               }
               {

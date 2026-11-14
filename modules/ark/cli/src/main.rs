@@ -159,12 +159,23 @@ fn run() -> Result<()> {
         },
         Some(("secrets", m)) => secrets::run(&ctx, m.get_flag("dry-run")),
         Some(("sops", m)) => {
-            let args: Vec<&String> = m.get_many::<String>("args").expect("num_args(1..)").collect();
-            util::status(ctx.sops_decrypting()?.args(args).current_dir(secrets::vars_dir(&ctx)), "sops")
+            let args: Vec<&String> = m
+                .get_many::<String>("args")
+                .expect("num_args(1..)")
+                .collect();
+            util::status(
+                ctx.sops_decrypting()?
+                    .args(args)
+                    .current_dir(secrets::vars_dir(&ctx)),
+                "sops",
+            )
         }
         Some(("service", m)) => {
             let (name, m) = m.subcommand().expect("subcommand_required");
-            let svc = services::all().into_iter().find(|s| s.name == name).expect("clap only accepts known services");
+            let svc = services::all()
+                .into_iter()
+                .find(|s| s.name == name)
+                .expect("clap only accepts known services");
             (svc.run)(&ctx, m)
         }
         _ => unreachable!("subcommand_required"),

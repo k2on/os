@@ -87,28 +87,44 @@ pub trait Source {
 /// revision, not the working tree, whose uncommitted changes would make a
 /// system no host ever runs.
 pub fn evaluate_here(root: &Path, hosts: &Hosts, commit: &str) -> BTreeMap<String, Expected> {
+    evaluate_these(root, &hosts.0.keys().cloned().collect::<Vec<_>>(), commit)
+}
+
+/// [evaluate_here], for just the hosts named.
+pub fn evaluate_these(root: &Path, names: &[String], commit: &str) -> BTreeMap<String, Expected> {
     // All at once: one nix, one fetch of the secrets submodule (so one
     // YubiKey touch). If any host fails that, one by one, to say which.
-    let flake = format!("git+file://{}?submodules=1&rev={commit}#nixosConfigurations", root.display());
-    let names = hosts.0.keys().map(|n| format!("{n:?} = true;")).collect::<String>();
-    let apply = format!("cs: builtins.mapAttrs (_: c: c.config.system.build.toplevel.outPath) (builtins.intersectAttrs {{ {names} }} cs)");
-    if let Ok(out) = util::run(Command::new("nix").args(["eval", "--json", &flake, "--apply", &apply]).current_dir(root), "nix eval")
-    {
+    let flake = format!(
+        "git+file://{}?submodules=1&rev={commit}#nixosConfigurations",
+        root.display()
+    );
+    let wanted = names
+        .iter()
+        .map(|n| format!("{n:?} = true;"))
+        .collect::<String>();
+    let apply = format!("cs: builtins.mapAttrs (_: c: c.config.system.build.toplevel.outPath) (builtins.intersectAttrs {{ {wanted} }} cs)");
+    if let Ok(out) = util::run(
+        Command::new("nix")
+            .args(["eval", "--json", &flake, "--apply", &apply])
+            .current_dir(root),
+        "nix eval",
+    ) {
         if let Ok(paths) = serde_json::from_str::<BTreeMap<String, String>>(&out) {
-            return hosts
-                .0
-                .keys()
+            return names
+                .iter()
                 .map(|n| {
-                    let e = paths.get(n).map_or_else(|| Expected::Failed("no such nixosConfiguration".into()), |p| Expected::Path(p.clone()));
+                    let e = paths.get(n).map_or_else(
+                        || Expected::Failed("no such nixosConfiguration".into()),
+                        |p| Expected::Path(p.clone()),
+                    );
                     (n.clone(), e)
                 })
                 .collect();
         }
     }
     std::thread::scope(|s| {
-        let jobs: Vec<_> = hosts
-            .0
-            .keys()
+        let jobs: Vec<_> = names
+            .iter()
             .map(|name| {
                 (
                     name.clone(),
@@ -126,7 +142,9 @@ pub fn evaluate_here(root: &Path, hosts: &Hosts, commit: &str) -> BTreeMap<Strin
             .map(|(n, j)| {
                 let e = match j.join() {
                     Ok(Ok(p)) => Expected::Path(p.trim().to_string()),
-                    Ok(Err(e)) => Expected::Failed(format!("{e:#}").lines().last().unwrap_or("").to_string()),
+                    Ok(Err(e)) => {
+                        Expected::Failed(format!("{e:#}").lines().last().unwrap_or("").to_string())
+                    }
                     Err(_) => Expected::Failed("nix eval panicked".into()),
                 };
                 (n, e)
@@ -169,6 +187,41 @@ fn shorten(s: &str, max: usize) -> String {
     } else {
         format!("{}…", s.chars().take(max - 1).collect::<String>())
     }
+}
+
+/// At most `max` characters, spacing kept, the end elided.
+fn fit(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        format!(
+            "{}…",
+            s.chars().take(max.saturating_sub(1)).collect::<String>()
+        )
+    }
+}
+
+/// The terminal's width in columns (`stty size`), 80 when it won't say.
+fn width() -> usize {
+    std::fs::File::open("/dev/tty")
+        .ok()
+        .and_then(|tty| {
+            std::process::Command::new("stty")
+                .arg("size")
+                .stdin(tty)
+                .output()
+                .ok()
+        })
+        .and_then(|o| {
+            String::from_utf8(o.stdout)
+                .ok()?
+                .split_whitespace()
+                .nth(1)?
+                .parse()
+                .ok()
+        })
+        .filter(|&w: &usize| w > 0)
+        .unwrap_or(80)
 }
 
 struct Watched<'a> {
@@ -237,15 +290,30 @@ pub fn watch(source: &mut dyn Source, hosts: &Hosts, commit: &str, subject: &str
                 continue;
             }
             let before = w.failed_before.get_or_insert_with(|| seen.failed.clone());
-            let deploy_failed = seen.deployed.as_ref().is_some_and(|(c, s)| c == commit && s == "failed");
+            let deploy_failed = seen
+                .deployed
+                .as_ref()
+                .is_some_and(|(c, s)| c == commit && s == "failed");
             w.state = if let Some(stage) = seen.failed.iter().find(|f| !before.contains(f)) {
                 State::Failed(format!("comin: its {stage} failed"))
             } else if deploy_failed {
                 State::Failed("comin: deploying it failed".into())
             } else {
-                let what = if seen.running.is_none() { "no ark_system_info yet (switching to this adds it)" } else { "deploying" };
-                let fetch = if seen.fetch_failed { ", a fetch failing" } else { "" };
-                let note = if before.is_empty() { "" } else { ", its last deploy had failed" };
+                let what = if seen.running.is_none() {
+                    "no ark_system_info yet (switching to this adds it)"
+                } else {
+                    "deploying"
+                };
+                let fetch = if seen.fetch_failed {
+                    ", a fetch failing"
+                } else {
+                    ""
+                };
+                let note = if before.is_empty() {
+                    ""
+                } else {
+                    ", its last deploy had failed"
+                };
                 State::Pending(format!("{what}{fetch}{note}"))
             };
         }
@@ -266,18 +334,25 @@ pub fn watch(source: &mut dyn Source, hosts: &Hosts, commit: &str, subject: &str
             text += &format!("  {:<14} {}\n", device, state.show());
         }
         if tty {
+            // Cut to the terminal's width: a line that wrapped would take two
+            // rows, and moving up by line count would leave the top of the
+            // last frame behind.
+            let width = width();
+            let fitted: String = text.lines().map(|l| fit(l, width) + "\n").collect();
             if drawn > 0 {
                 print!("\x1b[{drawn}A\x1b[J");
             }
-            print!("{text}");
-            drawn = text.lines().count();
+            print!("{fitted}");
+            drawn = fitted.lines().count();
         } else if text != last_text {
             println!("{text}");
         }
         let _ = std::io::stdout().flush();
         last_text = text;
 
-        let devices_settled = devices.as_ref().is_none_or(|d| d.iter().all(|(_, s)| s.settled()));
+        let devices_settled = devices
+            .as_ref()
+            .is_none_or(|d| d.iter().all(|(_, s)| s.settled()));
         if watched.iter().all(|w| w.state.settled()) && devices_settled {
             break;
         }
@@ -287,7 +362,11 @@ pub fn watch(source: &mut dyn Source, hosts: &Hosts, commit: &str, subject: &str
         std::thread::sleep(POLL);
     }
 
-    let failed: Vec<&str> = watched.iter().filter(|w| matches!(w.state, State::Failed(_))).map(|w| w.host.name.as_str()).collect();
+    let failed: Vec<&str> = watched
+        .iter()
+        .filter(|w| matches!(w.state, State::Failed(_)))
+        .map(|w| w.host.name.as_str())
+        .collect();
     if !failed.is_empty() {
         bail!("{short} failed on {}", failed.join(", "));
     }
@@ -298,9 +377,16 @@ pub fn watch(source: &mut dyn Source, hosts: &Hosts, commit: &str, subject: &str
 /// written after that (it's refreshed every few minutes).
 fn device_states(seen: DevicesSeen, host: &Watched, started: Instant) -> Vec<(String, State)> {
     let Some(done_at) = host.done_at else {
-        return seen.devices.into_iter().map(|d| (d.name, State::Pending(format!("after {}", host.host.name)))).collect();
+        return seen
+            .devices
+            .into_iter()
+            .map(|d| (d.name, State::Pending(format!("after {}", host.host.name))))
+            .collect();
     };
-    let done_secs = done_at.duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+    let done_secs = done_at
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
     seen.devices
         .into_iter()
         .map(|d| {
@@ -347,12 +433,28 @@ mod tests {
         }
         fn host(&mut self, host: &Host) -> HostSeen {
             let s = &self.round[host.name.as_str()];
-            HostSeen { reachable: s.reachable, running: s.running.clone(), failed: s.failed.clone(), ..Default::default() }
+            HostSeen {
+                reachable: s.reachable,
+                running: s.running.clone(),
+                failed: s.failed.clone(),
+                ..Default::default()
+            }
         }
         fn devices(&mut self, _: &Host) -> Option<DevicesSeen> {
-            let d = if self.devices.len() > 1 { self.devices.pop_front()? } else { self.devices.front()?.clone() };
+            let d = if self.devices.len() > 1 {
+                self.devices.pop_front()?
+            } else {
+                self.devices.front()?.clone()
+            };
             let (written, pending) = d?;
-            Some(DevicesSeen { written, devices: vec![DeviceSeen { name: "phone".into(), pending, rejects: None }] })
+            Some(DevicesSeen {
+                written,
+                devices: vec![DeviceSeen {
+                    name: "phone".into(),
+                    pending,
+                    rejects: None,
+                }],
+            })
         }
     }
 
@@ -361,30 +463,57 @@ mod tests {
             names
                 .iter()
                 .map(|n| {
-                    let services = if *n == "adam" { vec!["devices-apple".to_string()] } else { vec![] };
-                    (n.to_string(), Host { name: n.to_string(), host_name: n.to_string(), ssh: None, services })
+                    let services = if *n == "adam" {
+                        vec!["devices-apple".to_string()]
+                    } else {
+                        vec![]
+                    };
+                    (
+                        n.to_string(),
+                        Host {
+                            name: n.to_string(),
+                            host_name: n.to_string(),
+                            ssh: None,
+                            services,
+                        },
+                    )
                 })
                 .collect(),
         )
     }
 
     fn seen(running: &str, failed: &[&'static str]) -> HostSeen {
-        HostSeen { reachable: true, running: Some(running.into()), failed: failed.to_vec(), ..Default::default() }
+        HostSeen {
+            reachable: true,
+            running: Some(running.into()),
+            failed: failed.to_vec(),
+            ..Default::default()
+        }
     }
 
     fn expected(pairs: &[(&str, Expected)]) -> BTreeMap<String, Expected> {
-        pairs.iter().map(|(n, e)| (n.to_string(), e.clone())).collect()
+        pairs
+            .iter()
+            .map(|(n, e)| (n.to_string(), e.clone()))
+            .collect()
     }
 
     fn now() -> f64 {
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64()
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
     }
 
     #[test]
     fn done_when_running_the_expected_system() {
         let mut s = Scripted {
             expected: expected(&[("benj", Expected::Path("new".into()))]),
-            rounds: [BTreeMap::from([("benj", seen("old", &[]))]), BTreeMap::from([("benj", seen("new", &[]))])].into(),
+            rounds: [
+                BTreeMap::from([("benj", seen("old", &[]))]),
+                BTreeMap::from([("benj", seen("new", &[]))]),
+            ]
+            .into(),
             round: BTreeMap::new(),
             devices: VecDeque::new(),
         };
@@ -407,7 +536,11 @@ mod tests {
     fn a_new_comin_failure_fails() {
         let mut s = Scripted {
             expected: expected(&[("benj", Expected::Path("new".into()))]),
-            rounds: [BTreeMap::from([("benj", seen("old", &[]))]), BTreeMap::from([("benj", seen("old", &["build"]))])].into(),
+            rounds: [
+                BTreeMap::from([("benj", seen("old", &[]))]),
+                BTreeMap::from([("benj", seen("old", &["build"]))]),
+            ]
+            .into(),
             round: BTreeMap::new(),
             devices: VecDeque::new(),
         };
@@ -434,12 +567,24 @@ mod tests {
     fn devices_follow_their_host() {
         let mut s = Scripted {
             expected: expected(&[("adam", Expected::Path("new".into()))]),
-            rounds: [BTreeMap::from([("adam", seen("old", &[]))]), BTreeMap::from([("adam", seen("new", &[]))])].into(),
+            rounds: [
+                BTreeMap::from([("adam", seen("old", &[]))]),
+                BTreeMap::from([("adam", seen("new", &[]))]),
+            ]
+            .into(),
             round: BTreeMap::new(),
             // Stale (written before adam was done), then fetching, then caught up.
-            devices: [Some((0.0, Some(0))), Some((now() + 60.0, Some(2))), Some((now() + 60.0, Some(0)))].into(),
+            devices: [
+                Some((0.0, Some(0))),
+                Some((now() + 60.0, Some(2))),
+                Some((now() + 60.0, Some(0))),
+            ]
+            .into(),
         };
         assert!(watch(&mut s, &hosts(&["adam"]), "abcdef0", "x").is_ok());
-        assert!(s.devices.len() == 1, "the devices were asked until caught up");
+        assert!(
+            s.devices.len() == 1,
+            "the devices were asked until caught up"
+        );
     }
 }

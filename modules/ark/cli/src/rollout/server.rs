@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::direct::{comin_seen, devices_seen};
-use super::{evaluate_here, DevicesSeen, Expected, HostSeen, Source};
+use super::{evaluate_here, evaluate_these, DevicesSeen, Expected, HostSeen, Source};
 use crate::hosts::{Host, Hosts};
 use crate::prom::Sample;
 
@@ -28,13 +28,17 @@ pub struct Server<'a> {
     /// Hosts Prometheus last scraped fine.
     up: BTreeMap<String, bool>,
     evaluated_here: Option<BTreeMap<String, Expected>>,
+    /// Hosts adam failed to evaluate, as evaluated here instead.
+    retried: BTreeMap<String, Expected>,
 }
 
 /// %-encoding for a query string value.
 fn encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -47,10 +51,13 @@ impl<'a> Server<'a> {
             loki: loki.trim_end_matches('/').into(),
             root,
             hosts,
-            agent: ureq::AgentBuilder::new().timeout(Duration::from_secs(5)).build(),
+            agent: ureq::AgentBuilder::new()
+                .timeout(Duration::from_secs(5))
+                .build(),
             samples: BTreeMap::new(),
             up: BTreeMap::new(),
             evaluated_here: None,
+            retried: BTreeMap::new(),
         }
     }
 
@@ -78,7 +85,11 @@ impl<'a> Server<'a> {
                         .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
                         .collect();
                     let value = r.get("value")?.get(1)?.as_str()?.parse().ok()?;
-                    Some(Sample { name: labels.get("__name__").cloned().unwrap_or_default(), labels, value })
+                    Some(Sample {
+                        name: labels.get("__name__").cloned().unwrap_or_default(),
+                        labels,
+                        value,
+                    })
                 })
                 .collect(),
         )
@@ -86,8 +97,14 @@ impl<'a> Server<'a> {
 
     /// comin's latest log line on the host, from Loki.
     fn log(&self, host: &str) -> Option<String> {
-        let q = format!("{{host=\"{host}\",unit=\"comin.service\"}} != \"dropped event for subscriber\"");
-        let url = format!("{}/loki/api/v1/query_range?query={}&limit=1&direction=backward&since=1h", self.loki, encode(&q));
+        let q = format!(
+            "{{host=\"{host}\",unit=\"comin.service\"}} != \"dropped event for subscriber\""
+        );
+        let url = format!(
+            "{}/loki/api/v1/query_range?query={}&limit=1&direction=backward&since=1h",
+            self.loki,
+            encode(&q)
+        );
         let v: Value = self.agent.get(&url).call().ok()?.into_json().ok()?;
         let line = v.pointer("/data/result/0/values/0/1")?.as_str()?;
         Some(clean(line))
@@ -133,14 +150,24 @@ impl Source for Server<'_> {
             return e.clone();
         }
         // ark-rollout has never published: work it out here instead.
-        if self.query("ark_rollout_commit_timestamp_seconds").is_some_and(|s| s.is_empty()) {
-            return self.evaluated_here.insert(evaluate_here(&self.root, self.hosts, commit)).clone();
+        if self
+            .query("ark_rollout_commit_timestamp_seconds")
+            .is_some_and(|s| s.is_empty())
+        {
+            return self
+                .evaluated_here
+                .insert(evaluate_here(&self.root, self.hosts, commit))
+                .clone();
         }
-        let of = |q: &str| self.query(&format!("{q}{{commit=\"{commit}\"}}")).unwrap_or_default();
+        let of = |q: &str| {
+            self.query(&format!("{q}{{commit=\"{commit}\"}}"))
+                .unwrap_or_default()
+        };
         let seen = !of("ark_rollout_commit_timestamp_seconds").is_empty();
         let paths = of("ark_rollout_expected_system");
         let failures = of("ark_rollout_eval_failed");
-        self.hosts
+        let mut expected: BTreeMap<String, Expected> = self
+            .hosts
             .0
             .keys()
             .map(|name| {
@@ -158,13 +185,47 @@ impl Source for Server<'_> {
                 };
                 (name.clone(), e)
             })
-            .collect()
+            .collect();
+        // What adam can't evaluate may still evaluate here: a host of
+        // another system whose evaluation builds something first (cale,
+        // aarch64, on x86_64 adam). Each such host once; it fails only if it
+        // fails here too.
+        let unsure: Vec<String> = expected
+            .iter()
+            .filter(|(n, e)| matches!(e, Expected::Failed(_)) && !self.retried.contains_key(*n))
+            .map(|(n, _)| n.clone())
+            .collect();
+        if !unsure.is_empty() {
+            self.retried
+                .extend(evaluate_these(&self.root, &unsure, commit));
+        }
+        for (name, e) in expected.iter_mut() {
+            if let (Expected::Failed(adam), Some(here)) = (&*e, self.retried.get(name)) {
+                *e = match here {
+                    Expected::Failed(here) => {
+                        Expected::Failed(format!("on adam: {adam}; here: {here}"))
+                    }
+                    other => other.clone(),
+                };
+            }
+        }
+        expected
     }
 
     fn host(&mut self, host: &Host) -> HostSeen {
-        let samples = self.samples.get(&host.name).map(Vec::as_slice).unwrap_or_default();
-        let mut seen = HostSeen { reachable: self.up.get(&host.name).copied().unwrap_or(false), ..Default::default() };
-        seen.running = samples.iter().find(|s| s.name == "ark_system_info").and_then(|s| s.labels.get("path").cloned());
+        let samples = self
+            .samples
+            .get(&host.name)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let mut seen = HostSeen {
+            reachable: self.up.get(&host.name).copied().unwrap_or(false),
+            ..Default::default()
+        };
+        seen.running = samples
+            .iter()
+            .find(|s| s.name == "ark_system_info")
+            .and_then(|s| s.labels.get("path").cloned());
         comin_seen(samples, &mut seen);
         seen.log = self.log(&host.name);
         seen
@@ -189,7 +250,9 @@ mod tests {
     #[test]
     fn cleans_comin_lines() {
         assert_eq!(
-            clean(r#"time="2026-11-14T10:34:23-06:00" level=info msg="deployer: \"switch\" failed""#),
+            clean(
+                r#"time="2026-11-14T10:34:23-06:00" level=info msg="deployer: \"switch\" failed""#
+            ),
             r#"deployer: "switch" failed"#
         );
         assert_eq!(clean("plain"), "plain");

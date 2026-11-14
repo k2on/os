@@ -39,7 +39,11 @@ fn line(l: &str) -> Option<Sample> {
             if c == '}' {
                 break key_end + 1;
             }
-            let key = r[start..key_end].trim().trim_start_matches(',').trim().to_string();
+            let key = r[start..key_end]
+                .trim()
+                .trim_start_matches(',')
+                .trim()
+                .to_string();
             // "value", with \\ \" \n escapes
             if chars.next()?.1 != '"' {
                 return None;
@@ -71,7 +75,11 @@ fn line(l: &str) -> Option<Sample> {
         rest = &r[end..];
     }
     let value = rest.split_whitespace().next()?.parse().ok()?;
-    Some(Sample { name, labels, value })
+    Some(Sample {
+        name,
+        labels,
+        value,
+    })
 }
 
 /// The samples named `name`.
@@ -93,7 +101,14 @@ mod tests {
              odd{label=\"a \\\"b\\\" \\\\ c\"} 2.5 1700000000000\n",
         );
         assert_eq!(s.len(), 5);
-        assert_eq!(s[0], Sample { name: "comin_last_eval_failed".into(), labels: BTreeMap::new(), value: 0.0 });
+        assert_eq!(
+            s[0],
+            Sample {
+                name: "comin_last_eval_failed".into(),
+                labels: BTreeMap::new(),
+                value: 0.0
+            }
+        );
         assert_eq!(s[1].labels["commit_id"], "abc");
         assert_eq!(s[1].labels["status"], "done");
         assert_eq!(s[2].labels["path"], "/nix/store/x-nixos-system");

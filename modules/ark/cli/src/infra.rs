@@ -18,7 +18,9 @@ pub fn run(ctx: &Ctx, action: &str) -> Result<()> {
     let missing: Vec<&str> = manifest
         .secrets
         .iter()
-        .filter(|(key, spec)| spec.file == "infra" && !infra.lines().any(|l| l.starts_with(&format!("{key}:"))))
+        .filter(|(key, spec)| {
+            spec.file == "infra" && !infra.lines().any(|l| l.starts_with(&format!("{key}:")))
+        })
         .map(|(key, _)| key.as_str())
         .collect();
     if !missing.is_empty() {
@@ -31,7 +33,11 @@ pub fn run(ctx: &Ctx, action: &str) -> Result<()> {
     // forwards arguments, so the approval prompt is answered on the terminal.
     util::status(
         ctx.sops_decrypting()?
-            .args(["exec-env", "secrets/vars/infra.yaml", &format!("nix run \".?submodules=1#infra.{action}\"")])
+            .args([
+                "exec-env",
+                "secrets/vars/infra.yaml",
+                &format!("nix run \".?submodules=1#infra.{action}\""),
+            ])
             .current_dir(&ctx.root),
         &format!("infra {action}"),
     )

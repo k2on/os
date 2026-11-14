@@ -1,8 +1,9 @@
 # What every host tells monitoring (services/dash), over the tailnet only:
-# node_exporter on 9100 (load, memory, disks, network, and systemd units, so
+# node_exporter (load, memory, disks, network, and systemd units, so
 # a failed one shows), with files of metrics others write into
-# ark.metrics.textfileDir (backups: lib/backups.nix); and comin's own on
-# 4243 (aspects/deploy.nix), whether its last fetch, build or deploy failed;
+# ark.metrics.textfileDir (backups: lib/backups.nix); and comin's own
+# (aspects/deploy.nix), whether its last fetch, build or deploy failed
+# (both ports: lib/agents.nix);
 # and ark_system_info, the system it runs (for `ark push`). Its journal goes
 # to Loki (services/dash) through Alloy.
 {
@@ -12,8 +13,8 @@
   ...
 }:
 let
-  nodePort = 9100;
-  cominPort = 4243;
+  nodePort = config.ark.agentPorts.node;
+  cominPort = config.ark.agentPorts.comin;
   # Loki, where every host's journal goes (services/dash).
   logsPush = "https://logs.${config.ark.mainDomain}/loki/api/v1/push";
 in

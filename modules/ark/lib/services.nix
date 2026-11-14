@@ -15,6 +15,7 @@
 #     domain = "home.ark.us";     # defaults to "<name>.<ark.mainDomain>"
 #     aliases = [ "office" ];     # other names that reach this service; bare labels get mainDomain
 #     web = false;                # no HTTP endpoint: no port, domain, nginx vhost or DNS name
+#     ports = [ "api" "metrics" ];  # more ports it listens on: service.ports.api, ...
 #     oidc = {                    # declaring this gives the service a kanidm client
 #       callbacks = [ "/auth/oidc/callback" ];    # relative to https://<domain>, or absolute
 #       displayName = "Home";     # defaults to the capitalised name
@@ -33,7 +34,7 @@
 #   };
 #
 # The module function receives ordinary NixOS module args (config, pkgs,
-# lib, ...) PLUS `service` = { name, port, domain, oidc? }, pre-applied the
+# lib, ...) PLUS `service` = { name, port, ports, domain, oidc? }, pre-applied the
 # same way Den's wrapClassModule injects host/user — pipeline data resolved
 # before module evaluation, so ports can never cause infinite recursion.
 # With OIDC, service.oidc is the client from lib/oidc.nix (name, clientId,
@@ -50,9 +51,16 @@
 # Auto-assigned ports are portBase + index in the alphabetically sorted
 # list of auto-assigned services on that host. Quirk data is scope-local,
 # so each host's ports come from only the services it includes.
+#
+# Each service owns a block of ten ports from its base: service.port is the
+# first (its web endpoint), and the names in `ports` take the next ones in
+# order, as service.ports.<name>. A service without a web endpoint still
+# gets a block when it names ports. An explicit `port` is the base the same
+# way, so it must leave room after it.
 { lib, config, ... }:
 let
   portBase = 31600;
+  blockSize = 10;
 
   # Accept both definition forms; always work with { port?, domain?, oidc?, nixos }.
   normalize = spec: if lib.isFunction spec then { nixos = spec; } else spec;
@@ -77,29 +85,50 @@ let
   # secrets, its OIDC client and its service-<name> aspect.
   hasWeb = spec: spec.web or true;
 
-  # { name -> spec } -> { name -> port }; null without a web endpoint.
-  assignPorts =
+  # Whether it listens anywhere: a web endpoint, or ports it names.
+  hasPorts = spec: hasWeb spec || (spec.ports or [ ]) != [ ];
+
+  # { name -> spec } -> { name -> base of its block }; null when it listens
+  # nowhere.
+  assignBases =
     services:
     let
       autoNames = lib.sort lib.lessThan (
-        lib.attrNames (lib.filterAttrs (_: s: hasWeb s && (s.port or null) == null) services)
+        lib.attrNames (lib.filterAttrs (_: s: hasPorts s && (s.port or null) == null) services)
       );
       autoFor =
         name:
         portBase
         + (
-          10 * lib.lists.findFirstIndex (n: n == name) (throw "ark: unregistered service '${name}'") autoNames
+          blockSize
+          * lib.lists.findFirstIndex (n: n == name) (throw "ark: unregistered service '${name}'") autoNames
         );
     in
     lib.mapAttrs (
       name: s:
-      if !hasWeb s then
+      if !hasPorts s then
         null
       else if (s.port or null) != null then
         s.port
       else
         autoFor name
     ) services;
+
+  # { name -> spec } -> { name -> port }; null without a web endpoint.
+  assignPorts =
+    services:
+    lib.mapAttrs (name: base: if hasWeb services.${name} then base else null) (assignBases services);
+
+  # A spec's named ports, after its web port: { <name> -> port }.
+  namedPorts =
+    name: base: spec:
+    let
+      names = spec.ports or [ ];
+    in
+    if lib.length names >= blockSize then
+      throw "ark: service '${name}' names ${toString (lib.length names)} ports; a block has room for ${toString (blockSize - 1)}"
+    else
+      lib.listToAttrs (lib.imap1 (i: n: lib.nameValuePair n (base + i)) names);
 
   domainFor =
     name: spec: if !hasWeb spec then null else spec.domain or "${name}.${config.ark.mainDomain}";
@@ -115,13 +144,15 @@ let
   # own argument names (minus service, plus config for the secret paths)
   # so the module system supplies config/pkgs/lib/etc. as usual.
   mkModule =
-    name: port: spec:
+    name: base: spec:
     let
       oidc = config.ark.oidc.clients.${name} or null;
       service =
         args:
         {
-          inherit name port;
+          inherit name;
+          port = if hasWeb spec then base else null;
+          ports = namedPorts name base spec;
           domain = domainFor name spec;
         }
         // lib.optionalAttrs (oidc != null) {
@@ -221,6 +252,7 @@ in
           # while defining den.aspects is an infinite recursion.
           // builtins.removeAttrs spec [
             "port"
+            "ports"
             "domain"
             "aliases"
             "web"
@@ -238,10 +270,10 @@ in
           { ark-service, ... }:
           let
             services = mergeServices ark-service;
-            ports = assignPorts services;
+            bases = assignBases services;
           in
           {
-            imports = lib.mapAttrsToList (name: spec: mkModule name ports.${name} spec) services;
+            imports = lib.mapAttrsToList (name: spec: mkModule name bases.${name} spec) services;
             options.ark.hostedServices = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               readOnly = true;

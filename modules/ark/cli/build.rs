@@ -12,7 +12,10 @@ use std::{env, fs, path::PathBuf};
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let services = manifest.join("../services").canonicalize().expect("../services next to cli/");
+    let services = manifest
+        .join("../services")
+        .canonicalize()
+        .expect("../services next to cli/");
     println!("cargo:rerun-if-changed={}", services.display());
 
     let mut entries: Vec<_> = fs::read_dir(&services).unwrap().flatten().collect();
@@ -25,9 +28,15 @@ fn main() {
         if !mod_rs.is_file() {
             continue;
         }
-        println!("cargo:rerun-if-changed={}", entry.path().join("cli").display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            entry.path().join("cli").display()
+        );
         let name = entry.file_name().to_string_lossy().replace('-', "_");
-        code += &format!("#[path = {:?}]\npub mod {name};\n", mod_rs.display().to_string());
+        code += &format!(
+            "#[path = {:?}]\npub mod {name};\n",
+            mod_rs.display().to_string()
+        );
         names.push(name);
     }
     code += "pub fn all() -> Vec<&'static crate::service::Service> {\n    vec![";

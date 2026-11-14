@@ -24,7 +24,9 @@ let
   workspace = (lib.importTOML ./Cargo.toml).workspace;
   members = workspace.members;
   manifestOf = dir: lib.importTOML (./. + "/${dir}/Cargo.toml");
-  dir = lib.findFirst (d: (manifestOf d).package.name == pname) (throw "_rust.nix: no workspace member is named ${pname}") members;
+  dir = lib.findFirst (
+    d: (manifestOf d).package.name == pname
+  ) (throw "_rust.nix: no workspace member is named ${pname}") members;
   manifest = manifestOf dir;
   code = fileset.fileFilter (f: f.hasExt "rs" || f.hasExt "js");
 
@@ -36,9 +38,18 @@ let
 
   # The workspace dependencies it names (`x.workspace = true`).
   used = lib.unique (
-    lib.concatMap (
-      section: lib.attrNames (lib.filterAttrs (_: d: lib.isAttrs d && d.workspace or false) (manifest.${section} or { }))
-    ) [ "dependencies" "build-dependencies" "dev-dependencies" ]
+    lib.concatMap
+      (
+        section:
+        lib.attrNames (
+          lib.filterAttrs (_: d: lib.isAttrs d && d.workspace or false) (manifest.${section} or { })
+        )
+      )
+      [
+        "dependencies"
+        "build-dependencies"
+        "dev-dependencies"
+      ]
   );
   rootToml = (lib.importTOML ./Cargo.toml) // {
     workspace = workspace // {
@@ -59,7 +70,10 @@ let
       name = lib.head parts;
       candidates = versionsOf.${name} or [ ];
     in
-    if lib.length parts > 1 then lib.filter (p: p.version == lib.elemAt parts 1) candidates else candidates;
+    if lib.length parts > 1 then
+      lib.filter (p: p.version == lib.elemAt parts 1) candidates
+    else
+      candidates;
   keyOf = p: "${p.name} ${p.version} ${p.source or ""}";
   closure = lib.genericClosure {
     startSet = map (p: {

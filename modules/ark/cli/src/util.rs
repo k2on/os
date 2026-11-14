@@ -6,9 +6,16 @@ use anyhow::{bail, Context, Result};
 /// Runs a command, returning its stdout; its stderr is kept for the error.
 /// For tools that are quiet on success (nix, git).
 pub fn run(cmd: &mut Command, what: &str) -> Result<String> {
-    let out = cmd.stderr(Stdio::piped()).output().with_context(|| format!("starting {what}"))?;
+    let out = cmd
+        .stderr(Stdio::piped())
+        .output()
+        .with_context(|| format!("starting {what}"))?;
     if !out.status.success() {
-        bail!("{what} failed ({}):\n{}", out.status, String::from_utf8_lossy(&out.stderr).trim_end());
+        bail!(
+            "{what} failed ({}):\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim_end()
+        );
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -17,7 +24,10 @@ pub fn run(cmd: &mut Command, what: &str) -> Result<String> {
 /// it happens. For sops decrypting, whose yubikey plugin asks for a PIN or a
 /// touch there.
 pub fn capture(cmd: &mut Command, what: &str) -> Result<String> {
-    let out = cmd.stderr(Stdio::inherit()).output().with_context(|| format!("starting {what}"))?;
+    let out = cmd
+        .stderr(Stdio::inherit())
+        .output()
+        .with_context(|| format!("starting {what}"))?;
     if !out.status.success() {
         bail!("{what} failed ({})", out.status);
     }

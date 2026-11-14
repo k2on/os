@@ -346,6 +346,15 @@ in
     };
 
   config.ark.services.devices-apple = {
+    # Beside nanohub (service.port): SCEP, enrollment, nanodep, assets and
+    # the metrics webhook.
+    ports = [
+      "scep"
+      "enroll"
+      "dep"
+      "assets"
+      "metrics"
+    ];
     inherit domain;
     # devices.<mainDomain> on the tailnet's DNS; its vhost is below.
     aliases = [ "devices" ];
@@ -480,12 +489,12 @@ in
         hasPush = secrets ? devices-apple_push_cert;
         acme = config.security.acme.certs.${ark.mainDomain}.directory;
         hasToken = secrets ? devices-apple_dep_token;
-        # nanohub is service.port; the rest beside it.
-        scepPort = service.port + 1;
-        enrollPort = service.port + 2;
-        depPort = service.port + 3;
-        assetPort = service.port + 4;
-        metricsPort = service.port + 5;
+        # nanohub is service.port; the rest are named on the service (above).
+        scepPort = service.ports.scep;
+        enrollPort = service.ports.enroll;
+        depPort = service.ports.dep;
+        assetPort = service.ports.assets;
+        metricsPort = service.ports.metrics;
         serials = lib.filter (s: s != null) (lib.mapAttrsToList (_: d: d.serial) apple.devices);
 
         # Apps: each a managed-app declaration and its config as a data

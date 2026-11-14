@@ -36,15 +36,26 @@ pub struct Ctx {
 
 impl Ctx {
     pub fn discover() -> Result<Ctx> {
-        let top = Command::new("git").args(["rev-parse", "--show-toplevel"]).output();
+        let top = Command::new("git")
+            .args(["rev-parse", "--show-toplevel"])
+            .output();
         let root = match top {
-            Ok(out) if out.status.success() => PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()),
+            Ok(out) if out.status.success() => {
+                PathBuf::from(String::from_utf8_lossy(&out.stdout).trim())
+            }
             _ => std::env::current_dir()?,
         };
         if !root.join("flake.nix").is_file() {
-            bail!("run ark from inside the os repository (no flake.nix in {})", root.display());
+            bail!(
+                "run ark from inside the os repository (no flake.nix in {})",
+                root.display()
+            );
         }
-        Ok(Ctx { root, age_key: OnceCell::new(), decrypted: RefCell::new(BTreeMap::new()) })
+        Ok(Ctx {
+            root,
+            age_key: OnceCell::new(),
+            decrypted: RefCell::new(BTreeMap::new()),
+        })
     }
 
     /// `nix eval --json .?submodules=1#<attr>`, parsed. The secrets submodule is
@@ -62,7 +73,12 @@ impl Ctx {
     /// `git <args>` in the secrets submodule, which is its own repository;
     /// paths are relative to secrets/. Output goes to the terminal.
     pub fn git_secrets(&self, args: &[&str]) -> Result<()> {
-        crate::util::status(Command::new("git").args(args).current_dir(self.root.join("secrets")), "git (secrets)")
+        crate::util::status(
+            Command::new("git")
+                .args(args)
+                .current_dir(self.root.join("secrets")),
+            "git (secrets)",
+        )
     }
 
     /// `sops` able to decrypt: with the age identity in its environment. The
@@ -119,13 +135,15 @@ impl Ctx {
             }
         }
     }
-
 }
 
 /// One try at `age-plugin-yubikey --identity`: the identity if a key answered,
 /// plus whatever the plugin said on stderr.
 fn probe_yubikey() -> Result<(Option<String>, String)> {
-    let out = match Command::new("age-plugin-yubikey").arg("--identity").output() {
+    let out = match Command::new("age-plugin-yubikey")
+        .arg("--identity")
+        .output()
+    {
         Ok(out) => out,
         Err(e) if e.kind() == ErrorKind::NotFound => {
             bail!("age-plugin-yubikey is not on PATH; the dev shell (nix develop, or direnv in the repo) has it")

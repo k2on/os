@@ -69,12 +69,14 @@
   # makes a system depend on the whole repo.
   outputs =
     inputs:
-    inputs.flake-parts.lib.mkFlake {
-      inherit inputs;
-      specialArgs.root = ./.;
-    } (
-      inputs.import-tree (
-        [ ./modules ] ++ (if builtins.pathExists ./secrets/ark.nix then [ ./secrets ] else [ ])
-      )
-    );
+    inputs.flake-parts.lib.mkFlake
+      {
+        inherit inputs;
+        specialArgs.root = ./.;
+      }
+      (
+        inputs.import-tree (
+          [ ./modules ] ++ (if builtins.pathExists ./secrets/ark.nix then [ ./secrets ] else [ ])
+        )
+      );
 }

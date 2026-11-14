@@ -49,7 +49,8 @@ impl Host {
     fn command(&self) -> Result<(Command, &str)> {
         let target = self.target()?;
         let mut cmd = Command::new("ssh");
-        cmd.args(["-o", "StrictHostKeyChecking=accept-new"]).args(util::ssh_sharing());
+        cmd.args(["-o", "StrictHostKeyChecking=accept-new"])
+            .args(util::ssh_sharing());
         Ok((cmd, target))
     }
 
@@ -72,7 +73,10 @@ pub struct Hosts(pub BTreeMap<String, Host>);
 impl Hosts {
     /// The host running a service; there has to be exactly one.
     pub fn running(&self, service: &str) -> Result<&Host> {
-        let mut found = self.0.values().filter(|h| h.services.iter().any(|s| s == service));
+        let mut found = self
+            .0
+            .values()
+            .filter(|h| h.services.iter().any(|s| s == service));
         let Some(host) = found.next() else {
             bail!("no host includes the {service} service (den.aspects.<host>.includes service-{service})");
         };
@@ -85,22 +89,29 @@ impl Hosts {
 
 impl Ctx {
     pub fn hosts(&self) -> Result<Hosts> {
-        let raw: BTreeMap<String, Host> =
-            serde_json::from_value(self.nix_eval("arkHosts")?).context("reading the arkHosts flake output")?;
+        let raw: BTreeMap<String, Host> = serde_json::from_value(self.nix_eval("arkHosts")?)
+            .context("reading the arkHosts flake output")?;
         Ok(Hosts(raw))
     }
 }
 
 /// `ark hosts`: the hosts, how to reach them, what they run.
 pub fn list(ctx: &Ctx) -> Result<()> {
-    println!("{:<8} {:<10} {:<20} {}", "HOST", "HOSTNAME", "SSH", "SERVICES");
+    println!(
+        "{:<8} {:<10} {:<20} {}",
+        "HOST", "HOSTNAME", "SSH", "SERVICES"
+    );
     for host in ctx.hosts()?.0.values() {
         println!(
             "{:<8} {:<10} {:<20} {}",
             host.name,
             host.host_name,
             host.ssh.as_deref().unwrap_or("-"),
-            if host.services.is_empty() { "-".to_string() } else { host.services.join(" ") }
+            if host.services.is_empty() {
+                "-".to_string()
+            } else {
+                host.services.join(" ")
+            }
         );
     }
     Ok(())

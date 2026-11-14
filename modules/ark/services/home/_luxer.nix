@@ -11,7 +11,12 @@
 # browser drives it, a cookie jar through the password sign-in, the
 # request form on the orders page, and the orders page read again for the
 # code. Each request emails the code as well.
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   font = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans-Bold.ttf";
 

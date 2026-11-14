@@ -28,9 +28,12 @@ impl Watch {
         }
         let watch = Watch(fd);
         let mut watched = 0;
-        for dir in std::iter::once("/dev/bus/usb".to_string())
-            .chain(fs::read_dir("/dev/bus/usb").ok()?.flatten().map(|e| e.path().display().to_string()))
-        {
+        for dir in std::iter::once("/dev/bus/usb".to_string()).chain(
+            fs::read_dir("/dev/bus/usb")
+                .ok()?
+                .flatten()
+                .map(|e| e.path().display().to_string()),
+        ) {
             let path = CString::new(dir).ok()?;
             if unsafe { inotify_add_watch(fd, path.as_ptr(), IN_CREATE) } >= 0 {
                 watched += 1;

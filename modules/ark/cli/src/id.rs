@@ -39,7 +39,10 @@ struct Paths {
 impl Paths {
     fn new() -> Result<Paths> {
         let ssh = PathBuf::from(std::env::var("HOME").context("HOME is not set")?).join(".ssh");
-        Ok(Paths { tmp: ssh.join(".ark-id"), ssh })
+        Ok(Paths {
+            tmp: ssh.join(".ark-id"),
+            ssh,
+        })
     }
 
     /// Runs `f` with an empty scratch directory, removed after.
@@ -84,9 +87,16 @@ pub fn new(ctx: &Ctx) -> Result<()> {
             bail!("the YubiKey has an id already; `ark id` shows it");
         }
         let login = std::env::var("USER").unwrap_or_default();
-        let name = ask(ctx, "Your name", &login, "lowercase letters, digits and . _ - only", |s| {
-            s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c))
-        })?;
+        let name = ask(
+            ctx,
+            "Your name",
+            &login,
+            "lowercase letters, digits and . _ - only",
+            |s| {
+                s.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c))
+            },
+        )?;
         let key = ask_key_name(ctx)?;
         let made = create(&tmp.join(HANDLE), &name, &key)?;
         install(ctx, &made, &name, Some(key), &p)
@@ -120,8 +130,15 @@ fn wait_for_yubikey() -> Result<()> {
 
 /// How many FIDO2 devices are plugged in: `fido2-token -L`, no PIN needed.
 fn fido_devices() -> Result<usize> {
-    match Command::new("fido2-token").arg("-L").stderr(Stdio::null()).output() {
-        Ok(out) => Ok(String::from_utf8_lossy(&out.stdout).lines().filter(|l| !l.trim().is_empty()).count()),
+    match Command::new("fido2-token")
+        .arg("-L")
+        .stderr(Stdio::null())
+        .output()
+    {
+        Ok(out) => Ok(String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count()),
         Err(e) if e.kind() == ErrorKind::NotFound => {
             bail!("fido2-token is not on PATH; the dev shell (nix develop, or direnv in the repo) has it")
         }
@@ -144,11 +161,23 @@ fn resident_keys(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut keys: Vec<PathBuf> = fs::read_dir(dir)?
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.extension().is_none() && p.file_name().is_some_and(|n| n.to_string_lossy().contains("_sk_rk")))
+        .filter(|p| {
+            p.extension().is_none()
+                && p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().contains("_sk_rk"))
+        })
         .collect();
     keys.sort();
-    if !out.status.success() && keys.is_empty() && !said.contains("No keys") && !said.contains("not found") {
-        bail!("ssh-keygen -K failed ({}):\n{}", out.status, said.trim_end());
+    if !out.status.success()
+        && keys.is_empty()
+        && !said.contains("No keys")
+        && !said.contains("not found")
+    {
+        bail!(
+            "ssh-keygen -K failed ({}):\n{}",
+            out.status,
+            said.trim_end()
+        );
     }
     Ok(keys)
 }
@@ -159,7 +188,16 @@ fn resident_keys(dir: &Path) -> Result<Vec<PathBuf>> {
 fn create(path: &Path, name: &str, key: &str) -> Result<PathBuf> {
     eprintln!("Making the key: enter the PIN, then touch the YubiKey.");
     let out = Command::new("ssh-keygen")
-        .args(["-t", "ed25519-sk", "-O", "resident", "-O", &format!("user={name}"), "-C", &format!("{name}@{key}")])
+        .args([
+            "-t",
+            "ed25519-sk",
+            "-O",
+            "resident",
+            "-O",
+            &format!("user={name}"),
+            "-C",
+            &format!("{name}@{key}"),
+        ])
         .args(["-N", "", "-q", "-f"])
         .arg(path)
         .stdin(Stdio::inherit())
@@ -177,10 +215,20 @@ fn create(path: &Path, name: &str, key: &str) -> Result<PathBuf> {
 
 /// A line from the terminal, `default` when left empty, asked again until
 /// `valid` takes it.
-fn ask(ctx: &Ctx, label: &str, default: &str, rule: &str, valid: impl Fn(&str) -> bool) -> Result<String> {
+fn ask(
+    ctx: &Ctx,
+    label: &str,
+    default: &str,
+    rule: &str,
+    valid: impl Fn(&str) -> bool,
+) -> Result<String> {
     loop {
         let answer = ctx.prompt(&format!("{label} [{default}]"))?;
-        let answer = if answer.trim().is_empty() { default.to_string() } else { answer.trim().to_string() };
+        let answer = if answer.trim().is_empty() {
+            default.to_string()
+        } else {
+            answer.trim().to_string()
+        };
         if !answer.is_empty() && valid(&answer) {
             return Ok(answer);
         }
@@ -189,14 +237,19 @@ fn ask(ctx: &Ctx, label: &str, default: &str, rule: &str, valid: impl Fn(&str) -
 }
 
 fn ask_key_name(ctx: &Ctx) -> Result<String> {
-    ask(ctx, "Key name", "yubikey", "no spaces or @", |s| !s.chars().any(|c| c.is_whitespace() || c == '@'))
+    ask(ctx, "Key name", "yubikey", "no spaces or @", |s| {
+        !s.chars().any(|c| c.is_whitespace() || c == '@')
+    })
 }
 
 /// Whose a resident key is: the user `ark id new` stored with it, which
 /// `ssh-keygen -K` puts at the end of the file name (id_<type>_sk_rk_<user>);
 /// your login name for a key made without one.
 fn owner(handle: &Path) -> Result<String> {
-    let file = handle.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let file = handle
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     match file.split_once("_sk_rk_") {
         Some((_, user)) if !user.is_empty() => Ok(user.to_string()),
         _ => std::env::var("USER").context("USER is not set"),
@@ -205,7 +258,10 @@ fn owner(handle: &Path) -> Result<String> {
 
 /// The key without its comment: type and base64, which is what identifies it.
 fn key_part(line: &str) -> String {
-    line.split_whitespace().take(2).collect::<Vec<_>>().join(" ")
+    line.split_whitespace()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Adds the key to modules/keys/<name>.pub, the list of your keys, unless it
@@ -215,10 +271,14 @@ fn key_part(line: &str) -> String {
 /// are there. Then says where everything stands.
 fn install(ctx: &Ctx, from: &Path, name: &str, key: Option<String>, p: &Paths) -> Result<()> {
     let repo = ctx.root.join("modules/keys").join(format!("{name}.pub"));
-    let resident = fs::read_to_string(from.with_extension("pub")).context("reading the public key ssh-keygen wrote")?;
+    let resident = fs::read_to_string(from.with_extension("pub"))
+        .context("reading the public key ssh-keygen wrote")?;
     let ours = key_part(&resident);
     let have = fs::read_to_string(&repo).unwrap_or_default();
-    let listed = have.lines().find(|l| key_part(l) == ours).map(|l| l.trim().to_string());
+    let listed = have
+        .lines()
+        .find(|l| key_part(l) == ours)
+        .map(|l| l.trim().to_string());
 
     let line = match listed.clone() {
         Some(line) => line,
@@ -235,21 +295,34 @@ fn install(ctx: &Ctx, from: &Path, name: &str, key: Option<String>, p: &Paths) -
     let handle = p.ssh.join(HANDLE);
     let public = handle.with_extension("pub");
     if handle.exists() {
-        let there = util::run(Command::new("ssh-keygen").arg("-y").arg("-f").arg(&handle), "ssh-keygen -y")?;
+        let there = util::run(
+            Command::new("ssh-keygen").arg("-y").arg("-f").arg(&handle),
+            "ssh-keygen -y",
+        )?;
         if key_part(&there) != ours {
-            bail!("{} holds another key; move it away and run `ark id` again", handle.display());
+            bail!(
+                "{} holds another key; move it away and run `ark id` again",
+                handle.display()
+            );
         }
         eprintln!("{}: already here.", handle.display());
     } else {
         fs::rename(from, &handle)?;
         eprintln!("{}: written.", handle.display());
     }
-    if fs::read_to_string(&public).map(|have| key_part(&have) != ours).unwrap_or(true) {
+    if fs::read_to_string(&public)
+        .map(|have| key_part(&have) != ours)
+        .unwrap_or(true)
+    {
         fs::write(&public, format!("{line}\n"))?;
         eprintln!("{}: written.", public.display());
     }
 
-    let shown = repo.strip_prefix(&ctx.root).unwrap_or(&repo).display().to_string();
+    let shown = repo
+        .strip_prefix(&ctx.root)
+        .unwrap_or(&repo)
+        .display()
+        .to_string();
     if listed.is_some() {
         eprintln!("{shown}: lists it already.");
     } else {
@@ -259,7 +332,14 @@ fn install(ctx: &Ctx, from: &Path, name: &str, key: Option<String>, p: &Paths) -
             all.push('\n');
         }
         fs::write(&repo, format!("{all}{line}\n"))?;
-        util::run(Command::new("git").arg("-C").arg(&ctx.root).arg("add").arg(&repo), "git add")?;
+        util::run(
+            Command::new("git")
+                .arg("-C")
+                .arg(&ctx.root)
+                .arg("add")
+                .arg(&repo),
+            "git add",
+        )?;
         eprintln!("{shown}: added it.");
         eprintln!("Next: `just rebuild`, then add it to GitHub and Gitea as a signing key.");
     }
