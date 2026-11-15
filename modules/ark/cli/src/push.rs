@@ -22,6 +22,7 @@ use serde_json::Value;
 use crate::rollout::{
     self,
     direct::{self, Direct, Ports},
+    eval::Evaluation,
     server::Server,
     Source,
 };
@@ -56,6 +57,10 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
              `git log --show-signature -1` says why"
         );
     }
+    let hosts = ctx.hosts()?;
+    let names: Vec<String> = hosts.0.keys().cloned().collect();
+    let evaluate = || Evaluation::start(ctx.root.clone(), names.clone(), commit.clone());
+    let mut evaluation = None;
     if push {
         if !git(ctx, &["status", "--porcelain"])?.is_empty() {
             eprintln!("ark: there are uncommitted changes; they aren't part of {short}");
@@ -70,6 +75,10 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
                 .current_dir(&ctx.root),
             "git push origin",
         )?;
+        // What each host builds at the commit, meanwhile (rollout/eval.rs).
+        // Not before: its fetch of the secrets submodule signs in to Gitea
+        // too, and after the push it reuses that connection (one touch).
+        evaluation = Some(evaluate());
         let mirrored = ctx
             .nix_eval("arkPush")
             .ok()
@@ -85,7 +94,6 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
         }
     }
 
-    let hosts = ctx.hosts()?;
     let monitoring = ctx.nix_eval("arkMonitoring").ok();
     // The hosts' own ports: with monitoring's output when it has them, else
     // evaluated only when the hosts are dialled directly, and once.
@@ -112,16 +120,10 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
             .map(str::to_string)
     };
     let server = match (url("prometheus"), url("loki")) {
-        (Some(p), Some(l)) => hosts.running("dash").ok().map(|h| {
-            Server::new(
-                h.name.clone(),
-                p,
-                l,
-                agent_ports.get().copied(),
-                ctx.root.clone(),
-                &hosts,
-            )
-        }),
+        (Some(p), Some(l)) => hosts
+            .running("dash")
+            .ok()
+            .map(|h| Server::new(h.name.clone(), p, l, agent_ports.get().copied(), &hosts)),
         _ => None,
     };
     let server = match (via, server) {
@@ -151,9 +153,10 @@ pub fn run(ctx: &Ctx, via: Via, push: bool) -> Result<()> {
             }
         }
     }
+    let evaluation = evaluation.unwrap_or_else(evaluate);
     let mut source: Box<dyn Source> = match server {
-        Some(s) => Box::new(s),
-        None => Box::new(Direct::new(ctx.root.clone(), &hosts, ports()?)),
+        Some(s) => Box::new(s.evaluating(evaluation)),
+        None => Box::new(Direct::new(&hosts, ports()?, evaluation)),
     };
     rollout::watch(source.as_mut(), &hosts, &commit, &subject)
 }

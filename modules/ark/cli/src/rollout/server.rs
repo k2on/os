@@ -9,13 +9,13 @@
 //! comin state, and the devices') is read from the host itself when it
 //! answers, and from Prometheus when it doesn't.
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::Value;
 
 use super::direct::{address, comin_seen, devices_seen, scrape, switched, Ports};
-use super::{evaluate_these, DevicesSeen, Expected, HostSeen, Source};
+use super::eval::Evaluation;
+use super::{DevicesSeen, Expected, HostSeen, Source};
 use crate::hosts::{Host, Hosts};
 use crate::prom::Sample;
 
@@ -26,7 +26,6 @@ pub struct Server<'a> {
     loki: String,
     /// The hosts' own ports, to read them between scrapes.
     ports: Option<Ports>,
-    root: PathBuf,
     hosts: &'a Hosts,
     agent: ureq::Agent,
     /// For the hosts themselves: quick to give up on one that isn't there.
@@ -35,10 +34,8 @@ pub struct Server<'a> {
     samples: BTreeMap<String, Vec<Sample>>,
     /// Hosts Prometheus last scraped fine.
     up: BTreeMap<String, bool>,
-    /// The commit being evaluated here, in the background (see expected).
-    local: Option<std::thread::JoinHandle<BTreeMap<String, Expected>>>,
-    /// What that evaluation said, once done.
-    here: Option<BTreeMap<String, Expected>>,
+    /// What each host builds at the commit, worked out here (./eval.rs).
+    evaluation: Option<Evaluation>,
 }
 
 /// %-encoding for a query string value.
@@ -59,7 +56,6 @@ impl<'a> Server<'a> {
         prometheus: String,
         loki: String,
         ports: Option<Ports>,
-        root: PathBuf,
         hosts: &'a Hosts,
     ) -> Self {
         Server {
@@ -67,7 +63,6 @@ impl<'a> Server<'a> {
             prometheus: prometheus.trim_end_matches('/').into(),
             loki: loki.trim_end_matches('/').into(),
             ports,
-            root,
             hosts,
             agent: ureq::AgentBuilder::new()
                 .timeout(Duration::from_secs(5))
@@ -77,8 +72,7 @@ impl<'a> Server<'a> {
                 .build(),
             samples: BTreeMap::new(),
             up: BTreeMap::new(),
-            local: None,
-            here: None,
+            evaluation: None,
         }
     }
 
@@ -90,6 +84,13 @@ impl<'a> Server<'a> {
         let mut samples = scrape(&self.direct, address, ports.node)?;
         samples.extend(scrape(&self.direct, address, ports.comin).unwrap_or_default());
         Some(samples)
+    }
+
+    /// Races ark-rollout against `evaluation` (see expected); without one,
+    /// only ark-rollout says what each host should run.
+    pub fn evaluating(mut self, evaluation: Evaluation) -> Self {
+        self.evaluation = Some(evaluation);
+        self
     }
 
     /// Whether Prometheus answers: what `ark push` picks this source by.
@@ -199,19 +200,15 @@ impl Source for Server<'_> {
     }
 
     fn expected(&mut self, commit: &str) -> BTreeMap<String, Expected> {
-        // The same commit evaluated here, alongside: whichever answers first
-        // for a host is what it should run (they agree), so the watch never
-        // waits on ark-rollout noticing the commit and evaluating every
-        // host, which can take longer than a host takes to deploy.
-        if self.local.is_none() && self.here.is_none() {
-            let (root, commit) = (self.root.clone(), commit.to_string());
-            let names: Vec<String> = self.hosts.0.keys().cloned().collect();
-            self.local = Some(std::thread::spawn(move || {
-                evaluate_these(&root, &names, &commit)
-            }));
-        }
-        if self.local.as_ref().is_some_and(|l| l.is_finished()) {
-            self.here = self.local.take().and_then(|l| l.join().ok());
+        // The same commit evaluated here too (./eval.rs): whichever answers
+        // first for a host is what it should run (they agree), so the watch
+        // never waits on ark-rollout noticing the commit and evaluating
+        // every host, which can take longer than a host takes to deploy.
+        let here = self.evaluation.as_mut().and_then(Evaluation::get).cloned();
+        if let Some(here) = &here {
+            if here.values().all(|e| matches!(e, Expected::Path(_))) {
+                return here.clone();
+            }
         }
 
         let of = |q: &str| {
@@ -244,7 +241,7 @@ impl Source for Server<'_> {
                 } else {
                     Expected::Unknown(format!("waiting for {} to see the commit", self.host))
                 };
-                let here = self.here.as_ref().and_then(|h| h.get(name));
+                let here = here.as_ref().and_then(|h| h.get(name));
                 (name.clone(), merge(&self.host, there, here))
             })
             .collect()

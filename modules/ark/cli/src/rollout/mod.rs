@@ -11,6 +11,7 @@
 //!   - `direct` (./direct.rs): every host's own exporters, for when there is
 //!     no monitoring host (or it's what is being deployed).
 pub mod direct;
+pub mod eval;
 pub mod server;
 
 use std::collections::BTreeMap;
@@ -86,14 +87,9 @@ pub trait Source {
     fn devices(&mut self, host: &Host) -> Option<DevicesSeen>;
 }
 
-/// What each host builds at a commit, evaluated here: the commit by its
+/// What the named hosts build at a commit, evaluated here: the commit by its
 /// revision, not the working tree, whose uncommitted changes would make a
-/// system no host ever runs.
-pub fn evaluate_here(root: &Path, hosts: &Hosts, commit: &str) -> BTreeMap<String, Expected> {
-    evaluate_these(root, &hosts.0.keys().cloned().collect::<Vec<_>>(), commit)
-}
-
-/// [evaluate_here], for just the hosts named.
+/// system no host ever runs. In the background and remembered: ./eval.rs.
 pub fn evaluate_these(root: &Path, names: &[String], commit: &str) -> BTreeMap<String, Expected> {
     // All at once: one nix, one fetch of the secrets submodule (so one
     // YubiKey touch). If any host fails that, one by one, to say which.
@@ -474,7 +470,7 @@ mod tests {
             let d = if self.devices.len() > 1 {
                 self.devices.pop_front()?
             } else {
-                self.devices.front()?.clone()
+                *self.devices.front()?
             };
             let (written, pending) = d?;
             Some(DevicesSeen {

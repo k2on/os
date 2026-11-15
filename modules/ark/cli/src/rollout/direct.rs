@@ -10,10 +10,10 @@
 //!
 //! On the ports lib/agents.nix fixes (the arkAgentPorts flake output).
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::time::Duration;
 
-use super::{evaluate_here, DeviceSeen, DevicesSeen, Expected, HostSeen, Source};
+use super::eval::Evaluation;
+use super::{DeviceSeen, DevicesSeen, Expected, HostSeen, Source};
 use crate::hosts::{Host, Hosts};
 use crate::prom::{self, Sample};
 use serde::Deserialize;
@@ -29,23 +29,22 @@ pub struct Ports {
 }
 
 pub struct Direct<'a> {
-    root: PathBuf,
     hosts: &'a Hosts,
     ports: Ports,
     agent: ureq::Agent,
-    expected: Option<BTreeMap<String, Expected>>,
+    /// What each host builds at the commit (./eval.rs).
+    evaluation: Evaluation,
 }
 
 impl<'a> Direct<'a> {
-    pub fn new(root: PathBuf, hosts: &'a Hosts, ports: Ports) -> Self {
+    pub fn new(hosts: &'a Hosts, ports: Ports, evaluation: Evaluation) -> Self {
         Direct {
-            root,
             hosts,
             ports,
             agent: ureq::AgentBuilder::new()
                 .timeout(Duration::from_secs(3))
                 .build(),
-            expected: None,
+            evaluation,
         }
     }
 }
@@ -168,10 +167,21 @@ impl Source for Direct<'_> {
         "watching the hosts directly".into()
     }
 
-    fn expected(&mut self, commit: &str) -> BTreeMap<String, Expected> {
-        self.expected
-            .get_or_insert_with(|| evaluate_here(&self.root, self.hosts, commit))
-            .clone()
+    fn expected(&mut self, _commit: &str) -> BTreeMap<String, Expected> {
+        match self.evaluation.get() {
+            Some(expected) => expected.clone(),
+            None => self
+                .hosts
+                .0
+                .keys()
+                .map(|n| {
+                    (
+                        n.clone(),
+                        Expected::Unknown("evaluating here what it should run".into()),
+                    )
+                })
+                .collect(),
+        }
     }
 
     fn host(&mut self, host: &Host) -> HostSeen {
