@@ -6,14 +6,15 @@
 #
 # Every group in ark.groups shares its calendars with its members under
 # their own logins, as its shared mailbox does (services/mail): each of
-# the group's collections is linked into each member's folder
+# the group's calendars is linked into each member's folder
 # (<member>/<group>-<collection> -> ../<group>/<collection>), where a
 # CalDAV client finds it among the member's own, and owner_only lets the
 # member read and write it there.
 # Radicale doesn't share collections itself; it just reads folders, so the
 # link is the collection. radicale-shared makes the links before Radicale
 # starts, on every deploy and boot: a calendar new in a group's folder (made
-# with the group's own login) is shared from then on.
+# with the group's own login) is shared from then on. Address books aren't:
+# each person keeps their own contacts.
 { lib, config, ... }:
 let
   ark = config.ark;
@@ -83,17 +84,24 @@ in
             User = "radicale";
             Group = "radicale";
           };
-          script = lib.concatMapStrings (
+          script = ''
+            # A collection Radicale serves as a calendar (its .Radicale.props).
+            is_calendar() {
+              grep -qs '"tag": *"VCALENDAR"' "$1/.Radicale.props"
+            }
+          ''
+          + lib.concatMapStrings (
             g:
             lib.concatMapStrings (m: ''
               if [ -d ${root}/${g} ]; then
                 mkdir -p ${root}/${m}
-                # Links to collections the group no longer has.
+                # Links to collections the group no longer has, or that aren't
+                # calendars (an address book linked before only calendars were).
                 for link in ${root}/${m}/${g}-*; do
-                  if [ -L "$link" ] && [ ! -e "$link" ]; then rm "$link"; fi
+                  if [ -L "$link" ] && ! is_calendar "$link"; then rm "$link"; fi
                 done
                 for dir in ${root}/${g}/*/; do
-                  [ -d "$dir" ] || continue
+                  is_calendar "$dir" || continue
                   name=$(basename "$dir")
                   ln -sfn "../${g}/$name" "${root}/${m}/${g}-$name"
                 done
