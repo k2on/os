@@ -228,6 +228,11 @@ in
             # Evaluating every host is heavy; the services come first.
             Nice = 10;
             IOSchedulingClass = "idle";
+            # And the first to go when memory runs out (earlyoom, the
+            # nix it runs too): it evaluates this host alongside comin's own
+            # evaluation of it, and earlyoom once killed comin's instead,
+            # failing the deploy. `ark push` evaluates here as well.
+            OOMScoreAdjust = 800;
           };
         };
 
