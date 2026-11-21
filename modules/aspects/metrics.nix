@@ -9,6 +9,7 @@
 {
   config,
   den,
+  inputs,
   lib,
   ...
 }:
@@ -24,7 +25,7 @@ in
       { host, ... }:
       lib.optionalAttrs (host ? class && host.class == "nixos") {
         nixos =
-          { config, ... }:
+          { config, pkgs, ... }:
           {
             options.ark.metrics.textfileDir = lib.mkOption {
               type = lib.types.str;
@@ -50,6 +51,12 @@ in
               # comin lines. Alloy keeps its place, so nothing is sent twice,
               # and buffers while Loki is away.
               services.alloy.enable = true;
+              # Alloy from the stable nixpkgs on every host, adam's too (built
+              # from nixpkgs-unstable): 1.17.1 there reads not one line of the
+              # journal, where 1.16.0 reads it all. Back to the host's own once a
+              # newer one does.
+              services.alloy.package =
+                inputs.nixpkgs.legacyPackages.${pkgs.stdenv.hostPlatform.system}.grafana-alloy;
               environment.etc."alloy/config.alloy".text = ''
                 loki.source.journal "journal" {
                   forward_to    = [loki.write.ark.receiver]

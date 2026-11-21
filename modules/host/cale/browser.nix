@@ -88,29 +88,39 @@
               Status = "locked";
             };
           };
-
-          # ID's can be collected from this command:
-          # nix run github:tupakkatapa/mozid -- "https://addons.mozilla.org/en-US/firefox/addon/<example>/"
-          ExtensionSettings = {
-            # The default behaviour of ctrl+click, shift+click, cmd+click (on macOS) and middle-click when clicking on links is to open the link in a new tab (or new window in the case of shift).
-            # This behaviour is sometimes broken by silly developers.
-            "{18b670e2-67df-4b26-b9b0-34835d1f062a}" = {
-              install_url = "https://addons.mozilla.org/firefox/downloads/latest/link-fixer/latest.xpi";
-              installation_mode = "force_installed";
-            };
-            # Linux has no built-in passkey authenticator, and some sites
-            # won't offer passkeys without one: this says there
-            # is one and lets a security key (the YubiKey) answer instead.
-            # https://github.com/Buer-Nahida/Passkey-Dictator
-            "passkey-dictator@nahida.im" = {
-              install_url = "https://addons.mozilla.org/firefox/downloads/latest/passkey-dictator/latest.xpi";
-              installation_mode = "force_installed";
-            };
-          };
         };
 
         profiles.default =
           let
+            # Add-ons not in the set above, each at one version and its
+            # file's hash (addons.mozilla.org's API reports both:
+            # /api/v5/addons/addon/<slug>/, current_version.file). To update
+            # one, change its version, URL and hash together.
+            inherit (self.inputs.firefox-addons.lib.${pkgs.stdenv.hostPlatform.system}) buildFirefoxXpiAddon;
+            pinned = [
+              # The default behaviour of ctrl+click, shift+click, cmd+click (on macOS) and middle-click when clicking on links is to open the link in a new tab (or new window in the case of shift).
+              # This behaviour is sometimes broken by silly developers.
+              (buildFirefoxXpiAddon {
+                pname = "link-fixer";
+                version = "1.11";
+                addonId = "{18b670e2-67df-4b26-b9b0-34835d1f062a}";
+                url = "https://addons.mozilla.org/firefox/downloads/file/3304205/link_fixer-1.11.xpi";
+                sha256 = "8462f2f3f9fcb0506f0b86d093fd1e0535a6b9d1e417d09936902ee213beb481";
+                meta = { };
+              })
+              # Linux has no built-in passkey authenticator, and some sites
+              # won't offer passkeys without one: this says there
+              # is one and lets a security key (the YubiKey) answer instead.
+              # https://github.com/Buer-Nahida/Passkey-Dictator
+              (buildFirefoxXpiAddon {
+                pname = "passkey-dictator";
+                version = "1.0.0";
+                addonId = "passkey-dictator@nahida.im";
+                url = "https://addons.mozilla.org/firefox/downloads/file/4982666/passkey_dictator-1.0.0.xpi";
+                sha256 = "d79ec43efa05ed3071557593af211a8c2d032a12bb02ddbd3ce7456437809aca";
+                meta = { };
+              })
+            ];
             containers = {
               Personal = {
                 color = "yellow";
@@ -152,12 +162,15 @@
 
             # This is awesome :)
             # https://nur.nix-community.org/repos/rycee/
-            extensions.packages = with self.inputs.firefox-addons.packages.${pkgs.stdenv.hostPlatform.system}; [
-              ublock-origin
-              bitwarden
-              istilldontcareaboutcookies
-              darkreader
-            ];
+            extensions.packages =
+              with self.inputs.firefox-addons.packages.${pkgs.stdenv.hostPlatform.system};
+              [
+                ublock-origin
+                bitwarden
+                istilldontcareaboutcookies
+                darkreader
+              ]
+              ++ pinned;
           };
       };
     };
