@@ -98,6 +98,14 @@
               install_url = "https://addons.mozilla.org/firefox/downloads/latest/link-fixer/latest.xpi";
               installation_mode = "force_installed";
             };
+            # Linux has no built-in passkey authenticator, and some sites
+            # won't offer passkeys without one: this says there
+            # is one and lets a security key (the YubiKey) answer instead.
+            # https://github.com/Buer-Nahida/Passkey-Dictator
+            "passkey-dictator@nahida.im" = {
+              install_url = "https://addons.mozilla.org/firefox/downloads/latest/passkey-dictator/latest.xpi";
+              installation_mode = "force_installed";
+            };
           };
         };
 
