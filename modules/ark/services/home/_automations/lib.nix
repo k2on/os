@@ -1,11 +1,18 @@
 # Pieces the automations share.
 { lib }:
 {
-  # A short or long press of a remote's button.
+  # A short, double or long press of a remote's button.
   press = remote: button: {
     device_id = remote;
     domain = "zha";
     type = "remote_button_short_press";
+    subtype = "button_${toString button}";
+    trigger = "device";
+  };
+  double = remote: button: {
+    device_id = remote;
+    domain = "zha";
+    type = "remote_button_double_press";
     subtype = "button_${toString button}";
     trigger = "device";
   };
@@ -18,7 +25,8 @@
   };
 
   # Brighter or dimmer by a quarter a press, on `up` and `down` presses (the
-  # triggers' ids): the lamps that are on, or all of them when none is. Then
+  # triggers' ids), and straight to full or the lowest on `max` and `min`
+  # (double presses): the lamps that are on, or all of them when none is. Then
   # Adaptive Lighting leaves them be until they are next turned off, so it
   # does not undo the change.
   brightness =
@@ -32,9 +40,26 @@
     [
       { variables.targets = targets; }
       {
-        action = "light.turn_on";
-        target.entity_id = "{{ targets }}";
-        data.brightness_step_pct = "{{ 25 if trigger.id == 'up' else -25 }}";
+        "if" = [
+          {
+            condition = "template";
+            value_template = "{{ trigger.id in ['max', 'min'] }}";
+          }
+        ];
+        "then" = [
+          {
+            action = "light.turn_on";
+            target.entity_id = "{{ targets }}";
+            data.brightness_pct = "{{ 100 if trigger.id == 'max' else 1 }}";
+          }
+        ];
+        "else" = [
+          {
+            action = "light.turn_on";
+            target.entity_id = "{{ targets }}";
+            data.brightness_step_pct = "{{ 25 if trigger.id == 'up' else -25 }}";
+          }
+        ];
       }
       {
         action = "adaptive_lighting.set_manual_control";

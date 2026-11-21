@@ -1,7 +1,8 @@
 # One panel's automations, all laid out alike (lib.nix `layout`): the toggle
-# switches `toggle.target`, brighter and dimmer step `brightness.lamps`, and
-# the spare button, when given, does `spare.actions`. Each automation keeps
-# the id and alias it was made with in the UI.
+# switches `toggle.target`, brighter and dimmer step `brightness.lamps` (a
+# double press goes to full or the lowest), and the spare button, when
+# given, does `spare.actions`. Each automation keeps the id and alias it was
+# made with in the UI.
 { l }:
 {
   remote,
@@ -27,10 +28,12 @@ in
   }
   {
     inherit (brightness) id alias;
-    description = "Opposite the toggle: button ${toString b.up} brighter, button ${toString b.down} dimmer, a quarter of full brightness a press";
+    description = "Opposite the toggle: button ${toString b.up} brighter, button ${toString b.down} dimmer, a quarter of full brightness a press; a double press goes to full or the lowest";
     triggers = [
       (l.press remote b.up // { id = "up"; })
       (l.press remote b.down // { id = "down"; })
+      (l.double remote b.up // { id = "max"; })
+      (l.double remote b.down // { id = "min"; })
     ];
     actions = l.brightness { inherit (brightness) lamps adaptiveLighting; };
     mode = "queued";
