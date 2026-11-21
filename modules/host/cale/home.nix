@@ -37,6 +37,7 @@
         self.homeModules.koonMaxNeovim
         self.homeModules.koonMaxGit
         self.homeModules.koonMaxSsh
+        self.homeModules.koonMaxKdeConnect
       ];
 
       gtk = {
