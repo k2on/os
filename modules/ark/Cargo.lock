@@ -69,8 +69,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-dav"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "ark-rollout"
 version = "0.1.0"
+
+[[package]]
+name = "ark-thunderbird"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "atomic-waker"

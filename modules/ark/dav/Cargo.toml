@@ -1,0 +1,12 @@
+[package]
+name = "ark-dav"
+description = "The calendars and address books a person sees in ark's Radicale, as JSON, for any program"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true

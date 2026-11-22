@@ -16,6 +16,8 @@ members = [
   "services/devices/apple/enroll",
   "services/devices/apple/metrics",
   "services/dash/rollout",
+  "dav",
+  "thunderbird",
 ]
 
 [workspace.package]
@@ -39,6 +41,8 @@ clap = { version = "4", default-features = false, features = ["std", "help", "us
 # unstable-dynamic: `COMPLETE=zsh ark` prints a shell shim that asks the binary itself for completions
 clap_complete = { version = "4", default-features = false, features = ["unstable-dynamic"] }
 rpassword = "7"
+# ark-dav and ark-thunderbird: HTTP Basic logins, and NSS ciphertext in logins.json
+base64 = "0.22"
 # sivrad-channel and llm-proxy: async sockets, HTTP both ways, SHA-256 and
 # random ids (ring is already here through ureq's rustls)
 tokio = { version = "1", features = ["rt-multi-thread", "io-std", "io-util", "net", "time", "macros", "sync"] }
