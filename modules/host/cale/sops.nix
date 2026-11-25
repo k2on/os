@@ -4,8 +4,6 @@
     { config, ... }:
     {
       sops = {
-        age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-
         # The file alone, not the repo (see lib/secrets.nix).
         defaultSopsFile = builtins.path {
           path = root + "/secrets/koon/max/default.yaml";

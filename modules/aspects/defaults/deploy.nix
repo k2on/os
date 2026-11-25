@@ -61,7 +61,7 @@ in
             }
           ];
           # The last 5 deployments stay bootable, as the plain system profile's
-          # (aspects/defaults/gc.nix).
+          # (aspects/defaults/nix.nix).
           retention = {
             deployment_boot_entry_capacity = 5;
             deployment_successful_capacity = 5;

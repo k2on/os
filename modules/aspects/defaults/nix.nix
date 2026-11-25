@@ -1,4 +1,7 @@
-# The same clean-up on every host: once a week, the last 5 generations of
+# Nix the same on every host: flakes and the `nix` command, for building
+# and looking around by hand as comin does.
+#
+# And the same clean-up: once a week, the last 5 generations of
 # each system profile are kept and the rest of the store that nothing uses is
 # deleted. Two profiles: comin's (system-profiles/comin, what deploys make;
 # it keeps 5 itself too, aspects/defaults/deploy.nix) and the plain system one (what a
@@ -17,6 +20,11 @@ in
         nixos =
           { config, ... }:
           {
+            nix.settings.experimental-features = [
+              "nix-command"
+              "flakes"
+            ];
+
             nix.gc = {
               automatic = true;
               dates = "weekly";

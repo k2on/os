@@ -35,7 +35,6 @@ in
         imports = [
           ./_hardware-configuration.nix
           self.inputs.disko.nixosModules.default
-          self.inputs.sops-nix.nixosModules.sops
           self.nixosModules.vps-filesystem
           self.nixosModules.vps-sops
         ];
@@ -43,10 +42,6 @@ in
         boot.loader.grub.enable = true;
         # Who may sign in, and how: aspects/login.nix.
         services.openssh.enable = true;
-
-        # 2 GB and it builds its own system: compressed swap in memory, so a
-        # big compile slows down rather than crashes.
-        zramSwap.enable = true;
 
         programs.neovim = {
           enable = true;

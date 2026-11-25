@@ -38,7 +38,6 @@ in
     nixos = {
       imports = [
         ./_hardware-configuration.nix
-        inputs.sops-nix.nixosModules.sops
         config.flake.nixosModules.koonArkSops
         config.flake.nixosModules.acme
         config.flake.nixosModules.kanidm
@@ -90,10 +89,6 @@ in
 
       time.timeZone = "America/Chicago";
       nix.settings = {
-        experimental-features = [
-          "nix-command"
-          "flakes"
-        ];
         # This host builds its own system with 4 cores and 8 GB, most of
         # it taken by what it runs. Unbounded, a large build (the sivrad
         # container's Hermes tree) thrashed it into silence for an hour.
@@ -104,21 +99,6 @@ in
         # substitutes them rather than compiling them here.
         extra-substituters = [ "https://k2on.cachix.org" ];
         extra-trusted-public-keys = [ "k2on.cachix.org-1:oI4Db0uW5ER+s4Te/MrXSmjWUWkOc9rmKdzsgUDxQP8=" ];
-      };
-      # Compressed swap in RAM: no swap at all meant memory pressure had
-      # nowhere to go but the page cache, and the host stopped answering
-      # instead of slowing down. Half of RAM, zstd.
-      zramSwap = {
-        enable = true;
-        memoryPercent = 50;
-      };
-      # When memory runs out anyway, kill the biggest process (a build)
-      # early, before the kernel spends an hour thrashing; the kernel's own
-      # OOM killer only wakes once there is nothing left to evict.
-      services.earlyoom = {
-        enable = true;
-        freeMemThreshold = 5;
-        freeSwapThreshold = 10;
       };
       # And when the host stops responding altogether, with nobody near
       # it: systemd pets the hardware watchdog; a hang of over two minutes

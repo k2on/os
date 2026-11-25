@@ -29,7 +29,6 @@ in
 
     nixos = {
       imports = [
-        self.inputs.sops-nix.nixosModules.sops
         self.inputs.home-manager.nixosModules.home-manager
         self.nixosModules.koonMaxConfiguration
       ];

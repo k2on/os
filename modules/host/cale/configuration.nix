@@ -161,30 +161,9 @@
           "transparent.nvim"
         ];
 
-      nix.settings.experimental-features = [
-        "nix-command"
-        "flakes"
-      ];
-
-      # Deduplicate the store. Garbage collection is every host's
-      # (aspects/defaults/gc.nix).
-      nix.settings.auto-optimise-store = true;
-
-      # Compressed swap in RAM: with no swap at all, a big link and whisper
-      # at once ran memory out and the kernel's OOM killer took the
-      # session's own D-Bus and systemd --user with the build, leaving the
-      # desktop up but its brightness, volume and shortcut keys dead until
-      # a reboot. Half of RAM, zstd.
-      zramSwap = {
-        enable = true;
-        memoryPercent = 50;
-      };
-      # When memory runs out anyway, kill the biggest process early, and
-      # rather a build or a transcription than anything the session runs on.
+      # When memory runs out (aspects/defaults/memory.nix), rather a build or
+      # a transcription than anything the session runs on.
       services.earlyoom = {
-        enable = true;
-        freeMemThreshold = 5;
-        freeSwapThreshold = 10;
         extraArgs = [
           "--prefer"
           "^(ld|ld\\.lld|rustc|cc1plus|cargo|whisper-cli|node|nix)$"

@@ -3,10 +3,13 @@
 # alone.
 #
 #   deploy.nix    comin: each host deploys itself from main
-#   gc.nix        weekly clean-up of the store, 5 generations kept
+#   memory.nix    zram swap, and earlyoom before the kernel thrashes
 #   metrics.nix   node_exporter, comin's metrics and the journal, to dash
+#   nix.nix       flakes, and the weekly clean-up of the store (5 kept)
 #   security.nix  certificate authorities no host should trust
 #   shell.nix     zsh with vi keys, the prompt in the host's colour
+#   sops.nix      each host decrypts its secrets with its ssh host key
+#   tailnet.nix   the tailnet, as the host (not on desktops)
 #
 # And, here: the host's name, and whether its accounts are mutable.
 { den, lib, ... }:
