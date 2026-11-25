@@ -1,6 +1,7 @@
+# YubiKeys: their own apps, smart-card access and udev rules.
 { ... }:
 {
-  flake.nixosModules.commonFeatureYubikey =
+  den.aspects.gui.nixos =
     { pkgs, ... }:
     {
       environment.systemPackages = with pkgs; [

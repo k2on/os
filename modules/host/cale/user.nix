@@ -15,8 +15,6 @@
           "networkmanager"
           "video"
           "kvm"
-          "docker"
-          "ydotool"
           "adbusers"
         ];
         packages = with pkgs; [
@@ -26,15 +24,6 @@
           android-tools
         ];
         shell = pkgs.zsh;
-      };
-
-      virtualisation.docker = {
-        enable = true;
-
-        rootless = {
-          enable = true;
-          setSocketVariable = true;
-        };
       };
     };
 }

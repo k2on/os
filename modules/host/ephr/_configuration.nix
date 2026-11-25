@@ -4,12 +4,6 @@
 # with.
 { pkgs, ... }:
 {
-  # Use the systemd-boot EFI boot loader. Asahi has no writable EFI
-  # variables (as on cale).
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = false;
-  boot.loader.systemd-boot.graceful = true;
-
   networking.wireless.iwd = {
     enable = true;
     settings.General.EnableNetworkConfiguration = true;

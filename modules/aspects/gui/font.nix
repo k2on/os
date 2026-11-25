@@ -1,6 +1,7 @@
+# Fonts: SF Pro, JetBrains Mono and Apple's emoji as the defaults.
 { ... }:
 {
-  flake.nixosModules.commonFeatureFont =
+  den.aspects.gui.nixos =
     { pkgs, ... }:
     {
       fonts = {

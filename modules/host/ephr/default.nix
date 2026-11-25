@@ -22,21 +22,16 @@ in
 
   den.aspects.${name} = {
     includes = with den.aspects; [
+      (asahi._.firmware ./firmware)
       deploy
       login
     ];
 
     nixos = {
       imports = [
-        inputs.nixos-apple-silicon.nixosModules.apple-silicon-support
         ./_hardware-configuration.nix
         ./_configuration.nix
       ];
-
-      hardware.asahi = {
-        enable = true;
-        peripheralFirmwareDirectory = ./firmware;
-      };
     };
   };
 }

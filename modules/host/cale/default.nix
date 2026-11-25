@@ -21,6 +21,8 @@ in
 
   den.aspects.${name} = {
     includes = with den.aspects; [
+      (asahi._.firmware ./firmware)
+      gui
       avatar
       codex
       security
@@ -30,7 +32,6 @@ in
 
     nixos = {
       imports = [
-        self.inputs.nixos-apple-silicon.nixosModules.apple-silicon-support
         self.inputs.sops-nix.nixosModules.sops
         self.inputs.home-manager.nixosModules.home-manager
         self.nixosModules.koonMaxConfiguration

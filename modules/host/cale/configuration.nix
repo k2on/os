@@ -11,15 +11,7 @@
       imports = [
         ./_hardware-configuration.nix
 
-        self.nixosModules.commonUnstablePkgsOverlay
-
-        self.nixosModules.commonFeatureLaptop
-
         self.nixosModules.commonFeatureEmail
-        self.nixosModules.commonFeatureFont
-        self.nixosModules.commonFeatureYubikey
-
-        self.nixosModules.commonFeatureCosmic
 
         self.nixosModules.koonFeatureTailscale
 
@@ -28,84 +20,16 @@
         self.nixosModules.koonMaxHomeManager
       ];
 
-      # Use the systemd-boot EFI boot loader.
-      boot.loader.systemd-boot.enable = true;
-      boot.loader.efi.canTouchEfiVariables = false;
-      boot.loader.systemd-boot.graceful = true; # passes --graceful, ignores EFI-variable errors
-
-      boot.m1n1CustomLogo = ../../../assets/logo.png;
       boot.binfmt.emulatedSystems = [ "x86_64-linux" ];
 
-      hardware = {
-        asahi = {
-          enable = true;
-          peripheralFirmwareDirectory = ./firmware;
-          setupAsahiSound = true;
-        };
-
-        graphics = {
-          enable = true;
-          extraPackages = with pkgs; [
-            mesa.opencl
-          ];
-        };
-      };
-
-      networking.networkmanager = {
-        enable = true;
-        plugins = with pkgs; [
-          networkmanager-openconnect
-        ];
-      };
-
-      hardware.bluetooth = {
-        enable = true;
-        powerOnBoot = true;
-      };
-
-      # PipeWire < 1.4.10 has a bug where the Asahi DSP speaker sink comes up
-      # with its volume locked at 100% after boot and can't be changed until
-      # some audio has played once (upstream
-      # https://gitlab.freedesktop.org/pipewire/pipewire/-/issues/4900,
-      # AsahiLinux/asahi-audio#73). nixos-25.11 ships 1.4.9, so pull PipeWire
-      # and its matching WirePlumber from unstable where the fix is present.
-      services.pipewire.package = pkgs.pkgs-unstable.pipewire;
-      services.pipewire.wireplumber.package = pkgs.pkgs-unstable.wireplumber;
-
-      # The internal microphone hangs off a second ALSA card (the AOP
-      # "High-Power Audio Interface", alsa_card.platform-audio.*). asahi-audio
-      # only spawns the j414-mic DSP chain -- and with it the only usable
-      # internal mic source -- while that card sits in its HiFi profile.
-      # WirePlumber restores whichever profile it last saved in
-      # ~/.local/state/wireplumber/default-profile, so a single stray "off"
-      # there silently kills the mic on every subsequent boot. Refuse to
-      # restore an "off" profile for this one card; WirePlumber then falls back
-      # to picking HiFi itself. Bluetooth profile restore is unaffected.
-      services.pipewire.wireplumber.extraConfig."51-asahi-internal-mic" = {
-        "monitor.alsa.rules" = [
-          {
-            matches = [ { "device.name" = "~alsa_card.platform-audio.*"; } ];
-            actions.update-props."session.dont-restore-off-profile" = true;
-          }
-        ];
-      };
-
-      # WirePlumber exposes the AirPods as a virtual mic and, the moment
-      # anything opens it, flips the card from A2DP to HSP/HFP -- choppy,
-      # phone-quality audio and an extra RFCOMM link that keeps dropping.
-      # Stay on A2DP; switch to the headset profile by hand for calls.
-      services.pipewire.wireplumber.extraConfig."52-bluetooth-no-autoswitch" = {
-        "wireplumber.settings"."bluetooth.autoswitch-to-headset-profile" = false;
-      };
+      networking.networkmanager.plugins = with pkgs; [
+        networkmanager-openconnect
+      ];
 
       environment.variables = {
         XDG_DATA_HOME = "/home/max/.local/share";
-        GSK_RENDERER = "ngl";
         EDITOR = "nvim";
       };
-      environment.sessionVariables.NIXOS_OZONE_WL = "1";
-
-      programs.kdeconnect.enable = true;
 
       environment.systemPackages = with pkgs; [
         networkmanager
