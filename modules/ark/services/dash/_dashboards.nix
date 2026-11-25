@@ -57,7 +57,7 @@ let
       inherit options transformations;
     };
 
-  # A panel of log lines from Loki (every host's journal: aspects/metrics.nix).
+  # A panel of log lines from Loki (every host's journal: aspects/defaults/metrics.nix).
   logsPanel =
     {
       title,
@@ -669,7 +669,7 @@ in
     ];
   };
 
-  # Deploys over time: each host's (comin, aspects/deploy.nix) and each
+  # Deploys over time: each host's (comin, aspects/defaults/deploy.nix) and each
   # Apple device catching up with its declarations after. `ark push` shows a
   # rollout live; this is the history.
   deploys = dashboard {

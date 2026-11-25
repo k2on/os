@@ -1,6 +1,6 @@
 //! git and nix: main's commit, and what each host builds at it. The flake
 //! is fetched by nix from the remote at that commit, its secrets submodule
-//! too (as root, through the host's own key: aspects/deploy.nix).
+//! too (as root, through the host's own key: aspects/defaults/deploy.nix).
 use std::process::Command;
 
 use crate::Result;

@@ -2,7 +2,7 @@
 # node_exporter (load, memory, disks, network, and systemd units, so
 # a failed one shows), with files of metrics others write into
 # ark.metrics.textfileDir (backups: lib/backups.nix); and comin's own
-# (aspects/deploy.nix), whether its last fetch, build or deploy failed
+# (aspects/defaults/deploy.nix), whether its last fetch, build or deploy failed
 # (both ports: lib/agents.nix);
 # and ark_system_info, the system it runs (for `ark push`). Its journal goes
 # to Loki (services/dash) through Alloy.
@@ -20,7 +20,7 @@ let
   logsPush = "https://logs.${config.ark.mainDomain}/loki/api/v1/push";
 in
 {
-  den.default.includes = [
+  den.schema.host.includes = [
     (
       { host, ... }:
       lib.optionalAttrs (host ? class && host.class == "nixos") {

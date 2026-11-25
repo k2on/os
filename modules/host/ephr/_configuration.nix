@@ -22,8 +22,6 @@
     AllowSuspendThenHibernate = "no";
   };
 
-  services.tailscale.enable = true;
-
   services.restic.server = {
     enable = true;
     extraFlags = [ "--no-auth" ];

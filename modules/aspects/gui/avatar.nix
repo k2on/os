@@ -1,12 +1,11 @@
 # Everyone's picture on a device, the one they set in Immich and every
 # service gets (ark.oidc.picture, lib/oidc.nix), for its desktop: COSMIC's
 # login and lock screens read /var/lib/AccountsService/icons/<user>, as do
-# GNOME's and others through AccountsService.
-#
-#   den.aspects.<host>.includes = [ den.aspects.avatar ];
+# GNOME's and others through AccountsService: part of every desktop
+# (aspects/gui).
 #
 # For every login on the host who is also in ark.persons, one service
-# holds a long poll on services/photos (../ark/services/photos/avatars:
+# holds a long poll on services/photos (../../ark/services/photos/avatars:
 # keep.sh, against src/http.rs) with the tag of the picture it has: it is
 # answered the moment the picture changes, and writes it. By default the
 # picture comes cropped to a circle (ark.avatar.circle), as COSMIC draws
@@ -24,7 +23,7 @@ let
   ark = config.ark;
 in
 {
-  den.aspects.avatar.nixos =
+  den.aspects.gui.nixos =
     {
       config,
       lib,
@@ -46,7 +45,7 @@ in
             pkgs.gnugrep
           ]
         }
-        exec ${pkgs.bash}/bin/bash ${../ark/services/photos/avatars/keep.sh}
+        exec ${pkgs.bash}/bin/bash ${../../ark/services/photos/avatars/keep.sh}
       '';
     in
     {

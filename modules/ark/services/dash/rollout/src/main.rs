@@ -1,6 +1,6 @@
 //! ark-rollout: what every host should run at the newest commit on main
 //! (../default.nix), for `ark push` and Grafana to compare with what each
-//! host runs (`ark_system_info`, aspects/metrics.nix).
+//! host runs (`ark_system_info`, aspects/defaults/metrics.nix).
 //!
 //!   ark-rollout <remote> <output.prom> [interval seconds]
 //!

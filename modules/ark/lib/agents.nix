@@ -1,5 +1,5 @@
 # The ports every host serves on the tailnet for adam and `ark push` to dial
-# (aspects/metrics.nix, aspects/deploy.nix): the same on every host, so
+# (aspects/defaults/metrics.nix, aspects/defaults/deploy.nix): the same on every host, so
 # they're fixed here once rather than assigned like a service's
 # (lib/services.nix), and published for the CLI as arkAgentPorts.
 { lib, config, ... }:

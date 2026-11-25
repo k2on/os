@@ -2,7 +2,7 @@
 #
 # Gitea pushes the os repository to GitHub as it's pushed to (a push mirror,
 # "sync when commits are pushed"), so `ark push` pushes to Gitea alone: one
-# sign-in, one YubiKey touch. comin still follows both (aspects/deploy.nix).
+# sign-in, one YubiKey touch. comin still follows both (aspects/defaults/deploy.nix).
 #
 # The mirror signs in to GitHub with git_github_mirror_token, a fine-grained
 # token for the GitHub repository with Contents: read and write, entered by

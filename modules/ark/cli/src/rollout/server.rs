@@ -165,7 +165,7 @@ fn merge(monitor: &str, there: Expected, here: Option<&Expected>) -> Expected {
 }
 
 /// A comin log line without its timestamp and level, as comin-log does
-/// (aspects/deploy.nix).
+/// (aspects/defaults/deploy.nix).
 fn clean(line: &str) -> String {
     let msg = line.split_once(" msg=").map_or(line, |(_, m)| m);
     msg.trim().trim_matches('"').replace("\\\"", "\"")

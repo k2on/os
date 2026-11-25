@@ -1,7 +1,7 @@
 //! `ark push`: ship the signed commit on main, and watch it reach every
 //! host and device (./rollout).
 //!
-//! It pushes to both remotes comin deploys from (aspects/deploy.nix: Gitea
+//! It pushes to both remotes comin deploys from (aspects/defaults/deploy.nix: Gitea
 //! and GitHub, which it refuses to follow once they part), the secrets
 //! submodule's new commits too, then watches the rollout from the monitoring host's
 //! Prometheus and Loki when they answer (what Grafana shows), or from the
@@ -11,7 +11,7 @@
 //!
 //! Having pushed, it asks for a resync so nobody waits for comin's next
 //! poll: the monitoring host's (services/dash), which makes every host fetch now, or with
-//! the direct source each host's comin-fetch itself (aspects/deploy.nix).
+//! the direct source each host's comin-fetch itself (aspects/defaults/deploy.nix).
 use std::cell::OnceCell;
 use std::process::Command;
 use std::time::Duration;

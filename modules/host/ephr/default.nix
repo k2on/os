@@ -23,7 +23,6 @@ in
   den.aspects.${name} = {
     includes = with den.aspects; [
       (asahi._.firmware ./firmware)
-      deploy
       login
     ];
 
@@ -32,6 +31,11 @@ in
         ./_hardware-configuration.nix
         ./_configuration.nix
       ];
+
+      # Its age recipient (ssh-to-age of the host's ed25519 key,
+      # modules/keys/hosts/ephr.pub), for the secrets its aspects declare
+      # (lib/secrets.nix).
+      ark.hostKey = "age15j46nxjhx4zy82c7prafy7uhg6kgca8kzklxd2w0ppcmg6r0xqvqldm402";
     };
   };
 }

@@ -211,7 +211,7 @@
                     requires = [ "${prepareUnit j.b}.service" ];
                     after = [ "${prepareUnit j.b}.service" ];
                   })
-                  # When it last succeeded, for monitoring (aspects/metrics.nix,
+                  # When it last succeeded, for monitoring (aspects/defaults/metrics.nix,
                   # services/dash): only reached when the backup did.
                   {
                     serviceConfig.ExecStartPost = [

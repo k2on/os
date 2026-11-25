@@ -3,10 +3,10 @@
 //! deployed. Expected systems are evaluated here.
 //!
 //!   - node_exporter: `ark_system_info`, the system the host runs
-//!     (aspects/metrics.nix), and on the devices' host their metrics
+//!     (aspects/defaults/metrics.nix), and on the devices' host their metrics
 //!     (services/devices/apple/metrics);
 //!   - comin: which of its stages last failed, its last deployment;
-//!   - comin-log (aspects/deploy.nix): its latest log line.
+//!   - comin-log (aspects/defaults/deploy.nix): its latest log line.
 //!
 //! On the ports lib/agents.nix fixes (the arkAgentPorts flake output).
 use std::collections::BTreeMap;
@@ -49,7 +49,7 @@ impl<'a> Direct<'a> {
     }
 }
 
-/// Makes every host's comin fetch now (aspects/deploy.nix's comin-fetch),
+/// Makes every host's comin fetch now (aspects/defaults/deploy.nix's comin-fetch),
 /// all at once: what the monitoring host's resync does, for when it isn't there to.
 /// Returns the hosts that didn't take it.
 pub fn resync(hosts: &Hosts, ports: Ports) -> Vec<String> {
@@ -98,7 +98,7 @@ pub(super) fn scrape(agent: &ureq::Agent, address: &str, port: u16) -> Option<Ve
 }
 
 /// When the host last switched system: node_exporter's mtime of the file
-/// activation writes ark_system_info to (aspects/metrics.nix). Shared with
+/// activation writes ark_system_info to (aspects/defaults/metrics.nix). Shared with
 /// the server source, whose samples are the same.
 pub fn switched(samples: &[Sample]) -> Option<f64> {
     prom::named(samples, "node_textfile_mtime_seconds")

@@ -1,6 +1,11 @@
+# The tailnet on a desktop: Tailscale pointed at headscale, signed in as the
+# person using it (`tailscale up` and the browser, once), not as the host
+# (aspects/defaults/tailnet.nix) — so the node is theirs, and the tailnet's
+# rules for them apply. Its interface is trusted, for the phone (KDE Connect)
+# and the rest of their own devices.
 { config, ... }:
 {
-  flake.nixosModules.koonFeatureTailscale =
+  den.aspects.gui.nixos =
     { pkgs, ... }:
     {
       services.tailscale = {

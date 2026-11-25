@@ -1,5 +1,5 @@
 # Monitoring: Prometheus collects what every host serves on the tailnet
-# (aspects/metrics.nix: node_exporter, comin, backups), Alertmanager mails
+# (aspects/defaults/metrics.nix: node_exporter, comin, backups), Alertmanager mails
 # the admins through Stalwart (services/mail) when ./_alerts.nix says
 # something is wrong, and Grafana shows ./_dashboards.nix at dash.<domain>,
 # signed in through Kanidm (the people in ark.groups.admin, as admins).
@@ -9,7 +9,7 @@
 # Those not always on (den.hosts.<…>.alwaysOn = false: a laptop) are scraped
 # but never reported down.
 #
-# Loki keeps every host's journal (Alloy ships it, aspects/metrics.nix).
+# Loki keeps every host's journal (Alloy ships it, aspects/defaults/metrics.nix).
 # Prometheus and Loki answer on the tailnet at metrics.<domain> and
 # logs.<domain> (for `ark push`, and Alloy's pushes); Alertmanager listens
 # on adam only; Grafana is behind nginx
@@ -24,7 +24,7 @@ let
   # Who Alertmanager signs in to Stalwart as and sends from: an account
   # that only sends (services/mail), so adam holds no one's mailbox.
   sender = "alerts";
-  # Every host's comin-fetch (aspects/deploy.nix), which ark-resync (below)
+  # Every host's comin-fetch (aspects/defaults/deploy.nix), which ark-resync (below)
   # asks.
   cominFetchPort = ark.agentPorts.cominFetch;
   # Prometheus and Loki on the tailnet, at their own names (DNS: the
@@ -203,7 +203,7 @@ in
         # What every host should run at the newest commit on main (./rollout),
         # beside what each runs (ark_system_info): `ark push` and the Deploys
         # dashboard read both. Root, so nix can fetch the secrets submodule
-        # with the host's own key, as comin does (aspects/deploy.nix).
+        # with the host's own key, as comin does (aspects/defaults/deploy.nix).
         systemd.services.ark-rollout = {
           description = "What every host should run at the newest commit on main";
           wantedBy = [ "multi-user.target" ];
@@ -236,7 +236,7 @@ in
           };
         };
 
-        # Logs: every host's journal (Alloy, aspects/metrics.nix), kept 30
+        # Logs: every host's journal (Alloy, aspects/defaults/metrics.nix), kept 30
         # days. One process, on disk; Grafana reads it, `ark push` too.
         services.loki = {
           enable = true;
@@ -279,7 +279,7 @@ in
           };
         };
 
-        # Every host's comin fetches now (comin-fetch, aspects/deploy.nix),
+        # Every host's comin fetches now (comin-fetch, aspects/defaults/deploy.nix),
         # and ark-rollout looks at main: what `ark push` asks for after a
         # push, through metrics.<domain>/resync. A fetch only means sooner;
         # comin still deploys only what Max signed.

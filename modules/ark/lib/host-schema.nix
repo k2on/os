@@ -22,7 +22,7 @@ let
       };
     };
 
-  # What the shell shows (aspects/shell.nix).
+  # What the shell shows (aspects/defaults/shell.nix).
   shellFields =
     { ... }:
     {

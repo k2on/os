@@ -32,9 +32,6 @@ in
       ark-nginx
       service-sivrad
       service-sivrad-browser
-      tailnet
-      security
-      deploy
       login
     ];
 

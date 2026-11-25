@@ -23,10 +23,7 @@ in
     includes = with den.aspects; [
       (asahi._.firmware ./firmware)
       gui
-      avatar
       codex
-      security
-      deploy
       kanidm-client
     ];
 

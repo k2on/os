@@ -8,7 +8,7 @@
 # #40a02b dark green.
 { den, lib, ... }:
 {
-  den.default.includes = [
+  den.schema.host.includes = [
     (
       { host, ... }:
       lib.optionalAttrs (host ? class && host.class == "nixos") {

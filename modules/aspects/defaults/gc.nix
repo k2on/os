@@ -1,7 +1,7 @@
 # The same clean-up on every host: once a week, the last 5 generations of
 # each system profile are kept and the rest of the store that nothing uses is
 # deleted. Two profiles: comin's (system-profiles/comin, what deploys make;
-# it keeps 5 itself too, aspects/deploy.nix) and the plain system one (what a
+# it keeps 5 itself too, aspects/defaults/deploy.nix) and the plain system one (what a
 # `nixos-rebuild` by hand makes). The boot menu offers the same 5. A host
 # that was off when it was due cleans up when it next starts. Then the store
 # is deduplicated (nix.optimise).
@@ -10,7 +10,7 @@ let
   keep = 5;
 in
 {
-  den.default.includes = [
+  den.schema.host.includes = [
     (
       { host, ... }:
       lib.optionalAttrs (host ? class && host.class == "nixos") {

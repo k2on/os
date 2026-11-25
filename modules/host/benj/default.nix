@@ -19,7 +19,7 @@ in
     };
   };
 
-  # comin deploys benj (aspects/deploy.nix). A fresh server is installed by
+  # comin deploys benj (aspects/defaults/deploy.nix). A fresh server is installed by
   # hand: nixos-anywhere --flake .#benj root@<address>.
   den.aspects.${name} =
     { ... }:
@@ -28,8 +28,6 @@ in
         den.batteries.define-user
         den.aspects.headscale
         den.aspects.mail
-        den.aspects.security
-        den.aspects.deploy
         den.aspects.login
       ];
 

@@ -47,7 +47,7 @@ pub enum Expected {
 #[derive(Default)]
 pub struct HostSeen {
     pub reachable: bool,
-    /// The system it runs (`ark_system_info`, aspects/metrics.nix).
+    /// The system it runs (`ark_system_info`, aspects/defaults/metrics.nix).
     pub running: Option<String>,
     /// When it switched to that system (unix seconds): when activation last
     /// wrote ark_system_info, as node_exporter reports the file.

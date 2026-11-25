@@ -13,8 +13,6 @@
 
         self.nixosModules.commonFeatureEmail
 
-        self.nixosModules.koonFeatureTailscale
-
         self.nixosModules.koonMaxSops
         self.nixosModules.koonMaxUser
         self.nixosModules.koonMaxHomeManager
@@ -169,7 +167,7 @@
       ];
 
       # Deduplicate the store. Garbage collection is every host's
-      # (aspects/gc.nix).
+      # (aspects/defaults/gc.nix).
       nix.settings.auto-optimise-store = true;
 
       # Compressed swap in RAM: with no swap at all, a big link and whisper
