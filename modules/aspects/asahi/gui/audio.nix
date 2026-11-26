@@ -4,7 +4,7 @@
   den.aspects.asahi.provides.gui.nixos =
     { pkgs, ... }:
     {
-      imports = [ self.nixosModules.commonUnstablePkgsOverlay ];
+      imports = [ self.nixosModules.pkgsUnstable ];
 
       hardware.asahi.setupAsahiSound = true;
 

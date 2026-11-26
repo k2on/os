@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureTmux =
+  den.aspects.terminal.homeManager =
     { pkgs, ... }:
     {
       programs.tmux = {

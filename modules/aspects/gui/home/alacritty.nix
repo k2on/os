@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureAlacritty =
+  den.aspects.gui.provides.home.homeManager =
     { ... }:
     {
       programs.alacritty = {

@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureDirenv =
+  den.aspects.terminal.homeManager =
     { ... }:
     {
       programs.direnv = {

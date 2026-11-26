@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureStarship =
+  den.aspects.terminal.homeManager =
     { ... }:
     {
       programs.starship.enable = true;

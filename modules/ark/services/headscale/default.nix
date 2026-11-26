@@ -101,7 +101,7 @@ in
         ...
       }:
       {
-        imports = [ self.nixosModules.commonUnstablePkgsOverlay ];
+        imports = [ self.nixosModules.pkgsUnstable ];
         # The user and the pre-auth key, every boot, idempotently.
         systemd.services.headscale-provision = {
           description = "headscale user and pre-auth key";

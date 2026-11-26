@@ -1,21 +1,15 @@
-{ self, config, ... }:
+{ self, ... }:
 {
   flake.nixosModules.koonMaxConfiguration =
     {
       pkgs,
-      lib,
       modulesPath,
       ...
     }:
     {
       imports = [
-        ./_hardware-configuration.nix
-
-        self.nixosModules.commonFeatureEmail
-
         self.nixosModules.koonMaxSops
         self.nixosModules.koonMaxUser
-        self.nixosModules.koonMaxHomeManager
       ];
 
       boot.binfmt.emulatedSystems = [ "x86_64-linux" ];
@@ -24,11 +18,8 @@
         networkmanager-openconnect
       ];
 
-      environment.variables = {
-        XDG_DATA_HOME = "/home/max/.local/share";
-        EDITOR = "nvim";
-      };
-
+      # The machine's own tools; the person's programs are their home's
+      # (./apps.nix).
       environment.systemPackages = with pkgs; [
         networkmanager
 
@@ -36,108 +27,16 @@
         git
         wget
         file
-        just
-
-        libreoffice-qt
-
-        pkgs-unstable.signal-desktop
-        pkgs-unstable.gurk-rs
 
         gnupg
-
-        (pass.withExtensions (exts: [ exts.pass-otp ]))
-
         pinentry-curses
         pinentry-qt
 
-        fzf
-        zip
-        jq
-        ffmpeg
-        ripgrep
-        unzip
-        zbar
-        tt
-        sc-im
-        libqalculate
-        librespeed-cli
-
-        wl-clipboard
-
         gparted
 
-        tea
-        gh
-
-        glow
-        delta
-
-        cloudflared
-        # gcc
-
-        pkgs-unstable.claude-code
-
-        (pkgs.chromium.override { enableWideVine = true; })
-
-        gimp
-        inkscape
-
-        # arm support
-        pkgs-unstable.sparrow
-
-        (writeShellScriptBin "radio" ''
-          list="
-          WIOP http://s4.yesstreaming.net:7119/;audio.mp3
-          FamilyAlter https://usa17.fastcast4u.com/proxy/roloffev?mp=/1
-          "
-
-          choice=$(echo "$list" | awk '{print $1}' | ${fzf}/bin/fzf)
-
-          if [[ -n "$choice" ]]; then
-            url=$(echo "$list" | awk -v name="$choice" '$1==name {print $2}')
-            ${mpg123}/bin/mpg123 "$url"
-          fi
+        (writeShellScriptBin "battery-graph" ''
+          ${coreutils}/bin/tail -n 20 /var/lib/upower/history-charge-bq40z651-69-F8Y3262H468Q1LTA1.dat | ${coreutils}/bin/cut -f1,2 | RUBYOPT='-W0' ${youplot}/bin/uplot line -w 70
         '')
-
-        (pkgs.writeShellScriptBin "battery-graph" ''
-          ${pkgs.coreutils}/bin/tail -n 20 /var/lib/upower/history-charge-bq40z651-69-F8Y3262H468Q1LTA1.dat | ${pkgs.coreutils}/bin/cut -f1,2 | RUBYOPT='-W0' ${pkgs.youplot}/bin/uplot line -w 70
-        '')
-
-        (pkgs.writeShellScriptBin "ocr-clip" ''
-          ${pkgs.grimblast}/bin/grimblast -f save area - | ${pkgs.tesseract}/bin/tesseract stdin stdout | ${pkgs.wl-clipboard}/bin/wl-copy
-        '')
-
-        # harken's and money's desktop apps (koon-apps' iced clients), each
-        # on ark's server.
-        (pkgs.writeShellScriptBin "harken" ''
-          exec ${
-            self.inputs.koon-apps.packages.${pkgs.stdenv.hostPlatform.system}.harken-iced
-          }/bin/harken-iced --server https://harken.${config.ark.mainDomain} "$@"
-        '')
-        (pkgs.makeDesktopItem {
-          name = "harken";
-          desktopName = "Harken";
-          exec = "harken";
-          categories = [
-            "AudioVideo"
-            "Audio"
-          ];
-        })
-
-        (pkgs.writeShellScriptBin "money" ''
-          exec ${
-            self.inputs.koon-apps.packages.${pkgs.stdenv.hostPlatform.system}.money-iced
-          }/bin/money-iced --server https://money.${config.ark.mainDomain} "$@"
-        '')
-        (pkgs.makeDesktopItem {
-          name = "money";
-          desktopName = "Money";
-          exec = "money";
-          categories = [
-            "Office"
-            "Finance"
-          ];
-        })
       ];
 
       programs.zsh.enable = true;
@@ -147,19 +46,6 @@
         pinentryPackage = pkgs.pinentry-qt;
         enableSSHSupport = true;
       };
-
-      networking.extraHosts = "127.0.0.1 s3";
-
-      # transparent.nvim (used by neovim) ships no license file, so nixpkgs
-      # marks it unfree as of 26.05. Allow just this package.
-      nixpkgs.config.allowUnfreePredicate =
-        pkg:
-        builtins.elem (lib.getName pkg) [
-          "chromium"
-          "chromium-unwrapped"
-          "widevine-cdm"
-          "transparent.nvim"
-        ];
 
       # When memory runs out (aspects/defaults/memory.nix), rather a build or
       # a transcription than anything the session runs on.

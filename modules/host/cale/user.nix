@@ -17,12 +17,6 @@
           "kvm"
           "adbusers"
         ];
-        packages = with pkgs; [
-          tree
-          # # systemd 258 handles adb uaccess rules automatically; the
-          # # `programs.adb` module was removed, so just ship the CLI.
-          android-tools
-        ];
         shell = pkgs.zsh;
       };
     };

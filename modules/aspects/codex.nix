@@ -1,4 +1,5 @@
-# Codex as a coding assistant on a workstation, on Tinfoil's models.
+# Codex as a coding assistant, on Tinfoil's models: a person's, in their
+# home, with the proxy that holds the key on the machine they use.
 # `codex` is OpenAI's CLI as it comes (its own sandbox, approvals and
 # terminal UI), with a wrapper that points it at a local, key-holding
 # proxy:
@@ -12,7 +13,14 @@
 # a secret of its own, entered by hand with `ark secrets`, which systemd
 # hands to the proxy alone; nobody's shell sees it.
 #
-#   den.aspects.<host>.includes = [ den.aspects.codex ];
+#   den.aspects.<person>.includes = [ den.aspects.codex ];
+#
+# Its two halves: `codex` itself in their home (homeManager), and the
+# proxies on the host (nixos), which den gives a host along with its user.
+# The key is the host's to decrypt, as it does its people's other secrets:
+#
+#   den.aspects.<host>.secrets.codex_tinfoil_api_key.restartUnits =
+#     [ "codex-llm.service" ];
 #
 # The models: Tinfoil's chat models replace OpenAI's in Codex's catalog, so
 # `/model` lists them (and their reasoning levels); `codex -m glm-5-3`
@@ -121,19 +129,11 @@ let
 in
 {
   den.aspects.codex = {
-    secrets.codex_tinfoil_api_key.restartUnits = [ "codex-llm.service" ];
-
-    nixos =
-      {
-        config,
-        pkgs,
-        lib,
-        ...
-      }:
+    homeManager =
+      { pkgs, lib, ... }:
       let
-        llm = pkgs.callPackage ../ark/_rust.nix { pname = "llm-proxy"; };
-        # The newer Codex where the host has nixpkgs-unstable at hand
-        # (common/features/pkgs-unstable.nix); its settings below are the
+        # The newer Codex where the home has nixpkgs-unstable at hand
+        # (overlays/unstable.nix); its settings below are the
         # current spelling.
         upstream = pkgs.pkgs-unstable.codex or pkgs.codex;
         # Codex wants each catalog model's base instructions; these are its
@@ -167,6 +167,15 @@ in
             lib.concatMapStringsSep " " (o: "-c ${lib.escapeShellArg o}") overrides
           } "$@"
         '';
+      in
+      {
+        home.packages = [ codex ];
+      };
+
+    nixos =
+      { config, pkgs, ... }:
+      let
+        llm = pkgs.callPackage ../ark/_rust.nix { pname = "llm-proxy"; };
         hardening = {
           DynamicUser = true;
           Restart = "always";
@@ -184,8 +193,6 @@ in
         };
       in
       {
-        environment.systemPackages = [ codex ];
-
         # Tinfoil's attesting proxy (`tinfoil proxy`, from tinfoil-cli). It
         # forwards only the Authorization header a client sends, so on its
         # own the port is of no use.

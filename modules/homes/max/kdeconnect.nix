@@ -5,7 +5,7 @@
   # its own state (it writes the name and providers there), so the address
   # is set into it rather than the file replaced. Headscale keeps a node's
   # address, so it holds.
-  flake.homeModules.koonMaxKdeConnect =
+  den.aspects.max.homeManager =
     { lib, pkgs, ... }:
     let
       devices = [

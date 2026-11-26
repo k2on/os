@@ -1,6 +1,9 @@
+# The browser on every desktop: Zen, as the default for the web and mail
+# links, with tracking and fingerprinting off and the same add-ons. What is
+# in a person's tabs (containers, spaces, pins) is theirs (homes/<person>).
 { self, ... }:
 {
-  flake.homeModules.koonMaxBrowser =
+  den.aspects.gui.provides.home.homeManager =
     { pkgs, ... }:
     {
       imports = [
@@ -121,45 +124,8 @@
                 meta = { };
               })
             ];
-            containers = {
-              Personal = {
-                color = "yellow";
-                icon = "circle";
-                id = 1;
-              };
-            };
-            spaces = {
-              Personal = {
-                id = "c6de089c-410d-4206-961d-ab11f988d40a";
-                icon = "⭐";
-                container = containers."Personal".id;
-                position = 1000;
-              };
-            };
-            pins = {
-              # Personal Pins
-              "Proton Mail" = {
-                id = "d9942e0a-0997-418d-b357-91727300d184";
-                container = containers.Personal.id;
-                url = "https://mail.proton.me";
-                isEssential = true;
-                position = 1;
-              };
-              "Money" = {
-                id = "10cb5609-fcd5-4ed6-a48d-24eb22f2d624";
-                container = containers.Personal.id;
-                url = "https://money.koon.us";
-                isEssential = true;
-                position = 3;
-              };
-            };
           in
           {
-            containersForce = true;
-            spacesForce = true;
-            pinsForce = true;
-            inherit containers spaces pins;
-
             # This is awesome :)
             # https://nur.nix-community.org/repos/rycee/
             extensions.packages =

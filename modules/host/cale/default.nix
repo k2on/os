@@ -17,21 +17,38 @@ in
     color = "#f9e2af"; # yellow
     # A laptop: closed is not down.
     alwaysOn = false;
+    # Its person, whose home (homes/max) den puts in its home-manager.
+    users.max.classes = [ "homeManager" ];
   };
 
   den.aspects.${name} = {
     includes = with den.aspects; [
       (asahi._.firmware ./firmware)
       gui
-      codex
       kanidm-client
     ];
 
+    # His secrets: his mail and Radicale passwords, for his home
+    # (aspects/gui/home/pim.nix), and his Tinfoil key, for Codex's proxy
+    # (aspects/codex.nix), which only that proxy reads.
+    secrets = {
+      mail_password_max.owner = "max";
+      radicale_password_max.owner = "max";
+      codex_tinfoil_api_key.restartUnits = [ "codex-llm.service" ];
+    };
+
     nixos = {
       imports = [
-        self.inputs.home-manager.nixosModules.home-manager
+        ./_hardware-configuration.nix
         self.nixosModules.koonMaxConfiguration
       ];
+
+      home-manager = {
+        # A home brings its own nixpkgs settings (homes/max), as it does on
+        # its own (homeConfigurations.max), rather than the host's.
+        useGlobalPkgs = false;
+        useUserPackages = true;
+      };
 
       # Its age recipient (ssh-to-age of the host's ed25519 key), for the
       # secrets its aspects declare (lib/secrets.nix).

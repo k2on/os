@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureLf =
+  den.aspects.terminal.homeManager =
     { ... }:
     {
       programs.lf = {

@@ -18,11 +18,7 @@
             inherit (config.users.users.max) group;
             path = "/home/max/.wakatime.cfg";
           };
-
-          "proton_key" = { };
         };
-
       };
-      environment.sessionVariables.PROTON_PASS_ENCRYPTION_KEY = config.sops.secrets.proton_key.path;
     };
 }

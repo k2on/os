@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureZsh =
+  den.aspects.terminal.homeManager =
     { pkgs, config, ... }:
     {
       programs.zsh = {
@@ -18,7 +18,7 @@
           zstyle ':completion:*' menu select
 
           fzf-project() {
-            selected=$(find ~/dev -mindepth 2 -maxdepth 2 | sed 's|/home/max/dev/||' | fzf --delimiter '/' --nth 2)
+            selected=$(find ~/dev -mindepth 2 -maxdepth 2 | sed 's|${config.home.homeDirectory}/dev/||' | fzf --delimiter '/' --nth 2)
             if [[ -n $selected ]]; then
               cd ~/dev/$selected
               zle reset-prompt

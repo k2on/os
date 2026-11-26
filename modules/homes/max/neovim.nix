@@ -1,6 +1,6 @@
 { self, ... }:
 {
-  flake.homeModules.koonMaxNeovim =
+  den.aspects.max.homeManager =
     { pkgs, ... }:
     {
       imports = [
@@ -9,9 +9,12 @@
 
       programs.nixvim = {
         enable = true;
+        # EDITOR, for whoever uses this home.
+        defaultEditor = true;
 
-        # Reuse the system pkgs (which already permits transparent.nvim) rather
-        # than letting nixvim import its own nixpkgs off the flake `follows`.
+        # Reuse the home's pkgs (which permit transparent.nvim, cale/home.nix)
+        # rather than letting nixvim import its own nixpkgs off the flake
+        # `follows`.
         nixpkgs.pkgs = pkgs;
 
         colorschemes.tokyonight.enable = true;

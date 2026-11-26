@@ -1,7 +1,7 @@
 # Mail, contacts and calendars, all from ark: mail from Stalwart
 # (services/mail), contacts and calendars from Radicale (services/radicale),
-# with no calendar listed here: whatever max's Radicale folder holds, the
-# family's calendars linked in among them, appears by itself.
+# with no calendar listed here: whatever the person's Radicale folder holds,
+# their family's calendars linked in among them, appears by itself.
 #
 # - Thunderbird: started through ark-thunderbird (modules/ark/thunderbird),
 #   which first asks Radicale for the calendars (ark-dav, modules/ark/dav)
@@ -13,30 +13,27 @@
 #   contacts' birthdays too. khal only reads those files, so another viewer
 #   can take its place.
 #
-# The passwords are ark's own secrets (mail_password_<user>,
-# radicale_password_<user>), decrypted here too for the user.
+# Whose: the home's user, as they are in ark.persons (secrets/ark.nix). The
+# passwords are ark's own secrets (mail_password_<user>,
+# radicale_password_<user>), which the host decrypts for its people into
+# /run/secrets (den.aspects.<host>.secrets).
 { self, config, ... }:
 let
-  domain = config.ark.mainDomain;
-  user = "max";
-  # From secrets/ark.nix, as everything else about who is who.
-  person = config.ark.persons.${user};
+  ark = config.ark;
+  domain = ark.mainDomain;
   secret = name: "/run/secrets/${name}";
-  mailPassword = secret "mail_password_${user}";
-  davPassword = secret "radicale_password_${user}";
   davOrigin = "https://radicale.${domain}";
-  dav = "${davOrigin}/${user}/";
   mail = "mail.${domain}";
 in
 {
-  den.aspects.cale.secrets = {
-    "mail_password_${user}".owner = user;
-    "radicale_password_${user}".owner = user;
-  };
-
-  flake.homeModules.koonMaxPim =
+  den.aspects.gui.provides.home.homeManager =
     { config, pkgs, ... }:
     let
+      user = config.home.username;
+      person = ark.persons.${user};
+      mailPassword = secret "mail_password_${user}";
+      davPassword = secret "radicale_password_${user}";
+      dav = "${davOrigin}/${user}/";
       system = pkgs.stdenv.hostPlatform.system;
       inherit (self.packages.${system}) ark-dav ark-thunderbird;
       profile = "${config.home.homeDirectory}/.thunderbird/default";

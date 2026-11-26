@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureImageViewer =
+  den.aspects.gui.provides.home.homeManager =
     { pkgs, ... }:
     {
       xdg.desktopEntries.imv = {

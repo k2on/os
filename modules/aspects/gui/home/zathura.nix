@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.commonFeatureZathura =
+  den.aspects.gui.provides.home.homeManager =
     { ... }:
     {
       programs.zathura = {

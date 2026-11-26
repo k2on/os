@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.homeModules.koonMaxSsh =
+  den.aspects.max.homeManager =
     { ... }:
     {
       programs.ssh = {
