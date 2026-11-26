@@ -8,7 +8,6 @@
     }:
     {
       imports = [
-        self.nixosModules.koonMaxSops
         self.nixosModules.koonMaxUser
       ];
 

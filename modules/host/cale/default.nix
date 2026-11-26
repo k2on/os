@@ -28,12 +28,11 @@ in
       kanidm-client
     ];
 
-    # His secrets: his mail and Radicale passwords, for his home
-    # (aspects/gui/home/pim.nix), and his Tinfoil key, for Codex's proxy
-    # (aspects/codex.nix), which only that proxy reads.
+    # His local account's password (a hash, ./user.nix), and his Tinfoil key,
+    # for Codex's proxy (aspects/codex.nix), which only that proxy reads. His
+    # other secrets are his home's own (lib/secrets.nix).
     secrets = {
-      mail_password_max.owner = "max";
-      radicale_password_max.owner = "max";
+      max-password.neededForUsers = true;
       codex_tinfoil_api_key.restartUnits = [ "codex-llm.service" ];
     };
 

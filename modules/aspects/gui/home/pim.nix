@@ -5,23 +5,21 @@
 #
 # - Thunderbird: started through ark-thunderbird (modules/ark/thunderbird),
 #   which first asks Radicale for the calendars (ark-dav, modules/ark/dav)
-#   and writes them into the profile, and fills in the passwords from
-#   /run/secrets, again whenever they change. Each contact's birthday is on
-#   a calendar of its own (the Birthday Calendar add-on).
+#   and writes them into the profile, and fills in the passwords from the
+#   home's secrets, again whenever they change. Each contact's birthday is
+#   on a calendar of its own (the Birthday Calendar add-on).
 # - The terminal: pimsync copies every calendar and the address book into
 #   ~/.local/share/pim (finding the calendars itself), khal shows them, the
 #   contacts' birthdays too. khal only reads those files, so another viewer
 #   can take its place.
 #
 # Whose: the home's user, as they are in ark.persons (secrets/ark.nix). The
-# passwords are ark's own secrets (mail_password_<user>,
-# radicale_password_<user>), which the host decrypts for its people into
-# /run/secrets (den.aspects.<host>.secrets).
+# passwords are their home's own secrets (mail_password_<user>,
+# radicale_password_<user>; lib/secrets.nix), decrypted when they sign in.
 { self, config, ... }:
 let
   ark = config.ark;
   domain = ark.mainDomain;
-  secret = name: "/run/secrets/${name}";
   davOrigin = "https://radicale.${domain}";
   mail = "mail.${domain}";
 in
@@ -31,8 +29,8 @@ in
     let
       user = config.home.username;
       person = ark.persons.${user};
-      mailPassword = secret "mail_password_${user}";
-      davPassword = secret "radicale_password_${user}";
+      mailPassword = config.sops.secrets."mail_password_${user}".path;
+      davPassword = config.sops.secrets."radicale_password_${user}".path;
       dav = "${davOrigin}/${user}/";
       system = pkgs.stdenv.hostPlatform.system;
       inherit (self.packages.${system}) ark-dav ark-thunderbird;
@@ -94,6 +92,11 @@ in
       };
     in
     {
+      ark.secrets = {
+        "mail_password_${user}" = { };
+        "radicale_password_${user}" = { };
+      };
+
       programs.thunderbird = {
         enable = true;
         package = readied;
@@ -187,6 +190,11 @@ in
 
       programs.pimsync.enable = true;
       services.pimsync.enable = true;
+      # Its passwords are read as it syncs: after they are decrypted at sign-in.
+      systemd.user.services.pimsync.Unit = {
+        After = [ "sops-nix.service" ];
+        Wants = [ "sops-nix.service" ];
+      };
       programs.khal.enable = true;
     };
 }

@@ -77,6 +77,12 @@ in
               example = "+15551234567";
               description = "Signal number in E.164, or Signal username (name.NN) for someone who does not share their number. A person with one may use sivrad (the phone app and Signal).";
             };
+            options.ageKey = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              example = "age1...";
+              description = "age recipient of the person's own key (~/.config/sops/age/keys.txt in their home), which their home's secrets are encrypted to (lib/secrets.nix).";
+            };
           }
         )
       );

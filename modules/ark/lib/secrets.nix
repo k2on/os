@@ -140,34 +140,129 @@ let
       };
     };
 
-  # Fold every host's declarations into { key -> { generate; optional; hosts; recipients } }.
-  # The first non-null generator wins.
-  hostSecrets = lib.foldl' (
-    acc: host:
-    lib.foldl' (
-      acc: s:
-      let
-        prev =
-          acc.${s.key} or {
-            generate = null;
-            optional = true;
-            hosts = [ ];
-            recipients = [ ];
-          };
-      in
-      acc
-      // {
-        ${s.key} = {
-          file = s.file;
-          generate = if s.generate == null then prev.generate else script s.generate;
-          # Optional only if every declaration says so.
-          optional = prev.optional && s.optional;
-          hosts = lib.unique (prev.hosts ++ [ host.config.networking.hostName ]);
-          recipients = lib.unique (prev.recipients ++ [ host.config.ark.hostKey ]);
+  # A home's own secrets, not a host's: declared as ark.secrets.<name> in the
+  # home (with the same options), encrypted to the person's key
+  # (ark.persons.<user>.ageKey) and decrypted by sops-nix's home-manager
+  # module when they sign in, with ~/.config/sops/age/keys.txt, into
+  # ~/.config/sops-nix/secrets/<name>. No host needs to know them.
+  homeModule =
+    { config, lib, ... }:
+    let
+      user = config.home.username;
+      # Only those already in sops. A home's assertions are checked whenever it
+      # is read at all, by `ark secrets` too (homeSecrets below), so a missing
+      # file is a warning here, not a failure as on a host: else `ark secrets`
+      # could never create it.
+      present = lib.filterAttrs (_: s: builtins.pathExists (varsPath s.file)) config.ark.secrets;
+      missing = lib.unique (
+        lib.mapAttrsToList (_: s: s.file) (
+          lib.filterAttrs (_: s: !s.optional && !builtins.pathExists (varsPath s.file)) config.ark.secrets
+        )
+      );
+    in
+    {
+      imports = [ inputs.sops-nix.homeManagerModules.sops ];
+
+      options.ark.secrets = lib.mkOption {
+        type = lib.types.attrsOf secretType;
+        default = { };
+        description = "Secrets this home needs from ${varsDir}, encrypted to its person's ageKey.";
+      };
+
+      config = lib.mkMerge [
+        {
+          # The person's key, in every home: for these and any sops.secrets of
+          # its own.
+          sops.age.keyFile = "${config.xdg.configHome}/sops/age/keys.txt";
+        }
+        (lib.mkIf (config.ark.secrets != { }) {
+          # Only what a home's sops-nix knows; a host's owner, restartUnits
+          # and the like mean nothing here.
+          sops.secrets = lib.mapAttrs (
+            _: s:
+            lib.filterAttrs (
+              n: _:
+              lib.elem n [
+                "key"
+                "path"
+                "mode"
+                "format"
+              ]
+            ) s
+            // {
+              sopsFile = varsFile s.file;
+            }
+          ) present;
+
+          assertions = [
+            {
+              assertion = (personAgeKey user) != null;
+              message = "ark: ${user}'s home has secrets, but ark.persons.${user}.ageKey (secrets/ark.nix) is not set";
+            }
+          ];
+          warnings = map (
+            file:
+            "ark: ${varsDir}/${file}.yaml is not in sops yet, so this home goes without it. Run `ark secrets` and commit it"
+          ) missing;
+        })
+      ];
+    };
+
+  personAgeKey = user: (config.ark.persons.${user} or { }).ageKey or null;
+
+  # Fold one declarer's secrets into the accumulator: who declares them
+  # (`by`, for `ark secrets` to show) and whose key they are encrypted to.
+  fold =
+    by: recipient: acc: s:
+    let
+      prev =
+        acc.${s.key} or {
+          generate = null;
+          optional = true;
+          hosts = [ ];
+          recipients = [ ];
         };
-      }
-    ) acc (lib.attrValues host.config.ark.secrets)
-  ) { } (lib.attrValues (lib.filterAttrs (_: h: h.config ? ark) config.flake.nixosConfigurations));
+    in
+    acc
+    // {
+      ${s.key} = {
+        file = s.file;
+        generate = if s.generate == null then prev.generate else script s.generate;
+        # Optional only if every declaration says so.
+        optional = prev.optional && s.optional;
+        hosts = lib.unique (prev.hosts ++ [ by ]);
+        recipients = lib.unique (prev.recipients ++ lib.optional (recipient != null) recipient);
+      };
+    };
+
+  # Every home's declarations: the standalone ones (homeConfigurations) and
+  # those inside a host's home-manager, each once per person. A home shows
+  # in `ark secrets` as ~<user>.
+  homes =
+    map (h: h.config) (lib.attrValues (config.flake.homeConfigurations or { }))
+    ++ lib.concatMap (h: lib.attrValues (h.config.home-manager.users or { })) (
+      lib.attrValues config.flake.nixosConfigurations
+    );
+  homeSecrets = lib.foldl' (
+    acc: home:
+    let
+      user = home.home.username;
+    in
+    lib.foldl' (fold "~${user}" (personAgeKey user)) acc (lib.attrValues (home.ark.secrets or { }))
+  ) { } homes;
+
+  # Then every host's, onto the homes': { key -> { generate; optional; hosts;
+  # recipients } }. The first non-null generator wins.
+  hostSecrets =
+    lib.foldl'
+      (
+        acc: host:
+        lib.foldl' (fold host.config.networking.hostName host.config.ark.hostKey) acc (
+          lib.attrValues host.config.ark.secrets
+        )
+      )
+      homeSecrets
+      (lib.attrValues (lib.filterAttrs (_: h: h.config ? ark) config.flake.nixosConfigurations));
 
   # The terranix consumer declares its own option so the real terranix
   # evaluation accepts it (custom options are dropped from config.tf.json).
@@ -222,6 +317,11 @@ in
     # Active on every host; inert (empty) where nothing declares secrets.
     # The infra side is included by infra-base (lib/terranix.nix).
     den.schema.host.includes = [ config.den.aspects.ark-secrets ];
+
+    # Every home, standalone or a host user's; inert where it declares none.
+    den.aspects.ark-home-secrets.homeManager = homeModule;
+    den.schema.user.includes = [ config.den.aspects.ark-home-secrets ];
+    den.schema.home.includes = [ config.den.aspects.ark-home-secrets ];
 
     # For hosts declared outside den.
     flake.nixosModules.ark-secrets = nixosModule;
