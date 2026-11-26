@@ -292,7 +292,7 @@ in
   #   { adam = { name = "adam"; hostName = "adam"; ssh = "adam.net.example.com"; services = [ "money" ... ]; }; ... }
   # The ssh target is all derived: the host's MagicDNS name on the tailnet
   # (headscale's base_domain, read off the host running headscale), with no
-  # user where people sign in as themselves through Kanidm (aspects/login.nix:
+  # user where people sign in as themselves through Kanidm (aspects/defaults/login.nix:
   # ssh then uses your own name), else the host's one sudo user. null where
   # that does not add up (no tailscale, no or several sudo users, no headscale
   # anywhere).

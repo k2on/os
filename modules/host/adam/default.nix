@@ -32,7 +32,6 @@ in
       ark-nginx
       service-sivrad
       service-sivrad-browser
-      login
     ];
 
     nixos = {
@@ -41,7 +40,7 @@ in
         config.flake.nixosModules.koonArkSops
         config.flake.nixosModules.acme
         config.flake.nixosModules.kanidm
-        # What admin had, for whoever signs in now (aspects/login.nix).
+        # What admin had, for whoever signs in now (aspects/defaults/login.nix).
         (
           { pkgs, ... }:
           {

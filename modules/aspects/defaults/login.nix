@@ -1,4 +1,5 @@
-# Signing in to a host: as yourself, from Kanidm, with a security key.
+# Signing in to a host, every host: as yourself, from Kanidm, with a
+# security key.
 #
 # Members of ark.login.group (the people in ark.groups.admin) are POSIX
 # accounts in Kanidm (host/adam/kanidm.nix makes them so); here every host
@@ -8,6 +9,9 @@
 # which is not the one they sign in to Kanidm with. Names are plain (max, not
 # max@id.<domain>), home directories are /home/<uuid> with /home/<name>
 # beside them, so a rename in Kanidm moves nothing.
+#
+# A desktop (aspects/gui/login.nix) also lets in the members of
+# ark.login.desktop.group (the family), at the machine itself, without sudo.
 #
 # unixd caches accounts and keys, so a short outage of Kanidm (on adam,
 # reached through the vps) does not lock anyone out. Root is the way back in
@@ -45,6 +49,19 @@ in
       default = ark.groups.admin or [ ];
       description = "Who is in it: persons from ark.persons.";
     };
+    desktop = {
+      group = lib.mkOption {
+        type = lib.types.str;
+        default = "hosts_desktop";
+        readOnly = true;
+        description = "The Kanidm group whose members may sign in to a desktop (a host with the gui aspect), without sudo.";
+      };
+      members = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = ark.groups.family or [ ];
+        description = "Who is in it: persons from ark.persons.";
+      };
+    };
   };
 
   # The `kanidm` command, pointed at the server: for a person's own account
@@ -61,6 +78,8 @@ in
         };
       };
     };
+
+  config.den.schema.host.includes = [ config.den.aspects.login ];
 
   config.den.aspects.login =
     { host, ... }:

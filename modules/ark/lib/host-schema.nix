@@ -44,7 +44,7 @@ let
       };
     };
 
-  # How root is reached when Kanidm logins cannot be (aspects/login.nix).
+  # How root is reached when Kanidm logins cannot be (aspects/defaults/login.nix).
   loginFields =
     { ... }:
     {

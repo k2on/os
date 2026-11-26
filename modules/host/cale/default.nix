@@ -25,7 +25,6 @@ in
     includes = with den.aspects; [
       (asahi._.firmware ./firmware)
       gui
-      kanidm-client
     ];
 
     # His local account's password (a hash, ./user.nix). His other secrets

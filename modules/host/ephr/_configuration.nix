@@ -9,7 +9,7 @@
     settings.General.EnableNetworkConfiguration = true;
   };
 
-  # Who signs in, and how: aspects/login.nix (Kanidm, and root over ssh).
+  # Who signs in, and how: aspects/defaults/login.nix (Kanidm, and root over ssh).
   environment.systemPackages = with pkgs; [
     tree
     vim

@@ -28,7 +28,6 @@ in
         den.batteries.define-user
         den.aspects.headscale
         den.aspects.mail
-        den.aspects.login
       ];
 
       nixos = {
@@ -40,7 +39,7 @@ in
         ];
 
         boot.loader.grub.enable = true;
-        # Who may sign in, and how: aspects/login.nix.
+        # Who may sign in, and how: aspects/defaults/login.nix.
         services.openssh.enable = true;
 
         programs.neovim = {

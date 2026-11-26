@@ -95,10 +95,12 @@ in
             lib.concatMapAttrs (
               _: o: lib.mapAttrs' (_: g: lib.nameValuePair g.name { inherit (g) members; }) o.groups
             ) clients
-            # Who may sign in to the hosts (aspects/login.nix); kanidm-hosts
-            # below makes it and them POSIX.
+            # Who may sign in to the hosts, and to the desktops
+            # (aspects/defaults/login.nix); kanidm-hosts below makes them and
+            # their members POSIX.
             // {
               ${ark.login.group}.members = ark.login.members;
+              ${ark.login.desktop.group}.members = ark.login.desktop.members;
             };
 
           # Keyed by the client id, which is the service name unless the
@@ -260,16 +262,22 @@ in
         };
 
       # What signing in to the hosts needs of Kanidm that kanidm-provision
-      # does not do (aspects/login.nix): ark.login.group and its members as
-      # POSIX entries, so the hosts see them as a group and users; and the
-      # group's account policy: passkeys only, and write access to one's own
-      # account lapsing 15 minutes after signing in again. Signed in as
-      # idm_admin, each is set only when it is not so already; on every boot
-      # and whenever this changes.
+      # does not do (aspects/defaults/login.nix): ark.login.group and
+      # ark.login.desktop.group, and their members, as POSIX entries, so the
+      # hosts see them as groups and users; and the admin group's account
+      # policy (not the desktop group's): passkeys only, and write access to
+      # one's own account lapsing 15 minutes after signing in again. Signed
+      # in as idm_admin, each is set only when it is not so already; on every
+      # boot and whenever this changes.
       systemd.services.kanidm-hosts =
         let
           url = "https://id.${ark.mainDomain}";
           group = ark.login.group;
+          posixGroups = [
+            group
+            ark.login.desktop.group
+          ];
+          posixPersons = lib.unique (ark.login.members ++ ark.login.desktop.members);
         in
         {
           description = "Kanidm's POSIX entries and account policy for host logins";
@@ -304,11 +312,13 @@ in
             # An attribute's values, one per line (none for a missing one).
             attr() { curl -sS "''${auth[@]}" "$url/v1/group/${group}/_attr/$1" | jq -r '(. // [])[]?'; }
 
-            if ! ok "$url/v1/group/${group}/_unix/_token"; then
-              json "''${auth[@]}" -d '{}' "$url/v1/group/${group}/_unix" >/dev/null
-              echo "${group}: POSIX"
-            fi
-            for person in ${lib.escapeShellArgs ark.login.members}; do
+            for g in ${lib.escapeShellArgs posixGroups}; do
+              if ! ok "$url/v1/group/$g/_unix/_token"; then
+                json "''${auth[@]}" -d '{}' "$url/v1/group/$g/_unix" >/dev/null
+                echo "$g: POSIX"
+              fi
+            done
+            for person in ${lib.escapeShellArgs posixPersons}; do
               if ! ok "$url/v1/account/$person/_unix/_token"; then
                 json "''${auth[@]}" -d '{}' "$url/v1/person/$person/_unix" >/dev/null
                 echo "$person: POSIX"

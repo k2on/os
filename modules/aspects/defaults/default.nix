@@ -3,6 +3,7 @@
 # alone.
 #
 #   deploy.nix    comin: each host deploys itself from main
+#   login.nix     signing in: Kanidm accounts, ssh keys, sudo, root's way in
 #   memory.nix    zram swap, and earlyoom before the kernel thrashes
 #   metrics.nix   node_exporter, comin's metrics and the journal, to dash
 #   nix.nix       flakes, and the weekly clean-up of the store (5 kept)

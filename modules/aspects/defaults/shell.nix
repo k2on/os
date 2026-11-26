@@ -1,7 +1,7 @@
 # The same zsh on every host: vi keys, and a prompt in the host's colour
 # (den.hosts.<…>.color, lib/host-schema.nix), so a terminal on adam never
 # looks like one on cale. System-wide, so it is everyone's: the Kanidm
-# accounts on the servers (aspects/login.nix gives them zsh) as well as the
+# accounts on the servers (aspects/defaults/login.nix gives them zsh) as well as the
 # laptop's own, whose home-manager zsh adds to it.
 # The colours so far (Catppuccin): adam #a6e3a1 light green, benj #fab387
 # orange, cale #f9e2af yellow, dani #cba6f7 mauve (once it is a host), ephr

@@ -23,7 +23,6 @@ in
   den.aspects.${name} = {
     includes = with den.aspects; [
       (asahi._.firmware ./firmware)
-      login
     ];
 
     nixos = {

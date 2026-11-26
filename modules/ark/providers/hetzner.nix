@@ -31,7 +31,7 @@ in
         image = orDefault host.image "ubuntu-24.04";
         ssh_keys = [ "\${hcloud_ssh_key.default.id}" ];
         # A server takes its keys when it is made; changing them would make
-        # a new one. Who signs in afterwards is NixOS's (aspects/login.nix).
+        # a new one. Who signs in afterwards is NixOS's (aspects/defaults/login.nix).
         lifecycle.ignore_changes = [ "ssh_keys" ];
 
         labels = {
