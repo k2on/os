@@ -122,6 +122,19 @@ in
             };
           };
 
+          # Kanidm's accounts for systemd itself. logind (sessions) and PID 1 (a
+          # person's user manager) look people up through systemd's userdb and
+          # /etc/passwd, not nscd, which is where NixOS loads NSS modules
+          # (Kanidm's among them): without this, a Kanidm account gets no
+          # session, and a desktop login is turned away. userdbd answers them,
+          # with the NSS modules on its path as dbus and sshd have them.
+          services.userdbd = {
+            enable = true;
+            # Nix's build users have UIDs over 1000; that is expected.
+            silenceHighSystemUsers = true;
+          };
+          systemd.services.systemd-userdbd.environment.LD_LIBRARY_PATH = config.system.nssModules.path;
+
           security.sudo.extraRules = [
             {
               groups = [ group ];

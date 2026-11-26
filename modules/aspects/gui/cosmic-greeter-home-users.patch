@@ -1,0 +1,95 @@
+diff -ru a/daemon/src/lib.rs b/daemon/src/lib.rs
+--- a/daemon/src/lib.rs
++++ b/daemon/src/lib.rs
+@@ -46,6 +46,46 @@
+             return false;
+         }
+ 
++        Self::login_shell(user)
++    }
++
++    /// Everyone to list: the accounts the system enumerates that pass
++    /// `filter`, then whoever has a home under /home, looked up by name.
++    /// Directory services (Kanidm, SSSD) answer for one account but do not
++    /// enumerate theirs, and give out UIDs above UID_MAX, so this is how
++    /// someone who has signed in here before is listed. Those must still be
++    /// above UID_MIN, and have a login shell.
++    pub fn users(&self) -> Vec<pwd::Passwd> {
++        // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
++        // To prevent issues, this should only be called once in the entire process space at a time
++        let mut users: Vec<pwd::Passwd> = pwd::Passwd::iter().filter(|user| self.filter(user)).collect();
++
++        let mut names: Vec<String> = fs::read_dir("/home")
++            .map(|dir| {
++                dir.flatten()
++                    .filter_map(|entry| entry.file_name().into_string().ok())
++                    .collect()
++            })
++            .unwrap_or_default();
++        names.sort();
++        for name in names {
++            let Ok(Some(user)) = pwd::Passwd::from_name(&name) else {
++                continue;
++            };
++            // The name itself, not another way to it (a home named by UUID).
++            if user.name != name
++                || user.uid < self.uid_min
++                || !Self::login_shell(&user)
++                || users.iter().any(|known| known.uid == user.uid)
++            {
++                continue;
++            }
++            users.push(user);
++        }
++        users
++    }
++
++    fn login_shell(user: &pwd::Passwd) -> bool {
+         match Path::new(&user.shell).file_name().and_then(|x| x.to_str()) {
+             // Skip shell ending in false
+             Some("false") => false,
+diff -ru a/daemon/src/main.rs b/daemon/src/main.rs
+--- a/daemon/src/main.rs
++++ b/daemon/src/main.rs
+@@ -71,15 +71,7 @@
+ #[zbus::interface(name = "com.system76.CosmicGreeter")]
+ impl GreeterProxy {
+     fn get_user_data(&mut self) -> Result<String, GreeterError> {
+-        let user_filter = UserFilter::new();
+-
+-        // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
+-        // To prevent issues, this should only be called once in the entire process space at a time
+-        let users: Vec<_> = /* unsafe */ {
+-             pwd::Passwd::iter()
+-                .filter(|user| user_filter.filter(user))
+-                .collect()
+-            };
++        let users = UserFilter::new().users();
+ 
+         let mut user_datas = Vec::new();
+         for user in users {
+diff -ru a/src/greeter.rs b/src/greeter.rs
+--- a/src/greeter.rs
++++ b/src/greeter.rs
+@@ -77,16 +77,11 @@
+ }
+ 
+ fn user_data_fallback() -> Vec<UserData> {
+-    let user_filter = UserFilter::new();
+-
+-    // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
+-    /* unsafe */
+-    {
+-        pwd::Passwd::iter()
+-            .filter(|user| user_filter.filter(user))
+-            .map(UserData::from)
+-            .collect()
+-    }
++    UserFilter::new()
++        .users()
++        .into_iter()
++        .map(UserData::from)
++        .collect()
+ }
+ 
+ pub fn main() -> Result<(), Box<dyn Error>> {
