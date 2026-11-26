@@ -9,12 +9,8 @@
 {
   den.homes.aarch64-linux.max = { };
 
-  # His terminal, music and Codex (with its key-holding proxy on the host he
-  # uses).
-  den.aspects.max.includes = with den.aspects; [
-    terminal
-    codex
-  ];
+  # His terminal (Codex in it).
+  den.aspects.max.includes = with den.aspects; [ terminal ];
 
   perSystem =
     { lib, system, ... }:
