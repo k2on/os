@@ -29,8 +29,11 @@ in
     let
       user = config.home.username;
       person = ark.persons.${user};
-      mailPassword = config.sops.secrets."mail_password_${user}".path;
-      davPassword = config.sops.secrets."radicale_password_${user}".path;
+      # Where sops-nix puts them, whether or not this home can have them yet
+      # (lib/secrets.nix leaves them out until its person has a key).
+      secret = name: "${config.sops.defaultSymlinkPath}/${name}";
+      mailPassword = secret "mail_password_${user}";
+      davPassword = secret "radicale_password_${user}";
       dav = "${davOrigin}/${user}/";
       system = pkgs.stdenv.hostPlatform.system;
       inherit (self.packages.${system}) ark-dav ark-thunderbird;

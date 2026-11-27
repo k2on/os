@@ -17,8 +17,6 @@ in
     color = "#f9e2af"; # yellow
     # A laptop: closed is not down.
     alwaysOn = false;
-    # Its person, whose home (homes/max) den puts in its home-manager.
-    users.max.classes = [ "homeManager" ];
   };
 
   den.aspects.${name} = {
@@ -36,13 +34,6 @@ in
         ./_hardware-configuration.nix
         self.nixosModules.koonMaxConfiguration
       ];
-
-      home-manager = {
-        # A home brings its own nixpkgs settings (homes/max), as it does on
-        # its own (homeConfigurations.max), rather than the host's.
-        useGlobalPkgs = false;
-        useUserPackages = true;
-      };
 
       # Its age recipient (ssh-to-age of the host's ed25519 key), for the
       # secrets its aspects declare (lib/secrets.nix).

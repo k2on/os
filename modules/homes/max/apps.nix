@@ -1,5 +1,5 @@
 # Max's programs: what was cale's system packages, now his home's, so they
-# come with him (homeConfigurations.max) rather than with the machine. What
+# come with him (his home) rather than with the machine. What
 # is the machine's (its battery, the network, a disk tool, an editor for
 # root) stays in ./configuration.nix.
 { self, config, ... }:

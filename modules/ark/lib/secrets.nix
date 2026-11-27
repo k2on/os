@@ -153,7 +153,11 @@ let
       # is read at all, by `ark secrets` too (homeSecrets below), so a missing
       # file is a warning here, not a failure as on a host: else `ark secrets`
       # could never create it.
-      present = lib.filterAttrs (_: s: builtins.pathExists (varsPath s.file)) config.ark.secrets;
+      # Likewise one without a key of its own yet: none of it can be opened.
+      hasKey = personAgeKey user != null;
+      present = lib.filterAttrs (
+        _: s: hasKey && builtins.pathExists (varsPath s.file)
+      ) config.ark.secrets;
       missing = lib.unique (
         lib.mapAttrsToList (_: s: s.file) (
           lib.filterAttrs (_: s: !s.optional && !builtins.pathExists (varsPath s.file)) config.ark.secrets
@@ -194,16 +198,13 @@ let
             }
           ) present;
 
-          assertions = [
-            {
-              assertion = (personAgeKey user) != null;
-              message = "ark: ${user}'s home has secrets, but ark.persons.${user}.ageKey (secrets/ark.nix) is not set";
-            }
-          ];
-          warnings = map (
-            file:
-            "ark: ${varsDir}/${file}.yaml is not in sops yet, so this home goes without it. Run `ark secrets` and commit it"
-          ) missing;
+          warnings =
+            lib.optional (!hasKey)
+              "ark: ${user}'s home has secrets, but ark.persons.${user}.ageKey (secrets/ark.nix) is not set, so it goes without them"
+            ++ map (
+              file:
+              "ark: ${varsDir}/${file}.yaml is not in sops yet, so this home goes without it. Run `ark secrets` and commit it"
+            ) missing;
         })
       ];
     };

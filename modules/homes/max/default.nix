@@ -1,31 +1,17 @@
-# Max's home, wherever he signs in: den.aspects.max's homeManager, which
-# each file here adds to. On a host that has him as a user
-# (den.hosts.<…>.users.max) den puts it in that host's home-manager; on its
-# own it is homeConfigurations.max (`home-manager switch --flake .#max`),
-# checked by `nix flake check` on aarch64-linux, where it runs. A desktop's
-# share of every home (the browser, mail, terminal emulator, wallpaper) is
-# aspects/gui/home's.
+# Max's own part of his home (homes/default.nix makes the home itself,
+# homeConfigurations.max-<system>): den.aspects.max's homeManager, which each file
+# here adds to. A desktop's share of every home (the browser, mail, terminal
+# emulator, wallpaper) is aspects/gui/home's.
 { self, den, ... }:
 {
-  den.homes.aarch64-linux.max = { };
-
   # His terminal (Codex in it).
   den.aspects.max.includes = with den.aspects; [ terminal ];
-
-  perSystem =
-    { lib, system, ... }:
-    {
-      checks = lib.optionalAttrs (system == "aarch64-linux") {
-        home-max = self.homeConfigurations.max.activationPackage;
-      };
-    };
 
   den.aspects.max.homeManager =
     { lib, ... }:
     {
       imports = [ self.homeModules.arkCli ];
 
-      # The home's own nixpkgs settings, the same on a host and on its own.
       nixpkgs = {
         overlays = [ self.overlays.unstable ];
         # Chromium with Widevine (./apps.nix), and transparent.nvim (neovim),
@@ -40,8 +26,6 @@
           ];
       };
 
-      home.username = "max";
-      home.homeDirectory = "/home/max";
       home.stateVersion = "25.05";
     };
 }
